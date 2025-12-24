@@ -1,0 +1,84 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# AI agent files
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.cursorrules
+.cursor/
+.aider*
+
+# Virtual environment
+venv/
+.env/
+.env.bak/
+.venv/
+env/
+
+# Flask cache and instance data
+instance/
+*.db
+*.sqlite3
+*.sqlite
+*.log
+*.pid
+*.swp
+
+# Environment variables
+*.env
+.env.*
+!.env.example
+
+# OS junk
+.DS_Store
+Thumbs.db
+.AppleDouble
+.LSOverride
+
+# Editor / IDE
+.vscode/
+.idea/
+*.iml
+*.sublime-project
+*.sublime-workspace
+
+# Python packaging
+build/
+dist/
+*.egg-info/
+
+# Backup files
+*~
+*.bak
+
+# Temporary files
+/tmp/
+temp/
+*.tmp
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Logs
+gunicorn.log
+*.log.*
+logs/
+
+# System files
+*.sock
+*.pid
+
+# Cache or compiled static assets
+static/css/*.map
+static/js/*.map
+
+# Auto-added by master.py
+*.sqlite*
+*.sublime-*
+.env
+tmp/
