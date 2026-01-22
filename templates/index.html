@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SIFEET Estatales · Registro de Ejercicios Fiscales</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <img src="{{ url_for('static', filename='img/ofs_logo.png') }}" alt="Logo institucional" class="ofs-logo">
+      <div class="header-text">
+        <p class="eyebrow">Órgano de Fiscalización Superior del Estado de Tlaxcala</p>
+        <h1>SIFEET Estatales</h1>
+        <p class="subtitle">Sistema de registro de Ejercicios Fiscales y anexos institucionales</p>
+      </div>
+      <div class="header-badge">
+        <span>Ejercicios</span>
+        <strong>2023 · 2024 · 2025</strong>
+      </div>
+    </div>
+  </header>
+
+  <main class="page-content">
+    <section class="panel form-panel">
+      <div class="panel-header">
+        <h2>Alta de registro</h2>
+        <p>Captura y resguardo de Entes y anexos por ejercicio fiscal.</p>
+      </div>
+
+      {% if message %}
+        <div class="status status-{{ message_type }}">{{ message }}</div>
+      {% endif %}
+
+      <form class="record-form" method="POST" autocomplete="off">
+        <div class="form-grid">
+          <div class="field">
+            <label for="ejercicio">Ejercicio Fiscal</label>
+            <select id="ejercicio" name="ejercicio" required>
+              <option value="" disabled selected>Selecciona</option>
+              <option value="2023">2023</option>
+              <option value="2024">2024</option>
+              <option value="2025">2025</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="ente_id">Ente (ID)</label>
+            <input id="ente_id" name="ente_id" type="text" list="entesList" placeholder="ID institucional del ente" required />
+            <datalist id="entesList"></datalist>
+          </div>
+
+          <div class="field">
+            <label for="ente_nombre">Ente (Nombre)</label>
+            <input id="ente_nombre" name="ente_nombre" type="text" placeholder="Se carga automaticamente" readonly />
+          </div>
+
+          <div class="field">
+            <label for="ente_numero">Ente (Numero)</label>
+            <input id="ente_numero" name="ente_numero" type="text" placeholder="Se carga automaticamente" readonly />
+          </div>
+
+          <div class="field">
+            <label for="responsable_hist_id">Responsable</label>
+            <select id="responsable_hist_id" name="responsable_hist_id" required>
+              <option value="" disabled selected>Selecciona</option>
+            </select>
+            <span class="helper" id="responsable_periodo">Periodo: —</span>
+          </div>
+
+          <div class="field">
+            <label for="administrador_hist_id">Administrador</label>
+            <select id="administrador_hist_id" name="administrador_hist_id" required>
+              <option value="" disabled selected>Selecciona</option>
+            </select>
+            <span class="helper" id="administrador_periodo">Periodo: —</span>
+          </div>
+
+          <div class="field">
+            <label for="monto_pdp">Monto PDP</label>
+            <input id="monto_pdp" name="monto_pdp" type="number" step="0.01" min="0" placeholder="0.00" disabled />
+            <span class="helper">Solo aplica para observaciones PDP.</span>
+          </div>
+
+          <div class="field">
+            <label for="fuente_nombre">Fuente de financiamiento</label>
+            <input id="fuente_nombre" name="fuente_nombre" type="text" list="fuentesList" placeholder="Captura o selecciona" />
+            <datalist id="fuentesList">
+              {% for fuente in fuentes %}
+                <option value="{{ fuente.nombre }}"></option>
+              {% endfor %}
+            </datalist>
+          </div>
+
+          <div class="field">
+            <label for="irregularidad_concepto">Concepto de irregularidad (PDP)</label>
+            <input id="irregularidad_concepto" name="irregularidad_concepto" type="text" list="irregularidadesList" placeholder="Solo PDP" disabled />
+            <datalist id="irregularidadesList">
+              {% for irregularidad in irregularidades %}
+                <option value="{{ irregularidad.concepto }}"></option>
+              {% endfor %}
+            </datalist>
+          </div>
+        </div>
+
+        <fieldset class="field fieldset">
+          <legend>Tipo de Anexo</legend>
+          <div class="chip-group">
+            {% for option in ["SA", "PDP", "PRAS", "PEFCF", "R"] %}
+              <label class="chip">
+                <input type="radio" name="tipo_anexo" value="{{ option }}" required>
+                <span>{{ option }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+
+        <div class="field">
+          <label for="estado">Estado</label>
+          <select id="estado" name="estado" required>
+            <option value="" disabled selected>Selecciona</option>
+            <option value="Emitido">Emitido</option>
+            <option value="Solventado">Solventado</option>
+            <option value="Pendiente">Pendiente</option>
+          </select>
+        </div>
+
+        <button class="btn-primary" type="submit">Guardar registro</button>
+      </form>
+    </section>
+
+    <section class="panel table-panel">
+      <div class="panel-header">
+        <h2>Registros recientes</h2>
+        <p>{{ records|length }} registros almacenados.</p>
+      </div>
+
+      {% if records %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Ejercicio</th>
+                <th>Ente (ID)</th>
+                <th>Ente (Nombre)</th>
+                <th>Responsable</th>
+                <th>Administrador</th>
+                <th>Tipo de Anexo</th>
+                <th>Monto PDP</th>
+                <th>Estado</th>
+                <th>Fuente</th>
+                <th>Irregularidad</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for record in records %}
+                <tr>
+                  <td>{{ record.created_at }}</td>
+                  <td>{{ record.ejercicio }}</td>
+                  <td>{{ record.ente_id or "—" }}</td>
+                  <td>{{ record.ente }}</td>
+                  <td>
+                    {{ record.responsable }}
+                    <span class="inheritance">Periodo: {{ record.responsable_periodo or "—" }}</span>
+                  </td>
+                  <td>
+                    {{ record.administrador }}
+                    <span class="inheritance">Periodo: {{ record.administrador_periodo or "—" }}</span>
+                  </td>
+                  <td>
+                    <span class="tag">{{ record.tipo_anexo }}</span>
+                    {% if record.tipo_anexo != record.tipo_anexo_origen %}
+                      <span class="inheritance">Reclasificado de {{ record.tipo_anexo_origen }}</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if record.tipo_anexo == "PDP" %}
+                      {{ "%.2f"|format(record.monto_pdp or 0) }}
+                    {% else %}
+                      <span class="muted">—</span>
+                    {% endif %}
+                  </td>
+                  <td><span class="tag tag-state">{{ record.estado }}</span></td>
+                  <td>{{ record.fuente_nombre or "—" }}</td>
+                  <td>
+                    {% if record.tipo_anexo == "PDP" %}
+                      {{ record.irregularidad_concepto or "—" }}
+                    {% else %}
+                      <span class="muted">—</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if record.tipo_anexo in ["PDP", "PRAS"] %}
+                      <form method="POST" action="{{ url_for('reclasificar', registro_id=record.id) }}">
+                        <button type="submit" class="btn-secondary">
+                          Reclasificar a {{ "PRAS" if record.tipo_anexo == "PDP" else "PDP" }}
+                        </button>
+                      </form>
+                    {% else %}
+                      <span class="muted">—</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <p>No hay registros capturados todavía.</p>
+          <span>Inicia una nueva captura desde el formulario.</span>
+        </div>
+      {% endif %}
+    </section>
+
+    <section class="panel chart-panel">
+      <div class="panel-header">
+        <h2>Comparativas por ejercicio</h2>
+        <p>Lectura rápida del comportamiento institucional por ejercicio fiscal.</p>
+      </div>
+
+      <div class="chart-grid">
+        <div class="chart-card">
+          <h3>Registros totales por ejercicio</h3>
+          <canvas id="chartTotals" height="140"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Estados por ejercicio</h3>
+          <canvas id="chartEstados" height="140"></canvas>
+        </div>
+      </div>
+      <div class="chart-footnote">
+        *Datos generados a partir de los registros capturados en el sistema.
+      </div>
+    </section>
+
+    <section class="panel history-panel">
+      <div class="panel-header">
+        <h2>Historial de titulares</h2>
+        <p>Registra cambios de responsables o administradores por ejercicio.</p>
+      </div>
+      <form class="record-form" method="POST" action="{{ url_for('historial') }}">
+        <div class="form-grid">
+          <div class="field">
+            <label for="historial_ejercicio">Ejercicio</label>
+            <select id="historial_ejercicio" name="historial_ejercicio" required>
+              <option value="" disabled selected>Selecciona</option>
+              <option value="2023">2023</option>
+              <option value="2024">2024</option>
+              <option value="2025">2025</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="historial_ente_id">Ente (ID)</label>
+            <input id="historial_ente_id" name="historial_ente_id" type="text" placeholder="ID institucional del ente" required />
+          </div>
+          <div class="field">
+            <label for="historial_rol">Rol</label>
+            <select id="historial_rol" name="historial_rol" required>
+              <option value="" disabled selected>Selecciona</option>
+              <option value="Responsable">Responsable</option>
+              <option value="Administrador">Administrador</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="historial_nombre">Nombre</label>
+            <input id="historial_nombre" name="historial_nombre" type="text" required />
+          </div>
+          <div class="field">
+            <label for="historial_periodo">Periodo</label>
+            <input id="historial_periodo" name="historial_periodo" type="text" placeholder="Ej. 01 de abril al 30 de marzo" required />
+          </div>
+        </div>
+        <button class="btn-primary" type="submit">Guardar en historial</button>
+      </form>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    © Órgano de Fiscalización Superior del Estado de Tlaxcala · SIFEET Estatales
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+    const ejercicioSelect = document.getElementById("ejercicio");
+    const enteInput = document.getElementById("ente_id");
+    const entesList = document.getElementById("entesList");
+    const enteNombreInput = document.getElementById("ente_nombre");
+    const enteNumeroInput = document.getElementById("ente_numero");
+    const responsableSelect = document.getElementById("responsable_hist_id");
+    const administradorSelect = document.getElementById("administrador_hist_id");
+    const responsablePeriodo = document.getElementById("responsable_periodo");
+    const administradorPeriodo = document.getElementById("administrador_periodo");
+    let entesCache = {};
+    let historialCache = [];
+    const montoInput = document.getElementById("monto_pdp");
+    const anexoInputs = document.querySelectorAll("input[name='tipo_anexo']");
+
+    ejercicioSelect.addEventListener("change", async () => {
+      const value = ejercicioSelect.value;
+      entesList.innerHTML = "";
+      entesCache = {};
+      enteInput.value = "";
+      enteNombreInput.value = "";
+      enteNumeroInput.value = "";
+      responsableSelect.innerHTML = "<option value=\"\" disabled selected>Selecciona</option>";
+      administradorSelect.innerHTML = "<option value=\"\" disabled selected>Selecciona</option>";
+      responsablePeriodo.textContent = "Periodo: —";
+      administradorPeriodo.textContent = "Periodo: —";
+      if (!value) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/entes?ejercicio=${encodeURIComponent(value)}`);
+        if (!response.ok) {
+          return;
+        }
+        const data = await response.json();
+        entesCache = data.reduce((acc, item) => {
+          acc[item.ente_id] = item;
+          return acc;
+        }, {});
+        entesList.innerHTML = data
+          .map(
+            (item) =>
+              `<option value="${item.ente_id}">${item.ente_nombre}</option>`
+          )
+          .join("");
+      } catch (error) {
+        console.error(error);
+      }
+    });
+
+    enteInput.addEventListener("focus", () => {
+      if (ejercicioSelect.value) {
+        ejercicioSelect.dispatchEvent(new Event("change"));
+      }
+    });
+
+    enteInput.addEventListener("input", () => {
+      const ente = entesCache[enteInput.value];
+      if (ente) {
+        enteNombreInput.value = ente.ente_nombre;
+        enteNumeroInput.value = ente.ente_numero;
+      } else {
+        enteNombreInput.value = "";
+        enteNumeroInput.value = "";
+      }
+      loadHistorial();
+    });
+
+    async function loadHistorial() {
+      const ejercicio = ejercicioSelect.value;
+      const enteId = enteInput.value;
+      if (!ejercicio || !enteId) {
+        return;
+      }
+      try {
+        const response = await fetch(
+          `/historial?ejercicio=${encodeURIComponent(ejercicio)}&ente_id=${encodeURIComponent(enteId)}`
+        );
+        if (!response.ok) {
+          return;
+        }
+        const data = await response.json();
+        historialCache = data;
+        const responsables = data.filter((item) => item.rol === "Responsable");
+        const administradores = data.filter((item) => item.rol === "Administrador");
+
+        responsableSelect.innerHTML = "<option value=\"\" disabled selected>Selecciona</option>";
+        administradorSelect.innerHTML = "<option value=\"\" disabled selected>Selecciona</option>";
+
+        responsables.forEach((item) => {
+          const option = document.createElement("option");
+          option.value = item.id;
+          option.textContent = `${item.nombre}`;
+          option.dataset.periodo = item.periodo;
+          responsableSelect.appendChild(option);
+        });
+
+        administradores.forEach((item) => {
+          const option = document.createElement("option");
+          option.value = item.id;
+          option.textContent = `${item.nombre}`;
+          option.dataset.periodo = item.periodo;
+          administradorSelect.appendChild(option);
+        });
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    function updatePeriodo(selectEl, labelEl) {
+      const option = selectEl.selectedOptions[0];
+      const periodo = option ? option.dataset.periodo : "";
+      labelEl.textContent = `Periodo: ${periodo || "—"}`;
+    }
+
+    responsableSelect.addEventListener("change", () => {
+      updatePeriodo(responsableSelect, responsablePeriodo);
+    });
+
+    administradorSelect.addEventListener("change", () => {
+      updatePeriodo(administradorSelect, administradorPeriodo);
+    });
+
+    const irregularidadInput = document.getElementById("irregularidad_concepto");
+
+    function toggleMonto() {
+      const selected = document.querySelector("input[name='tipo_anexo']:checked");
+      const isPdp = selected && selected.value === "PDP";
+      montoInput.disabled = !isPdp;
+      montoInput.required = Boolean(isPdp);
+      irregularidadInput.disabled = !isPdp;
+      irregularidadInput.required = false;
+      if (!isPdp) {
+        montoInput.value = "";
+        irregularidadInput.value = "";
+      }
+    }
+
+    anexoInputs.forEach((input) => {
+      input.addEventListener("change", toggleMonto);
+    });
+    toggleMonto();
+
+    async function renderCharts() {
+      try {
+        const response = await fetch("/stats");
+        if (!response.ok) {
+          return;
+        }
+        const data = await response.json();
+        const totals = data.totals || [];
+        const estados = data.estados || [];
+
+        const ejercicios = ["2023", "2024", "2025"];
+        const totalData = ejercicios.map((ejercicio) => {
+          const row = totals.find((item) => item.ejercicio === ejercicio);
+          return row ? row.total : 0;
+        });
+
+        new Chart(document.getElementById("chartTotals"), {
+          type: "bar",
+          data: {
+            labels: ejercicios,
+            datasets: [
+              {
+                label: "Registros",
+                data: totalData,
+                backgroundColor: ["#1f3b2c", "#355c40", "#4b7a55"],
+                borderRadius: 6,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: { display: false },
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                grid: { color: "rgba(31, 59, 44, 0.1)" },
+              },
+              x: {
+                grid: { display: false },
+              },
+            },
+          },
+        });
+
+        const estadoLabels = ["Emitido", "Solventado", "Pendiente"];
+        const estadoColors = {
+          Emitido: "#b18934",
+          Solventado: "#1f3b2c",
+          Pendiente: "#6b7a70",
+        };
+
+        const datasets = estadoLabels.map((estado) => ({
+          label: estado,
+          data: ejercicios.map((ejercicio) => {
+            const row = estados.find(
+              (item) => item.ejercicio === ejercicio && item.estado === estado
+            );
+            return row ? row.total : 0;
+          }),
+          backgroundColor: estadoColors[estado],
+          borderRadius: 6,
+        }));
+
+        new Chart(document.getElementById("chartEstados"), {
+          type: "bar",
+          data: {
+            labels: ejercicios,
+            datasets,
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: { position: "bottom" },
+            },
+            scales: {
+              x: { stacked: true, grid: { display: false } },
+              y: { stacked: true, beginAtZero: true },
+            },
+          },
+        });
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    renderCharts();
+  </script>
+</body>
+</html>

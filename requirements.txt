@@ -1,11 +1,1 @@
-# SIFET Estatales - Dependencias
-
 Flask==3.0.3
-Werkzeug==3.0.4
-Jinja2==3.1.4
-
-# Servidor WSGI
-gunicorn==22.0.0
-
-# Utilidades
-python-dotenv==1.0.1
