@@ -161,7 +161,8 @@ legend {
 }
 
 input,
-select {
+select,
+textarea {
   border: 1px solid var(--color-border);
   border-radius: 10px;
   padding: 0.75rem 0.9rem;
@@ -169,13 +170,27 @@ select {
   font-family: var(--font-sans);
   background: #fbfcfb;
   transition: border-color var(--transition), box-shadow var(--transition);
+  width: 100%;
+  max-width: 100%;
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   outline: none;
   border-color: var(--color-accent);
   box-shadow: 0 0 0 3px rgba(31, 59, 44, 0.12);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 120px;
+}
+
+select {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .fieldset {
@@ -188,6 +203,10 @@ select:focus {
   flex-wrap: wrap;
   gap: 0.75rem;
   margin-top: 0.5rem;
+}
+
+.field-full {
+  grid-column: 1 / -1;
 }
 
 .chip {
@@ -255,6 +274,12 @@ select:focus {
   border: 1px solid #f3b5b5;
 }
 
+.status-info {
+  background: #eef4f8;
+  color: #1f3b2c;
+  border: 1px solid #c7d7e2;
+}
+
 .table-panel {
   display: flex;
   flex-direction: column;
@@ -268,6 +293,8 @@ select:focus {
   gap: 1.5rem;
 }
 
+.ente-panel,
+.oficio-panel,
 .history-panel {
   grid-column: 1 / -1;
 }

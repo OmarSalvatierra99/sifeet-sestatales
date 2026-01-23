@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SIFEET Estatales · Acceso</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <img src="{{ url_for('static', filename='img/ofs_logo.png') }}" alt="Logo institucional" class="ofs-logo">
+      <div class="header-text">
+        <p class="eyebrow">Órgano de Fiscalización Superior del Estado de Tlaxcala</p>
+        <h1>SIFEET Estatales</h1>
+        <p class="subtitle">Acceso al sistema</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="page-content">
+    <section class="panel form-panel">
+      <div class="panel-header">
+        <h2>Inicio de sesión</h2>
+        <p>Ingresa con tu usuario institucional.</p>
+      </div>
+
+      {% if error %}
+        <div class="status status-error">{{ error }}</div>
+      {% endif %}
+
+      <form class="record-form" method="POST" autocomplete="off">
+        <input type="hidden" name="next" value="{{ next_url }}">
+        <div class="form-grid">
+          <div class="field">
+            <label for="username">Usuario</label>
+            <input id="username" name="username" type="text" required />
+          </div>
+          <div class="field">
+            <label for="password">Contraseña</label>
+            <input id="password" name="password" type="password" required />
+          </div>
+        </div>
+        <button class="btn-primary" type="submit">Entrar</button>
+      </form>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    © Órgano de Fiscalización Superior del Estado de Tlaxcala · SIFEET Estatales
+  </footer>
+</body>
+</html>

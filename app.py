@@ -1,13 +1,63 @@
 from datetime import datetime
+from functools import wraps
 import os
 import sqlite3
 
-from flask import Flask, render_template, request, redirect, url_for, g, jsonify
+from flask import Flask, render_template, request, redirect, url_for, g, jsonify, session
+from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "sifeet.db")
 
 app = Flask(__name__)
+app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key")
+
+USERS = {
+    "luis": {
+        "password_hash": generate_password_hash("luis2025"),
+        "role": "viewer",
+    },
+    "omar": {
+        "password_hash": generate_password_hash("omar2025"),
+        "role": "editor",
+    },
+}
+
+
+def get_current_user():
+    username = session.get("user")
+    if not username:
+        return None
+    user = USERS.get(username)
+    if not user:
+        return None
+    return {"username": username, "role": user["role"]}
+
+
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if get_current_user() is None:
+            return redirect(url_for("login", next=request.path))
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+def role_required(role: str):
+    def decorator(view):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            user = get_current_user()
+            if user is None:
+                return redirect(url_for("login", next=request.path))
+            if user["role"] != role:
+                return redirect(url_for("index", notice="no_permission"))
+            return view(*args, **kwargs)
+
+        return wrapped
+
+    return decorator
 
 
 def init_db() -> None:
@@ -91,6 +141,21 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS oficios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ente_id INTEGER NOT NULL,
+                ejercicio TEXT NOT NULL,
+                oficio TEXT NOT NULL,
+                tipo_auditoria TEXT NOT NULL,
+                fecha_notificacion TEXT NOT NULL,
+                observaciones TEXT NOT NULL,
+                fuente_id INTEGER,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
         existing_columns = {
             row[1]
             for row in conn.execute("PRAGMA table_info(registros)").fetchall()
@@ -145,6 +210,18 @@ def init_db() -> None:
             conn.execute("ALTER TABLE registros ADD COLUMN responsable_hist_id INTEGER")
         if "administrador_hist_id" not in existing_columns:
             conn.execute("ALTER TABLE registros ADD COLUMN administrador_hist_id INTEGER")
+        oficios_columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(oficios)").fetchall()
+        }
+        if "oficio" not in oficios_columns:
+            conn.execute("ALTER TABLE oficios ADD COLUMN oficio TEXT")
+        if "tipo_auditoria" not in oficios_columns:
+            conn.execute("ALTER TABLE oficios ADD COLUMN tipo_auditoria TEXT")
+        if "fuente_id" not in oficios_columns:
+            conn.execute("ALTER TABLE oficios ADD COLUMN fuente_id INTEGER")
+        if "fecha_notificacion" not in oficios_columns:
+            conn.execute("ALTER TABLE oficios ADD COLUMN fecha_notificacion TEXT")
         conn.commit()
 
 
@@ -165,9 +242,40 @@ def close_db(_exception: Exception | None) -> None:
         db.close()
 
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        username = request.form.get("username", "").strip().lower()
+        password = request.form.get("password", "").strip()
+        next_url = request.form.get("next") or url_for("index")
+        user = USERS.get(username)
+        if not user or not check_password_hash(user["password_hash"], password):
+            error = "Usuario o contraseña incorrectos."
+        else:
+            session.clear()
+            session["user"] = username
+            session["role"] = user["role"]
+            return redirect(next_url)
+    else:
+        if get_current_user() is not None:
+            return redirect(url_for("index"))
+        next_url = request.args.get("next", "")
+    return render_template("login.html", error=error, next_url=next_url)
+
+
+@app.get("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
 @app.route("/entes", methods=["GET", "POST"])
+@login_required
 def entes():
     if request.method == "POST":
+        if get_current_user()["role"] != "editor":
+            return redirect(url_for("index", notice="no_permission"))
         ejercicio = request.form.get("ente_ejercicio", "").strip()
         ente_id = request.form.get("ente_id", "").strip()
         ente_numero = request.form.get("ente_numero", "").strip()
@@ -176,17 +284,7 @@ def entes():
         clasificacion = request.form.get("ente_clasificacion", "").strip()
         ramo33 = request.form.get("ente_ramo33", "").strip()
 
-        if not all(
-            [
-                ejercicio,
-                ente_id,
-                ente_numero,
-                ente_nombre,
-                responsable,
-                clasificacion,
-                ramo33,
-            ]
-        ):
+        if not all([ejercicio, ente_id, ente_numero, ente_nombre]):
             return redirect(url_for("index", notice="ente_error"))
 
         db = get_db()
@@ -209,9 +307,9 @@ def entes():
                 ejercicio,
                 ente_numero,
                 ente_nombre,
-                responsable,
-                clasificacion,
-                ramo33,
+                responsable or "",
+                clasificacion or "",
+                ramo33 or "",
                 datetime.now().strftime("%Y-%m-%d %H:%M"),
             ),
         )
@@ -228,7 +326,7 @@ def entes():
         SELECT ente_id, ente_numero, ente_nombre, responsable, clasificacion, ramo33
         FROM entes_detalle
         WHERE ejercicio = ?
-        ORDER BY ente_id ASC
+        ORDER BY CAST(ente_numero AS REAL) ASC, ente_numero ASC
         """,
         (ejercicio,),
     ).fetchall()
@@ -236,8 +334,11 @@ def entes():
 
 
 @app.route("/historial", methods=["GET", "POST"])
+@login_required
 def historial():
     if request.method == "POST":
+        if get_current_user()["role"] != "editor":
+            return redirect(url_for("index", notice="no_permission"))
         ejercicio = request.form.get("historial_ejercicio", "").strip()
         ente_id = request.form.get("historial_ente_id", "").strip()
         rol = request.form.get("historial_rol", "").strip()
@@ -285,7 +386,105 @@ def historial():
     return jsonify([dict(row) for row in rows])
 
 
+@app.post("/oficios")
+@login_required
+def oficios():
+    user = get_current_user()
+    if not user or user["username"] != "omar":
+        return redirect(url_for("index", notice="no_permission"))
+
+    ejercicio = request.form.get("oficio_ejercicio", "").strip()
+    ente_id = request.form.get("oficio_ente_id", "").strip()
+    oficio_numero = request.form.get("oficio_numero", "").strip()
+    tipo_auditoria = request.form.get("tipo_auditoria", "").strip()
+    fecha_notificacion = request.form.get("fecha_notificacion", "").strip()
+    fuente_id = request.form.get("oficio_fuente_id", "").strip()
+
+    if not all(
+        [
+            ejercicio,
+            ente_id,
+            oficio_numero,
+            tipo_auditoria,
+            fecha_notificacion,
+            fuente_id,
+        ]
+    ):
+        return redirect(url_for("index", notice="oficio_error"))
+
+    db = get_db()
+    ente_row = db.execute(
+        """
+        SELECT ente_id
+        FROM entes_detalle
+        WHERE ente_id = ? AND ejercicio = ?
+        """,
+        (ente_id, ejercicio),
+    ).fetchone()
+
+    if ente_row is None:
+        return redirect(url_for("index", notice="oficio_error"))
+
+    fuente_row = db.execute(
+        """
+        SELECT 1
+        FROM registros
+        WHERE ejercicio = ? AND ente_id = ? AND fuente_id = ?
+        LIMIT 1
+        """,
+        (ejercicio, ente_id, fuente_id),
+    ).fetchone()
+    if fuente_row is None:
+        return redirect(url_for("index", notice="oficio_error"))
+
+    db.execute(
+        """
+        INSERT INTO oficios (
+            ente_id, ejercicio, oficio, tipo_auditoria, fecha_notificacion, observaciones,
+            fuente_id, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            ente_id,
+            ejercicio,
+            oficio_numero,
+            tipo_auditoria,
+            fecha_notificacion,
+            "",
+            int(fuente_id),
+            datetime.now().strftime("%Y-%m-%d %H:%M"),
+        ),
+    )
+    db.commit()
+    return redirect(url_for("index", notice="oficio_saved"))
+
+
+@app.get("/fuentes-ente")
+@login_required
+def fuentes_ente():
+    ejercicio = request.args.get("ejercicio", "").strip()
+    ente_id = request.args.get("ente_id", "").strip()
+    if not ejercicio or not ente_id:
+        return jsonify([])
+
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT DISTINCT fuentes_financiamiento.id, fuentes_financiamiento.nombre
+        FROM registros
+        JOIN fuentes_financiamiento
+            ON registros.fuente_id = fuentes_financiamiento.id
+        WHERE registros.ejercicio = ? AND registros.ente_id = ?
+        ORDER BY fuentes_financiamiento.nombre ASC
+        """,
+        (ejercicio, ente_id),
+    ).fetchall()
+    return jsonify([dict(row) for row in rows])
+
+
 @app.post("/fuentes")
+@role_required("editor")
 def fuentes():
     nombre = request.form.get("fuente_nombre", "").strip()
     if not nombre:
@@ -304,6 +503,7 @@ def fuentes():
 
 
 @app.post("/irregularidades")
+@role_required("editor")
 def irregularidades():
     concepto = request.form.get("irregularidad_concepto", "").strip()
     if not concepto:
@@ -322,6 +522,7 @@ def irregularidades():
 
 
 @app.route("/stats")
+@login_required
 def stats():
     db = get_db()
     totals = db.execute(
@@ -361,6 +562,7 @@ def stats():
 
 
 @app.post("/reclasificar/<int:registro_id>")
+@role_required("editor")
 def reclasificar(registro_id: int):
     db = get_db()
     row = db.execute(
@@ -393,11 +595,17 @@ def reclasificar(registro_id: int):
 
 
 @app.route("/", methods=["GET", "POST"])
+@login_required
 def index():
     message = None
     message_type = "info"
+    user = get_current_user()
+    can_edit = user["role"] == "editor" if user else False
+    is_omar = user["username"] == "omar" if user else False
 
     if request.method == "POST":
+        if not can_edit:
+            return redirect(url_for("index", notice="no_permission"))
         ejercicio = request.form.get("ejercicio", "").strip()
         ente_id = request.form.get("ente_id", "").strip()
         responsable_hist_id = request.form.get("responsable_hist_id", "").strip()
@@ -554,6 +762,15 @@ def index():
     elif request.args.get("notice") == "historial_error":
         message = "Completa todos los datos del historial."
         message_type = "error"
+    elif request.args.get("notice") == "oficio_saved":
+        message = "Oficio guardado correctamente."
+        message_type = "success"
+    elif request.args.get("notice") == "oficio_error":
+        message = "Completa ejercicio, ente, oficio, tipo de auditoria, fecha y fuente."
+        message_type = "error"
+    elif request.args.get("notice") == "no_permission":
+        message = "No tienes permisos para registrar informacion."
+        message_type = "error"
 
     db = get_db()
     records = db.execute(
@@ -603,13 +820,38 @@ def index():
         """
     ).fetchall()
 
+    oficios = db.execute(
+        """
+        SELECT
+            oficios.id,
+            oficios.ejercicio,
+            oficios.oficio,
+            oficios.tipo_auditoria,
+            oficios.fecha_notificacion,
+            oficios.created_at,
+            entes_detalle.ente_nombre AS ente_nombre,
+            fuentes_financiamiento.nombre AS fuente_nombre
+        FROM oficios
+        LEFT JOIN entes_detalle
+            ON oficios.ente_id = entes_detalle.ente_id
+            AND oficios.ejercicio = entes_detalle.ejercicio
+        LEFT JOIN fuentes_financiamiento
+            ON oficios.fuente_id = fuentes_financiamiento.id
+        ORDER BY oficios.id DESC
+        """
+    ).fetchall()
+
     return render_template(
         "index.html",
         records=records,
         fuentes=fuentes,
         irregularidades=irregularidades_list,
+        oficios=oficios,
         message=message,
         message_type=message_type,
+        user=user,
+        can_edit=can_edit,
+        is_omar=is_omar,
     )
 
 

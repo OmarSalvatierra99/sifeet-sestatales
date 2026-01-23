@@ -1,0 +1,16 @@
+[Unit]
+Description=Portfolio SIFEET Flask Service
+After=network.target
+
+[Service]
+Type=simple
+User=gabo
+Group=gabo
+WorkingDirectory=/home/gabo/portfolio/projects/07-sifet-estatales
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/gabo/portfolio/projects/07-sifet-estatales/venv/bin/python -c "from app import init_db, app; init_db(); app.run(host='127.0.0.1', port=5008)"
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
