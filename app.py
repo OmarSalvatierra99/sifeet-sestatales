@@ -1,7 +1,9 @@
 from datetime import datetime
 from functools import wraps
 import os
+import re
 import sqlite3
+import unicodedata
 
 from flask import Flask, render_template, request, redirect, url_for, g, jsonify, session
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -17,11 +19,45 @@ USERS = {
         "password_hash": generate_password_hash("luis2025"),
         "role": "viewer",
     },
-    "omar": {
-        "password_hash": generate_password_hash("omar2025"),
-        "role": "editor",
-    },
 }
+
+UID_PREFIX = "ENT-"
+UID_PATTERN = re.compile(rf"^{UID_PREFIX}(\\d+)$")
+SIGLA_QUOTE_PATTERN = re.compile(r"[\"“”]([^\"“”]+)[\"“”]")
+SIGLA_PAREN_PATTERN = re.compile(r"\\(([^)]+)\\)")
+
+MONTHS_ES = {
+    "01": "enero",
+    "02": "febrero",
+    "03": "marzo",
+    "04": "abril",
+    "05": "mayo",
+    "06": "junio",
+    "07": "julio",
+    "08": "agosto",
+    "09": "septiembre",
+    "10": "octubre",
+    "11": "noviembre",
+    "12": "diciembre",
+}
+
+
+def periodo_sql(alias: str) -> str:
+    start_month = "CASE " + " ".join(
+        f"WHEN strftime('%m', {alias}.fecha_inicio) = '{key}' THEN '{value}'"
+        for key, value in MONTHS_ES.items()
+    ) + " END"
+    end_month = "CASE " + " ".join(
+        f"WHEN strftime('%m', {alias}.fecha_fin) = '{key}' THEN '{value}'"
+        for key, value in MONTHS_ES.items()
+    ) + " END"
+    start_day = f"printf('%02d', CAST(strftime('%d', {alias}.fecha_inicio) AS INTEGER))"
+    end_day = f"printf('%02d', CAST(strftime('%d', {alias}.fecha_fin) AS INTEGER))"
+    return (
+        f"{start_day} || ' de ' || {start_month} || ' al ' || "
+        f"{end_day} || ' de ' || {end_month}"
+    )
+
 
 
 def get_current_user():
@@ -60,6 +96,107 @@ def role_required(role: str):
     return decorator
 
 
+def normalize_text(value: str) -> str:
+    if not value:
+        return ""
+    normalized = unicodedata.normalize("NFKD", value)
+    normalized = "".join(
+        char for char in normalized if not unicodedata.combining(char)
+    )
+    normalized = re.sub(r"[^A-Za-z0-9]+", " ", normalized)
+    return normalized.strip().lower()
+
+
+def normalize_sigla(value: str) -> str:
+    if not value:
+        return ""
+    normalized = unicodedata.normalize("NFKD", value)
+    normalized = "".join(
+        char for char in normalized if not unicodedata.combining(char)
+    )
+    normalized = re.sub(r"[^A-Za-z0-9]+", "", normalized)
+    return normalized.upper()
+
+
+def extract_sigla(value: str) -> str:
+    if not value:
+        return ""
+    match = SIGLA_QUOTE_PATTERN.search(value)
+    if not match:
+        match = SIGLA_PAREN_PATTERN.search(value)
+    if not match:
+        return ""
+    return normalize_sigla(match.group(1))
+
+
+def next_ente_uid(current_max: int) -> tuple[int, str]:
+    new_value = current_max + 1
+    return new_value, f"{UID_PREFIX}{new_value:04d}"
+
+
+def max_ente_uid(conn: sqlite3.Connection) -> int:
+    rows = conn.execute(
+        "SELECT ente_uid FROM entes_detalle WHERE ente_uid IS NOT NULL"
+    ).fetchall()
+    max_value = 0
+    for row in rows:
+        match = UID_PATTERN.match(row[0])
+        if match:
+            max_value = max(max_value, int(match.group(1)))
+    return max_value
+
+
+def resolve_ente_uid(conn: sqlite3.Connection, ente_nombre: str) -> str:
+    sigla_key = extract_sigla(ente_nombre)
+    name_key = normalize_text(ente_nombre)
+    rows = conn.execute(
+        "SELECT ente_uid, ente_nombre FROM entes_detalle WHERE ente_uid IS NOT NULL"
+    ).fetchall()
+    if sigla_key:
+        for row in rows:
+            if extract_sigla(row[1]) == sigla_key:
+                return row[0]
+    if name_key:
+        for row in rows:
+            if normalize_text(row[1]) == name_key:
+                return row[0]
+    max_value = max_ente_uid(conn)
+    _, new_uid = next_ente_uid(max_value)
+    return new_uid
+
+
+def backfill_ente_uids(conn: sqlite3.Connection) -> None:
+    rows = conn.execute(
+        """
+        SELECT id, ente_nombre, ente_uid
+        FROM entes_detalle
+        ORDER BY ejercicio, id
+        """
+    ).fetchall()
+    max_value = max_ente_uid(conn)
+    sigla_map = {}
+    name_map = {}
+    for row in rows:
+        row_id, ente_nombre, ente_uid = row
+        sigla_key = extract_sigla(ente_nombre)
+        name_key = normalize_text(ente_nombre)
+        if not ente_uid:
+            if sigla_key and sigla_key in sigla_map:
+                ente_uid = sigla_map[sigla_key]
+            elif name_key and name_key in name_map:
+                ente_uid = name_map[name_key]
+            else:
+                max_value, ente_uid = next_ente_uid(max_value)
+            conn.execute(
+                "UPDATE entes_detalle SET ente_uid = ? WHERE id = ?",
+                (ente_uid, row_id),
+            )
+        if sigla_key:
+            sigla_map.setdefault(sigla_key, ente_uid)
+        if name_key:
+            name_map.setdefault(name_key, ente_uid)
+
+
 def init_db() -> None:
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
@@ -87,12 +224,14 @@ def init_db() -> None:
             """
             CREATE TABLE IF NOT EXISTS historial_titulares (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                ente_id TEXT NOT NULL,
-                ejercicio TEXT NOT NULL,
-                rol TEXT NOT NULL,
+                ejercicio INTEGER NOT NULL,
+                ente TEXT NOT NULL,
+                tipo_auditoria TEXT NOT NULL,
                 nombre TEXT NOT NULL,
-                periodo TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                cargo TEXT NOT NULL,
+                fecha_inicio DATE NOT NULL,
+                fecha_fin DATE NOT NULL,
+                tipo_registro TEXT NOT NULL
             )
             """
         )
@@ -100,6 +239,7 @@ def init_db() -> None:
             """
             CREATE TABLE IF NOT EXISTS entes_detalle (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ente_uid TEXT,
                 ente_id TEXT NOT NULL,
                 ejercicio TEXT NOT NULL,
                 ente_numero TEXT NOT NULL,
@@ -156,10 +296,50 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS observaciones (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ejercicio TEXT NOT NULL,
+                ente_id TEXT NOT NULL,
+                ente_numero TEXT,
+                ente_nombre TEXT NOT NULL,
+                tipo_auditoria TEXT NOT NULL,
+                fuente_financiamiento TEXT NOT NULL,
+                ramo_33 TEXT NOT NULL,
+                periodo_cedula TEXT,
+                periodo_titular TEXT,
+                oficio TEXT,
+                fecha_notificacion TEXT,
+                tipo_anexo TEXT NOT NULL,
+                numero_observacion INTEGER NOT NULL,
+                estado TEXT NOT NULL,
+                monto_pdp_emitido REAL,
+                monto_pdp_solventado REAL,
+                monto_pdp_pendiente REAL,
+                pdp_no_irregularidad TEXT,
+                pdp_concepto_irregularidad TEXT,
+                pdp_subconcepto_irregularidad TEXT,
+                pdp_irregularidad TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
         existing_columns = {
             row[1]
             for row in conn.execute("PRAGMA table_info(registros)").fetchall()
         }
+
+        historial_columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(historial_titulares)").fetchall()
+        }
+        if "tipo_auditoria" not in historial_columns:
+            # Needed to store separate titular/admin history per audit type
+            # (e.g. "Financiera" vs "Obra Pública") without overwriting.
+            conn.execute(
+                "ALTER TABLE historial_titulares ADD COLUMN tipo_auditoria TEXT NOT NULL DEFAULT 'Financiera'"
+            )
         if "tipo_anexo_origen" not in existing_columns:
             conn.execute(
                 "ALTER TABLE registros ADD COLUMN tipo_anexo_origen TEXT"
@@ -222,6 +402,78 @@ def init_db() -> None:
             conn.execute("ALTER TABLE oficios ADD COLUMN fuente_id INTEGER")
         if "fecha_notificacion" not in oficios_columns:
             conn.execute("ALTER TABLE oficios ADD COLUMN fecha_notificacion TEXT")
+        observaciones_columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(observaciones)").fetchall()
+        }
+        if "ente_numero" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN ente_numero TEXT")
+        if "ente_nombre" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN ente_nombre TEXT")
+            conn.execute(
+                """
+                UPDATE observaciones
+                SET ente_nombre = ''
+                WHERE ente_nombre IS NULL
+                """
+            )
+        if "tipo_auditoria" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN tipo_auditoria TEXT")
+        if "fuente_financiamiento" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN fuente_financiamiento TEXT")
+        if "ramo_33" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN ramo_33 TEXT")
+        if "periodo_cedula" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN periodo_cedula TEXT")
+        if "periodo_titular" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN periodo_titular TEXT")
+        if "oficio" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN oficio TEXT")
+        if "fecha_notificacion" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN fecha_notificacion TEXT")
+        if "tipo_anexo" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN tipo_anexo TEXT")
+        if "numero_observacion" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN numero_observacion INTEGER")
+        if "estado" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN estado TEXT")
+            if "estatus" in observaciones_columns:
+                conn.execute(
+                    """
+                    UPDATE observaciones
+                    SET estado = estatus
+                    WHERE estado IS NULL AND estatus IS NOT NULL
+                    """
+                )
+        if "monto_pdp_emitido" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN monto_pdp_emitido REAL")
+        if "monto_pdp_solventado" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN monto_pdp_solventado REAL")
+        if "monto_pdp_pendiente" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN monto_pdp_pendiente REAL")
+        if "pdp_no_irregularidad" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN pdp_no_irregularidad TEXT")
+        if "pdp_concepto_irregularidad" not in observaciones_columns:
+            conn.execute(
+                "ALTER TABLE observaciones ADD COLUMN pdp_concepto_irregularidad TEXT"
+            )
+        if "pdp_subconcepto_irregularidad" not in observaciones_columns:
+            conn.execute(
+                "ALTER TABLE observaciones ADD COLUMN pdp_subconcepto_irregularidad TEXT"
+            )
+        if "pdp_irregularidad" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN pdp_irregularidad TEXT")
+        entes_detalle_columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(entes_detalle)").fetchall()
+        }
+        if "ente_uid" not in entes_detalle_columns:
+            conn.execute("ALTER TABLE entes_detalle ADD COLUMN ente_uid TEXT")
+        missing_uid = conn.execute(
+            "SELECT COUNT(*) FROM entes_detalle WHERE ente_uid IS NULL"
+        ).fetchone()[0]
+        if missing_uid:
+            backfill_ente_uids(conn)
         conn.commit()
 
 
@@ -288,14 +540,16 @@ def entes():
             return redirect(url_for("index", notice="ente_error"))
 
         db = get_db()
+        ente_uid = resolve_ente_uid(db, ente_nombre)
         db.execute(
             """
             INSERT INTO entes_detalle (
-                ente_id, ejercicio, ente_numero, ente_nombre,
+                ente_uid, ente_id, ejercicio, ente_numero, ente_nombre,
                 responsable, clasificacion, ramo33, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(ente_id, ejercicio) DO UPDATE SET
+                ente_uid = COALESCE(entes_detalle.ente_uid, excluded.ente_uid),
                 ente_numero = excluded.ente_numero,
                 ente_nombre = excluded.ente_nombre,
                 responsable = excluded.responsable,
@@ -303,6 +557,7 @@ def entes():
                 ramo33 = excluded.ramo33
             """,
             (
+                ente_uid,
                 ente_id,
                 ejercicio,
                 ente_numero,
@@ -341,28 +596,44 @@ def historial():
             return redirect(url_for("index", notice="no_permission"))
         ejercicio = request.form.get("historial_ejercicio", "").strip()
         ente_id = request.form.get("historial_ente_id", "").strip()
-        rol = request.form.get("historial_rol", "").strip()
         nombre = request.form.get("historial_nombre", "").strip()
-        periodo = request.form.get("historial_periodo", "").strip()
+        cargo = request.form.get("historial_cargo", "").strip()
+        fecha_inicio = request.form.get("historial_fecha_inicio", "").strip()
+        fecha_fin = request.form.get("historial_fecha_fin", "").strip()
+        tipo_registro = request.form.get("historial_tipo_registro", "").strip()
+        tipo_auditoria = request.form.get("historial_tipo_auditoria", "").strip() or "Financiera"
 
-        if not all([ejercicio, ente_id, rol, nombre, periodo]):
+        if not all([ejercicio, ente_id, nombre, cargo, fecha_inicio, fecha_fin, tipo_registro]):
             return redirect(url_for("index", notice="historial_error"))
 
         db = get_db()
+        ente_row = db.execute(
+            """
+            SELECT ente_nombre
+            FROM entes_detalle
+            WHERE ejercicio = ? AND ente_id = ?
+            """,
+            (ejercicio, ente_id),
+        ).fetchone()
+        if ente_row is None:
+            return redirect(url_for("index", notice="historial_error"))
+        ente_nombre = ente_row[0]
         db.execute(
             """
             INSERT INTO historial_titulares (
-                ente_id, ejercicio, rol, nombre, periodo, created_at
+                ejercicio, ente, tipo_auditoria, nombre, cargo, fecha_inicio, fecha_fin, tipo_registro
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                ente_id,
-                ejercicio,
-                rol,
+                int(ejercicio),
+                ente_nombre,
+                tipo_auditoria,
                 nombre,
-                periodo,
-                datetime.now().strftime("%Y-%m-%d %H:%M"),
+                cargo,
+                fecha_inicio,
+                fecha_fin,
+                tipo_registro,
             ),
         )
         db.commit()
@@ -376,12 +647,14 @@ def historial():
     db = get_db()
     rows = db.execute(
         """
-        SELECT id, rol, nombre, periodo
+        SELECT id, nombre, cargo, fecha_inicio, fecha_fin, tipo_registro, tipo_auditoria
         FROM historial_titulares
-        WHERE ejercicio = ? AND ente_id = ?
+        WHERE ejercicio = ? AND ente = (
+            SELECT ente_nombre FROM entes_detalle WHERE ejercicio = ? AND ente_id = ?
+        )
         ORDER BY id DESC
         """,
-        (ejercicio, ente_id),
+        (ejercicio, ejercicio, ente_id),
     ).fetchall()
     return jsonify([dict(row) for row in rows])
 
@@ -480,6 +753,474 @@ def fuentes_ente():
         """,
         (ejercicio, ente_id),
     ).fetchall()
+    return jsonify([dict(row) for row in rows])
+
+
+@app.get("/observaciones")
+@login_required
+def observaciones_api():
+    ejercicio = request.args.get("ejercicio", "").strip()
+    ente_id = request.args.get("ente_id", "").strip()
+    tipo_anexo = request.args.get("tipo_anexo", "").strip()
+    tipo_auditoria = request.args.get("tipo_auditoria", "").strip()
+    estado = request.args.get("estado", "").strip()
+    fuente = request.args.get("fuente_financiamiento", "").strip()
+    ramo_33 = request.args.get("ramo_33", "").strip()
+    oficio = request.args.get("oficio", "").strip()
+    periodo_informe = request.args.get("periodo_informe", "").strip()
+    titular = request.args.get("titular", "").strip()
+    periodo_admin = request.args.get("periodo_admin", "").strip()
+    administrativo = request.args.get("administrativo", "").strip()
+    periodo_cedula = request.args.get("periodo_cedula", "").strip()
+    if not ejercicio:
+        return jsonify([])
+
+    db = get_db()
+    params = [ejercicio]
+    filter_sql = ""
+    if ente_id:
+        filter_sql = "AND observaciones.ente_id = ?"
+        params.append(ente_id)
+    if tipo_anexo:
+        filter_sql += " AND observaciones.tipo_anexo = ?"
+        params.append(tipo_anexo)
+    if tipo_auditoria:
+        filter_sql += " AND observaciones.tipo_auditoria = ?"
+        params.append(tipo_auditoria)
+    if estado:
+        filter_sql += " AND observaciones.estado = ?"
+        params.append(estado)
+    if fuente:
+        filter_sql += " AND observaciones.fuente_financiamiento = ?"
+        params.append(fuente)
+    if ramo_33:
+        filter_sql += " AND observaciones.ramo_33 = ?"
+        params.append(ramo_33)
+    if oficio:
+        filter_sql += " AND observaciones.oficio = ?"
+        params.append(oficio)
+    if periodo_cedula:
+        filter_sql += " AND observaciones.periodo_cedula = ?"
+        params.append(periodo_cedula)
+    if periodo_informe:
+        filter_sql += f" AND {periodo_sql('resp')} = ?"
+        params.append(periodo_informe)
+    if titular:
+        filter_sql += " AND resp.nombre = ?"
+        params.append(titular)
+    if periodo_admin:
+        filter_sql += f" AND {periodo_sql('admin')} = ?"
+        params.append(periodo_admin)
+    if administrativo:
+        filter_sql += " AND admin.nombre = ?"
+        params.append(administrativo)
+
+    rows = db.execute(
+        f"""
+        SELECT
+            observaciones.id,
+            observaciones.ejercicio,
+            observaciones.ente_id,
+            observaciones.ente_numero,
+            observaciones.ente_nombre,
+            observaciones.tipo_auditoria,
+            observaciones.fuente_financiamiento,
+            observaciones.ramo_33,
+            observaciones.periodo_cedula,
+            observaciones.periodo_titular,
+            observaciones.oficio,
+            observaciones.fecha_notificacion,
+            observaciones.tipo_anexo,
+            observaciones.numero_observacion,
+            observaciones.estado,
+            observaciones.monto_pdp_emitido,
+            observaciones.monto_pdp_solventado,
+            observaciones.monto_pdp_pendiente,
+            observaciones.pdp_no_irregularidad,
+            observaciones.pdp_concepto_irregularidad,
+            observaciones.pdp_subconcepto_irregularidad,
+            entes_detalle.clasificacion,
+            entes_detalle.responsable AS ente_responsable,
+            resp.nombre AS responsable_nombre,
+            {periodo_sql("resp")} AS responsable_periodo,
+            admin.nombre AS administrador_nombre,
+            {periodo_sql("admin")} AS administrador_periodo
+        FROM observaciones
+        LEFT JOIN entes_detalle
+            ON observaciones.ente_id = entes_detalle.ente_id
+            AND observaciones.ejercicio = entes_detalle.ejercicio
+        LEFT JOIN historial_titulares AS resp
+            ON resp.id = (
+                SELECT id
+                FROM historial_titulares
+                WHERE ejercicio = observaciones.ejercicio
+                  AND tipo_auditoria = observaciones.tipo_auditoria
+                  AND ente = COALESCE(observaciones.ente_nombre, entes_detalle.ente_nombre)
+                  AND tipo_registro = 'titular'
+                ORDER BY id DESC
+                LIMIT 1
+            )
+        LEFT JOIN historial_titulares AS admin
+            ON admin.id = (
+                SELECT id
+                FROM historial_titulares
+                WHERE ejercicio = observaciones.ejercicio
+                  AND tipo_auditoria = observaciones.tipo_auditoria
+                  AND ente = COALESCE(observaciones.ente_nombre, entes_detalle.ente_nombre)
+                  AND tipo_registro = 'director_administrativo'
+                ORDER BY id DESC
+                LIMIT 1
+            )
+        WHERE observaciones.ejercicio = ?
+        {filter_sql}
+        ORDER BY
+            CAST(entes_detalle.ente_numero AS REAL) ASC,
+            entes_detalle.ente_numero ASC,
+            observaciones.ente_id ASC,
+            observaciones.tipo_anexo ASC,
+            observaciones.numero_observacion ASC
+        """,
+        params,
+    ).fetchall()
+
+    return jsonify([dict(row) for row in rows])
+
+
+@app.get("/observaciones-filtros")
+@login_required
+def observaciones_filtros():
+    ejercicio = request.args.get("ejercicio", "").strip()
+    ente_id = request.args.get("ente_id", "").strip()
+    tipo_auditoria = request.args.get("tipo_auditoria", "").strip()
+    titular_seleccionado = request.args.get("titular", "").strip()
+    administrativo_seleccionado = request.args.get("administrativo", "").strip()
+    if not ejercicio:
+        return jsonify({})
+
+    db = get_db()
+    filtros = {}
+    params = [ejercicio]
+    ente_clause = ""
+    if ente_id:
+        ente_clause = "AND ente_id = ?"
+        params.append(ente_id)
+    auditoria_clause = ""
+    if tipo_auditoria:
+        auditoria_clause = "AND tipo_auditoria = ?"
+        params.append(tipo_auditoria)
+
+    tipos = db.execute(
+        f"""
+        SELECT DISTINCT tipo_anexo
+        FROM observaciones
+        WHERE ejercicio = ? {ente_clause} {auditoria_clause}
+          AND tipo_anexo IS NOT NULL AND tipo_anexo != ''
+        ORDER BY tipo_anexo
+        """,
+        params,
+    ).fetchall()
+    auditorias = db.execute(
+        f"""
+        SELECT DISTINCT tipo_auditoria
+        FROM observaciones
+        WHERE ejercicio = ? {ente_clause}
+          AND tipo_auditoria IS NOT NULL AND tipo_auditoria != ''
+        ORDER BY tipo_auditoria
+        """,
+        params,
+    ).fetchall()
+    estados = db.execute(
+        f"""
+        SELECT DISTINCT estado
+        FROM observaciones
+        WHERE ejercicio = ? {ente_clause} {auditoria_clause}
+          AND estado IS NOT NULL AND estado != ''
+        ORDER BY estado
+        """,
+        params,
+    ).fetchall()
+    fuentes = db.execute(
+        f"""
+        SELECT DISTINCT fuente_financiamiento
+        FROM observaciones
+        WHERE ejercicio = ? {ente_clause} {auditoria_clause}
+          AND fuente_financiamiento IS NOT NULL AND fuente_financiamiento != ''
+        ORDER BY fuente_financiamiento
+        """,
+        params,
+    ).fetchall()
+    ramos = db.execute(
+        f"""
+        SELECT DISTINCT ramo_33
+        FROM observaciones
+        WHERE ejercicio = ? {ente_clause} {auditoria_clause}
+          AND ramo_33 IS NOT NULL AND ramo_33 != ''
+        ORDER BY ramo_33
+        """,
+        params,
+    ).fetchall()
+    oficios = db.execute(
+        f"""
+        SELECT DISTINCT oficio
+        FROM observaciones
+        WHERE ejercicio = ? {ente_clause} {auditoria_clause}
+          AND oficio IS NOT NULL AND oficio != ''
+        ORDER BY oficio
+        """,
+        params,
+    ).fetchall()
+    ente_nombre = None
+    if ente_id:
+        ente_row = db.execute(
+            """
+            SELECT ente_nombre
+            FROM entes_detalle
+            WHERE ejercicio = ? AND ente_id = ?
+            """,
+            (ejercicio, ente_id),
+        ).fetchone()
+        if ente_row:
+            ente_nombre = ente_row[0]
+
+    titular_params = [ejercicio]
+    titular_clause = ""
+    if ente_nombre:
+        titular_clause = "AND ente = ?"
+        titular_params.append(ente_nombre)
+
+    periodos_params = titular_params.copy()
+    periodo_titular_clause = ""
+    if titular_seleccionado:
+        periodo_titular_clause = "AND nombre = ?"
+        periodos_params.append(titular_seleccionado)
+
+    periodos_informe = db.execute(
+        f"""
+        SELECT DISTINCT {periodo_sql("historial_titulares")} AS periodo
+        FROM historial_titulares
+        WHERE ejercicio = ? {titular_clause} {periodo_titular_clause}
+          AND tipo_auditoria = ?
+          AND tipo_registro = 'titular'
+          AND fecha_inicio IS NOT NULL AND fecha_fin IS NOT NULL
+        ORDER BY fecha_inicio
+        """,
+        periodos_params + [tipo_auditoria or "Financiera"],
+    ).fetchall()
+    titulares = db.execute(
+        f"""
+        SELECT DISTINCT nombre
+        FROM historial_titulares
+        WHERE ejercicio = ? {titular_clause}
+          AND tipo_auditoria = ?
+          AND tipo_registro = 'titular'
+          AND nombre IS NOT NULL AND nombre != ''
+        ORDER BY nombre
+        """,
+        titular_params + [tipo_auditoria or "Financiera"],
+    ).fetchall()
+
+    admin_params = [ejercicio]
+    admin_clause = ""
+    if ente_nombre:
+        admin_clause = "AND ente = ?"
+        admin_params.append(ente_nombre)
+
+    admin_periodos_params = admin_params.copy()
+    periodo_admin_clause = ""
+    if administrativo_seleccionado:
+        periodo_admin_clause = "AND nombre = ?"
+        admin_periodos_params.append(administrativo_seleccionado)
+
+    periodos_admin = db.execute(
+        f"""
+        SELECT DISTINCT {periodo_sql("historial_titulares")} AS periodo
+        FROM historial_titulares
+        WHERE ejercicio = ? {admin_clause} {periodo_admin_clause}
+          AND tipo_auditoria = ?
+          AND tipo_registro = 'director_administrativo'
+          AND fecha_inicio IS NOT NULL AND fecha_fin IS NOT NULL
+        ORDER BY fecha_inicio
+        """,
+        admin_periodos_params + [tipo_auditoria or "Financiera"],
+    ).fetchall()
+    administrativos = db.execute(
+        f"""
+        SELECT DISTINCT nombre
+        FROM historial_titulares
+        WHERE ejercicio = ? {admin_clause}
+          AND tipo_auditoria = ?
+          AND tipo_registro = 'director_administrativo'
+          AND nombre IS NOT NULL AND nombre != ''
+        ORDER BY nombre
+        """,
+        admin_params + [tipo_auditoria or "Financiera"],
+    ).fetchall()
+    cedulas = db.execute(
+        f"""
+        SELECT DISTINCT periodo_cedula
+        FROM observaciones
+        WHERE ejercicio = ? {ente_clause} {auditoria_clause}
+          AND periodo_cedula IS NOT NULL AND periodo_cedula != ''
+        ORDER BY periodo_cedula
+        """,
+        params,
+    ).fetchall()
+
+    filtros["tipo_anexo"] = [row[0] for row in tipos]
+    filtros["tipo_auditoria"] = [row[0] for row in auditorias]
+    filtros["estado"] = [row[0] for row in estados]
+    filtros["fuente_financiamiento"] = [row[0] for row in fuentes]
+    filtros["ramo_33"] = [row[0] for row in ramos]
+    filtros["oficios"] = [row[0] for row in oficios]
+    filtros["periodo_informe"] = [row[0] for row in periodos_informe]
+    filtros["titulares"] = [row[0] for row in titulares]
+    filtros["periodo_admin"] = [row[0] for row in periodos_admin]
+    filtros["administrativos"] = [row[0] for row in administrativos]
+    filtros["cedulas"] = [row[0] for row in cedulas]
+
+    return jsonify(filtros)
+
+
+@app.get("/observaciones-stats")
+@login_required
+def observaciones_stats():
+    ente_id = request.args.get("ente_id", "").strip()
+    where_clause = ""
+    params = []
+    if ente_id:
+        where_clause = "WHERE ente_id = ?"
+        params.append(ente_id)
+
+    db = get_db()
+    totals = db.execute(
+        f"""
+        SELECT ejercicio, COUNT(*) as total
+        FROM observaciones
+        {where_clause}
+        GROUP BY ejercicio
+        ORDER BY ejercicio
+        """,
+        params,
+    ).fetchall()
+
+    estados = db.execute(
+        f"""
+        SELECT ejercicio, estado, COUNT(*) as total
+        FROM observaciones
+        {where_clause}
+        GROUP BY ejercicio, estado
+        ORDER BY ejercicio
+        """,
+        params,
+    ).fetchall()
+
+    tipos = db.execute(
+        f"""
+        SELECT ejercicio, tipo_anexo, COUNT(*) as total
+        FROM observaciones
+        {where_clause}
+        GROUP BY ejercicio, tipo_anexo
+        ORDER BY ejercicio
+        """,
+        params,
+    ).fetchall()
+
+    tipos_estados = db.execute(
+        f"""
+        SELECT ejercicio, tipo_anexo, estado, COUNT(*) as total
+        FROM observaciones
+        {where_clause}
+        GROUP BY ejercicio, tipo_anexo, estado
+        ORDER BY ejercicio
+        """,
+        params,
+    ).fetchall()
+
+    fuentes = db.execute(
+        f"""
+        SELECT ejercicio, fuente_financiamiento, COUNT(*) as total
+        FROM observaciones
+        {where_clause}
+        GROUP BY ejercicio, fuente_financiamiento
+        ORDER BY ejercicio
+        """,
+        params,
+    ).fetchall()
+
+    pdp_where = "WHERE tipo_anexo = 'PDP'"
+    pdp_params = []
+    if ente_id:
+        pdp_where = "WHERE ente_id = ? AND tipo_anexo = 'PDP'"
+        pdp_params.append(ente_id)
+
+    pdp = db.execute(
+        f"""
+        SELECT
+            ejercicio,
+            SUM(COALESCE(monto_pdp_emitido, 0)) as emitido,
+            SUM(COALESCE(monto_pdp_solventado, 0)) as solventado,
+            SUM(COALESCE(monto_pdp_pendiente, 0)) as pendiente
+        FROM observaciones
+        {pdp_where}
+        GROUP BY ejercicio
+        ORDER BY ejercicio
+        """,
+        pdp_params,
+    ).fetchall()
+
+    return jsonify(
+        {
+            "totals": [dict(row) for row in totals],
+            "estados": [dict(row) for row in estados],
+            "tipos": [dict(row) for row in tipos],
+            "tipos_estados": [dict(row) for row in tipos_estados],
+            "fuentes": [dict(row) for row in fuentes],
+            "pdp": [dict(row) for row in pdp],
+        }
+    )
+
+
+@app.get("/catalogo-entes")
+@login_required
+def catalogo_entes():
+    ejercicio = request.args.get("ejercicio", "").strip()
+    if not ejercicio:
+        return jsonify([])
+
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT
+            entes_detalle.ente_id,
+            entes_detalle.ente_uid,
+            entes_detalle.ente_numero,
+            entes_detalle.ente_nombre,
+            entes_detalle.ejercicio,
+            entes_detalle.clasificacion,
+            entes_detalle.ramo33,
+            entes_detalle.responsable,
+            (
+                SELECT ed.ente_nombre
+                FROM entes_detalle AS ed
+                WHERE COALESCE(ed.ente_uid, ed.ente_id)
+                  = COALESCE(entes_detalle.ente_uid, entes_detalle.ente_id)
+                  AND ed.ejercicio < entes_detalle.ejercicio
+                ORDER BY ed.ejercicio DESC
+                LIMIT 1
+            ) AS nombre_anterior,
+            (
+                SELECT COUNT(DISTINCT ed.ente_nombre)
+                FROM entes_detalle AS ed
+                WHERE COALESCE(ed.ente_uid, ed.ente_id)
+                  = COALESCE(entes_detalle.ente_uid, entes_detalle.ente_id)
+            ) AS nombres_distintos
+        FROM entes_detalle
+        WHERE entes_detalle.ejercicio = ?
+        ORDER BY CAST(entes_detalle.ente_numero AS REAL) ASC, entes_detalle.ente_numero ASC
+        """,
+        (ejercicio,),
+    ).fetchall()
+
     return jsonify([dict(row) for row in rows])
 
 
@@ -594,264 +1335,15 @@ def reclasificar(registro_id: int):
     return redirect(url_for("index", saved="1"))
 
 
-@app.route("/", methods=["GET", "POST"])
+@app.get("/")
 @login_required
 def index():
-    message = None
-    message_type = "info"
     user = get_current_user()
     can_edit = user["role"] == "editor" if user else False
-    is_omar = user["username"] == "omar" if user else False
-
-    if request.method == "POST":
-        if not can_edit:
-            return redirect(url_for("index", notice="no_permission"))
-        ejercicio = request.form.get("ejercicio", "").strip()
-        ente_id = request.form.get("ente_id", "").strip()
-        responsable_hist_id = request.form.get("responsable_hist_id", "").strip()
-        administrador_hist_id = request.form.get("administrador_hist_id", "").strip()
-        tipo_anexo = request.form.get("tipo_anexo", "").strip()
-        monto_pdp = request.form.get("monto_pdp", "").strip()
-        estado = request.form.get("estado", "").strip()
-        fuente_nombre = request.form.get("fuente_nombre", "").strip()
-        irregularidad_concepto = request.form.get("irregularidad_concepto", "").strip()
-
-        if not ejercicio or not ente_id or not responsable_hist_id or not administrador_hist_id or not tipo_anexo or not estado:
-            message = "Completa todos los campos para guardar el registro."
-            message_type = "error"
-        else:
-            db = get_db()
-            ente_row = db.execute(
-                """
-                SELECT ente_nombre
-                FROM entes_detalle
-                WHERE ente_id = ? AND ejercicio = ?
-                """,
-                (ente_id, ejercicio),
-            ).fetchone()
-
-            if ente_row is None:
-                message = "El ID de ente no existe para el ejercicio seleccionado."
-                message_type = "error"
-
-            responsable_row = db.execute(
-                """
-                SELECT nombre, periodo
-                FROM historial_titulares
-                WHERE id = ? AND rol = 'Responsable' AND ente_id = ? AND ejercicio = ?
-                """,
-                (responsable_hist_id, ente_id, ejercicio),
-            ).fetchone()
-
-            administrador_row = db.execute(
-                """
-                SELECT nombre, periodo
-                FROM historial_titulares
-                WHERE id = ? AND rol = 'Administrador' AND ente_id = ? AND ejercicio = ?
-                """,
-                (administrador_hist_id, ente_id, ejercicio),
-            ).fetchone()
-
-            if responsable_row is None or administrador_row is None:
-                message = "Selecciona responsable y administrador válidos para el ente."
-                message_type = "error"
-
-            fuente_id = None
-            if fuente_nombre:
-                db.execute(
-                    """
-                    INSERT OR IGNORE INTO fuentes_financiamiento (nombre, created_at)
-                    VALUES (?, ?)
-                    """,
-                    (fuente_nombre, datetime.now().strftime("%Y-%m-%d %H:%M")),
-                )
-                fuente_id = db.execute(
-                    "SELECT id FROM fuentes_financiamiento WHERE nombre = ?",
-                    (fuente_nombre,),
-                ).fetchone()["id"]
-
-            irregularidad_id = None
-            if tipo_anexo == "PDP" and irregularidad_concepto:
-                db.execute(
-                    """
-                    INSERT OR IGNORE INTO catalogo_irregularidades (concepto, created_at)
-                    VALUES (?, ?)
-                    """,
-                    (irregularidad_concepto, datetime.now().strftime("%Y-%m-%d %H:%M")),
-                )
-                irregularidad_id = db.execute(
-                    "SELECT id FROM catalogo_irregularidades WHERE concepto = ?",
-                    (irregularidad_concepto,),
-                ).fetchone()["id"]
-
-            monto_valor = None
-            if tipo_anexo == "PDP":
-                try:
-                    monto_valor = float(monto_pdp.replace(",", "")) if monto_pdp else 0.0
-                except ValueError:
-                    message = "El monto PDP debe ser numérico."
-                    message_type = "error"
-                    monto_valor = None
-
-            if message_type != "error":
-                db.execute(
-                    """
-                    INSERT INTO registros (
-                        ejercicio, ente, ente_id, responsable, administrador,
-                        responsable_hist_id, administrador_hist_id, tipo_anexo,
-                        tipo_anexo_origen, monto_pdp, estado, fuente_id,
-                        irregularidad_id, created_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        ejercicio,
-                        ente_row["ente_nombre"],
-                        ente_id,
-                        responsable_row["nombre"],
-                        administrador_row["nombre"],
-                        int(responsable_hist_id),
-                        int(administrador_hist_id),
-                        tipo_anexo,
-                        tipo_anexo,
-                        monto_valor,
-                        estado,
-                        fuente_id,
-                        irregularidad_id,
-                        datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    ),
-                )
-                db.execute(
-                    """
-                    INSERT OR IGNORE INTO entes (ejercicio, nombre, created_at)
-                    VALUES (?, ?, ?)
-                    """,
-                    (
-                    ejercicio,
-                    ente_row["ente_nombre"],
-                    datetime.now().strftime("%Y-%m-%d %H:%M"),
-                ),
-            )
-            db.commit()
-            return redirect(url_for("index", saved="1"))
-
-    if request.args.get("saved") == "1":
-        message = "Registro guardado correctamente."
-        message_type = "success"
-    elif request.args.get("notice") == "ente_saved":
-        message = "Ente guardado correctamente."
-        message_type = "success"
-    elif request.args.get("notice") == "ente_error":
-        message = "Completa todos los campos del ente."
-        message_type = "error"
-    elif request.args.get("notice") == "fuente_saved":
-        message = "Fuente de financiamiento guardada."
-        message_type = "success"
-    elif request.args.get("notice") == "fuente_error":
-        message = "Captura el nombre de la fuente."
-        message_type = "error"
-    elif request.args.get("notice") == "irregularidad_saved":
-        message = "Concepto de irregularidad guardado."
-        message_type = "success"
-    elif request.args.get("notice") == "irregularidad_error":
-        message = "Captura el concepto de irregularidad."
-        message_type = "error"
-    elif request.args.get("notice") == "historial_saved":
-        message = "Titular guardado en historial."
-        message_type = "success"
-    elif request.args.get("notice") == "historial_error":
-        message = "Completa todos los datos del historial."
-        message_type = "error"
-    elif request.args.get("notice") == "oficio_saved":
-        message = "Oficio guardado correctamente."
-        message_type = "success"
-    elif request.args.get("notice") == "oficio_error":
-        message = "Completa ejercicio, ente, oficio, tipo de auditoria, fecha y fuente."
-        message_type = "error"
-    elif request.args.get("notice") == "no_permission":
-        message = "No tienes permisos para registrar informacion."
-        message_type = "error"
-
-    db = get_db()
-    records = db.execute(
-        """
-        SELECT
-            registros.id,
-            registros.ejercicio,
-            registros.ente,
-            registros.ente_id,
-            registros.responsable,
-            registros.administrador,
-            registros.tipo_anexo,
-            registros.tipo_anexo_origen,
-            registros.monto_pdp,
-            registros.estado,
-            registros.created_at,
-            fuentes_financiamiento.nombre AS fuente_nombre,
-            catalogo_irregularidades.concepto AS irregularidad_concepto,
-            resp.periodo AS responsable_periodo,
-            admin.periodo AS administrador_periodo
-        FROM registros
-        LEFT JOIN fuentes_financiamiento
-            ON registros.fuente_id = fuentes_financiamiento.id
-        LEFT JOIN catalogo_irregularidades
-            ON registros.irregularidad_id = catalogo_irregularidades.id
-        LEFT JOIN historial_titulares AS resp
-            ON registros.responsable_hist_id = resp.id
-        LEFT JOIN historial_titulares AS admin
-            ON registros.administrador_hist_id = admin.id
-        ORDER BY registros.id DESC
-        """
-    ).fetchall()
-
-    fuentes = db.execute(
-        """
-        SELECT id, nombre
-        FROM fuentes_financiamiento
-        ORDER BY nombre ASC
-        """
-    ).fetchall()
-
-    irregularidades_list = db.execute(
-        """
-        SELECT id, concepto
-        FROM catalogo_irregularidades
-        ORDER BY concepto ASC
-        """
-    ).fetchall()
-
-    oficios = db.execute(
-        """
-        SELECT
-            oficios.id,
-            oficios.ejercicio,
-            oficios.oficio,
-            oficios.tipo_auditoria,
-            oficios.fecha_notificacion,
-            oficios.created_at,
-            entes_detalle.ente_nombre AS ente_nombre,
-            fuentes_financiamiento.nombre AS fuente_nombre
-        FROM oficios
-        LEFT JOIN entes_detalle
-            ON oficios.ente_id = entes_detalle.ente_id
-            AND oficios.ejercicio = entes_detalle.ejercicio
-        LEFT JOIN fuentes_financiamiento
-            ON oficios.fuente_id = fuentes_financiamiento.id
-        ORDER BY oficios.id DESC
-        """
-    ).fetchall()
-
     return render_template(
         "index.html",
-        records=records,
-        fuentes=fuentes,
-        irregularidades=irregularidades_list,
-        oficios=oficios,
-        message=message,
-        message_type=message_type,
         user=user,
         can_edit=can_edit,
-        is_omar=is_omar,
     )
 
 

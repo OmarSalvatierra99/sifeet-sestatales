@@ -16,373 +16,265 @@
         <h1>SIFEET Estatales</h1>
         <p class="subtitle">Sistema de registro de Ejercicios Fiscales y anexos institucionales</p>
       </div>
-      <div class="header-badge">
-        <span>Usuario</span>
-        <strong>{{ user.username }}</strong>
-        <span>{{ "Captura" if can_edit else "Consulta" }}</span>
-        <a class="btn-secondary" href="{{ url_for('logout') }}">Cerrar sesión</a>
-      </div>
-      <div class="header-badge">
-        <span>Ejercicios</span>
-        <strong>2023 · 2024 · 2025</strong>
+      <div class="header-badge user-badge">
+        <div class="user-meta">
+          <span>Usuario</span>
+          <strong>{{ user.username }}</strong>
+        </div>
+        <div class="user-actions">
+          <span class="user-role">{{ "Captura" if can_edit else "Consulta" }}</span>
+          <a class="btn-secondary btn-compact" href="{{ url_for('logout') }}">Cerrar sesión</a>
+        </div>
       </div>
     </div>
   </header>
 
   <main class="page-content">
-    {% if is_omar %}
-      <section class="panel oficio-panel">
-        <div class="panel-header">
-          <h2>Registro de oficio</h2>
-          <p>Captura el oficio con su tipo de auditoria y fuente del ente.</p>
-        </div>
-
-        {% if message %}
-          <div class="status status-{{ message_type }}">{{ message }}</div>
-        {% endif %}
-
-        <form class="record-form" method="POST" action="{{ url_for('oficios') }}">
-          <div class="form-grid">
-            <div class="field">
-              <label for="oficio_ejercicio">Ejercicio</label>
-              <select id="oficio_ejercicio" name="oficio_ejercicio" required>
-                <option value="" disabled selected>Selecciona</option>
-                <option value="2023">2023</option>
-                <option value="2024">2024</option>
-                <option value="2025">2025</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="oficio_ente_id">Ente</label>
-              <select id="oficio_ente_id" name="oficio_ente_id" required>
-                <option value="" disabled selected>Selecciona</option>
-              </select>
-              <span class="helper">Primero selecciona el ejercicio.</span>
-            </div>
-            <div class="field">
-              <label for="oficio_numero">Oficio</label>
-              <input id="oficio_numero" name="oficio_numero" type="text" required />
-            </div>
-            <div class="field">
-              <label for="tipo_auditoria">Tipo de auditoria</label>
-              <select id="tipo_auditoria" name="tipo_auditoria" required>
-                <option value="" disabled selected>Selecciona</option>
-                <option value="Cuenta Pública">Cuenta Pública</option>
-                <option value="Desempeño">Desempeño</option>
-                <option value="Financiera">Financiera</option>
-                <option value="Obra Pública">Obra Pública</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="fecha_notificacion">Fecha de Notificación</label>
-              <input id="fecha_notificacion" name="fecha_notificacion" type="date" required />
-            </div>
-            <div class="field">
-              <label for="oficio_fuente_id">Fuente de financiamiento</label>
-              <select id="oficio_fuente_id" name="oficio_fuente_id" required>
-                <option value="" disabled selected>Selecciona</option>
-              </select>
-              <span class="helper">Se listan las fuentes registradas para el ente.</span>
-            </div>
-          </div>
-          <button class="btn-primary" type="submit">Guardar oficio</button>
-        </form>
-
-        {% if oficios %}
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>Ejercicio</th>
-                  <th>Ente</th>
-                  <th>Oficio</th>
-                  <th>Tipo de auditoria</th>
-                  <th>Fecha de Notificación</th>
-                  <th>Fuente</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for oficio in oficios %}
-                  <tr>
-                    <td>{{ oficio.created_at }}</td>
-                    <td>{{ oficio.ejercicio }}</td>
-                    <td>{{ oficio.ente_nombre or "—" }}</td>
-                    <td>{{ oficio.oficio }}</td>
-                    <td>{{ oficio.tipo_auditoria }}</td>
-                    <td>{{ oficio.fecha_notificacion }}</td>
-                    <td>{{ oficio.fuente_nombre or "—" }}</td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% else %}
-          <div class="empty-state">
-            <p>No hay oficios registrados todavía.</p>
-            <span>Captura un nuevo oficio desde el formulario.</span>
-          </div>
-        {% endif %}
-      </section>
-    {% else %}
-      <section class="panel form-panel">
-        <div class="panel-header">
-          <h2>Alta de registro</h2>
-          <p>Captura y resguardo de Entes y anexos por ejercicio fiscal.</p>
-        </div>
-
-        {% if message %}
-          <div class="status status-{{ message_type }}">{{ message }}</div>
-        {% endif %}
-        {% if not can_edit %}
-          <div class="status status-info">Usuario con permisos de consulta: no puede capturar información.</div>
-        {% endif %}
-
-        <form class="record-form" method="POST" autocomplete="off">
-          <div class="form-grid">
-            <div class="field">
-              <label for="ejercicio">Ejercicio Fiscal</label>
-              <select id="ejercicio" name="ejercicio" required>
-                <option value="" disabled selected>Selecciona</option>
-                <option value="2023">2023</option>
-                <option value="2024">2024</option>
-                <option value="2025">2025</option>
-              </select>
-            </div>
-
-            <div class="field">
-              <label for="ente_id">Ente (ID)</label>
-              <input id="ente_id" name="ente_id" type="text" list="entesList" placeholder="ID institucional del ente" required />
-              <datalist id="entesList"></datalist>
-            </div>
-
-            <div class="field">
-              <label for="ente_nombre">Ente (Nombre)</label>
-              <input id="ente_nombre" name="ente_nombre" type="text" placeholder="Se carga automaticamente" readonly />
-            </div>
-
-            <div class="field">
-              <label for="ente_numero">Ente (Numero)</label>
-              <input id="ente_numero" name="ente_numero" type="text" placeholder="Se carga automaticamente" readonly />
-            </div>
-
-            <div class="field">
-              <label for="responsable_hist_id">Responsable</label>
-              <select id="responsable_hist_id" name="responsable_hist_id" required>
-                <option value="" disabled selected>Selecciona</option>
-              </select>
-              <span class="helper" id="responsable_periodo">Periodo: —</span>
-            </div>
-
-            <div class="field">
-              <label for="administrador_hist_id">Administrador</label>
-              <select id="administrador_hist_id" name="administrador_hist_id" required>
-                <option value="" disabled selected>Selecciona</option>
-              </select>
-              <span class="helper" id="administrador_periodo">Periodo: —</span>
-            </div>
-
-            <div class="field">
-              <label for="monto_pdp">Monto PDP</label>
-              <input id="monto_pdp" name="monto_pdp" type="number" step="0.01" min="0" placeholder="0.00" disabled />
-              <span class="helper">Solo aplica para observaciones PDP.</span>
-            </div>
-
-            <div class="field">
-              <label for="fuente_nombre">Fuente de financiamiento</label>
-              <input id="fuente_nombre" name="fuente_nombre" type="text" list="fuentesList" placeholder="Captura o selecciona" />
-              <datalist id="fuentesList">
-                {% for fuente in fuentes %}
-                  <option value="{{ fuente.nombre }}"></option>
-                {% endfor %}
-              </datalist>
-            </div>
-
-            <div class="field">
-              <label for="irregularidad_concepto">Concepto de irregularidad (PDP)</label>
-              <input id="irregularidad_concepto" name="irregularidad_concepto" type="text" list="irregularidadesList" placeholder="Solo PDP" disabled />
-              <datalist id="irregularidadesList">
-                {% for irregularidad in irregularidades %}
-                  <option value="{{ irregularidad.concepto }}"></option>
-                {% endfor %}
-              </datalist>
-            </div>
-          </div>
-
-          <fieldset class="field fieldset">
-            <legend>Tipo de Anexo</legend>
-            <div class="chip-group">
-              {% for option in ["SA", "PDP", "PRAS", "PEFCF", "R"] %}
-                <label class="chip">
-                  <input type="radio" name="tipo_anexo" value="{{ option }}" required>
-                  <span>{{ option }}</span>
-                </label>
-              {% endfor %}
-            </div>
-          </fieldset>
-
+    <section class="panel filter-panel">
+      <div class="panel-header">
+        <h2>Filtro principal</h2>
+        <p>Selecciona el ejercicio para desplegar toda la información.</p>
+      </div>
+      <form class="record-form filters-form" autocomplete="off">
+        <div class="form-grid">
           <div class="field">
-            <label for="estado">Estado</label>
-            <select id="estado" name="estado" required>
+            <label for="main_ejercicio">Ejercicio</label>
+            <select id="main_ejercicio" name="main_ejercicio" required>
               <option value="" disabled selected>Selecciona</option>
-              <option value="Emitido">Emitido</option>
-              <option value="Solventado">Solventado</option>
-              <option value="Pendiente">Pendiente</option>
+              <option value="2023">2023</option>
+              <option value="2024">2024</option>
+              <option value="2025">2025</option>
             </select>
           </div>
-
-          <button class="btn-primary" type="submit" {% if not can_edit %}disabled{% endif %}>Guardar registro</button>
-        </form>
-      </section>
-
-      <section class="panel table-panel">
-        <div class="panel-header">
-          <h2>Registros recientes</h2>
-          <p>{{ records|length }} registros almacenados.</p>
-        </div>
-
-        {% if records %}
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>Ejercicio</th>
-                  <th>Ente (ID)</th>
-                  <th>Ente (Nombre)</th>
-                  <th>Responsable</th>
-                  <th>Administrador</th>
-                  <th>Tipo de Anexo</th>
-                  <th>Monto PDP</th>
-                  <th>Estado</th>
-                  <th>Fuente</th>
-                  <th>Irregularidad</th>
-                  <th>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for record in records %}
-                  <tr>
-                    <td>{{ record.created_at }}</td>
-                    <td>{{ record.ejercicio }}</td>
-                    <td>{{ record.ente_id or "—" }}</td>
-                    <td>{{ record.ente }}</td>
-                    <td>
-                      {{ record.responsable }}
-                      <span class="inheritance">Periodo: {{ record.responsable_periodo or "—" }}</span>
-                    </td>
-                    <td>
-                      {{ record.administrador }}
-                      <span class="inheritance">Periodo: {{ record.administrador_periodo or "—" }}</span>
-                    </td>
-                    <td>
-                      <span class="tag">{{ record.tipo_anexo }}</span>
-                      {% if record.tipo_anexo != record.tipo_anexo_origen %}
-                        <span class="inheritance">Reclasificado de {{ record.tipo_anexo_origen }}</span>
-                      {% endif %}
-                    </td>
-                    <td>
-                      {% if record.tipo_anexo == "PDP" %}
-                        {{ "%.2f"|format(record.monto_pdp or 0) }}
-                      {% else %}
-                        <span class="muted">—</span>
-                      {% endif %}
-                    </td>
-                    <td><span class="tag tag-state">{{ record.estado }}</span></td>
-                    <td>{{ record.fuente_nombre or "—" }}</td>
-                    <td>
-                      {% if record.tipo_anexo == "PDP" %}
-                        {{ record.irregularidad_concepto or "—" }}
-                      {% else %}
-                        <span class="muted">—</span>
-                      {% endif %}
-                    </td>
-                    <td>
-                      {% if record.tipo_anexo in ["PDP", "PRAS"] and can_edit %}
-                        <form method="POST" action="{{ url_for('reclasificar', registro_id=record.id) }}">
-                          <button type="submit" class="btn-secondary">
-                            Reclasificar a {{ "PRAS" if record.tipo_anexo == "PDP" else "PDP" }}
-                          </button>
-                        </form>
-                      {% else %}
-                        <span class="muted">—</span>
-                      {% endif %}
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
+          <div class="field">
+            <label for="obs_ente_id">Ente</label>
+            <select id="obs_ente_id" name="obs_ente_id">
+              <option value="">Todos los entes</option>
+            </select>
           </div>
-        {% else %}
-          <div class="empty-state">
-            <p>No hay registros capturados todavía.</p>
-            <span>Inicia una nueva captura desde el formulario.</span>
-          </div>
-        {% endif %}
-      </section>
-
-      <section class="panel chart-panel">
-        <div class="panel-header">
-          <h2>Comparativas por ejercicio</h2>
-          <p>Lectura rápida del comportamiento institucional por ejercicio fiscal.</p>
-        </div>
-
-        <div class="chart-grid">
-          <div class="chart-card">
-            <h3>Registros totales por ejercicio</h3>
-            <canvas id="chartTotals" height="140"></canvas>
-          </div>
-          <div class="chart-card">
-            <h3>Estados por ejercicio</h3>
-            <canvas id="chartEstados" height="140"></canvas>
+          <div class="field">
+            <label for="main_tipo_auditoria">Tipo de auditoria</label>
+            <select id="main_tipo_auditoria" name="main_tipo_auditoria">
+              <option value="">Todas</option>
+            </select>
           </div>
         </div>
-        <div class="chart-footnote">
-          *Datos generados a partir de los registros capturados en el sistema.
-        </div>
-      </section>
+      </form>
+      <div class="tab-bar" role="tablist">
+        <button class="tab-button is-active" type="button" data-tab="observaciones">Observaciones</button>
+        <button class="tab-button" type="button" data-tab="catalogo">Catálogo de entes</button>
+      </div>
+    </section>
 
-      <section class="panel history-panel">
-        <div class="panel-header">
-          <h2>Historial de titulares</h2>
-          <p>Registra cambios de responsables o administradores por ejercicio.</p>
-        </div>
-        <form class="record-form" method="POST" action="{{ url_for('historial') }}">
-          <div class="form-grid">
-            <div class="field">
-              <label for="historial_ejercicio">Ejercicio</label>
-              <select id="historial_ejercicio" name="historial_ejercicio" required>
-                <option value="" disabled selected>Selecciona</option>
-                <option value="2023">2023</option>
-                <option value="2024">2024</option>
-                <option value="2025">2025</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="historial_ente_id">Ente (ID)</label>
-              <input id="historial_ente_id" name="historial_ente_id" type="text" placeholder="ID institucional del ente" required />
-            </div>
-            <div class="field">
-              <label for="historial_rol">Rol</label>
-              <select id="historial_rol" name="historial_rol" required>
-                <option value="" disabled selected>Selecciona</option>
-                <option value="Responsable">Responsable</option>
-                <option value="Administrador">Administrador</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="historial_nombre">Nombre</label>
-              <input id="historial_nombre" name="historial_nombre" type="text" required />
-            </div>
-            <div class="field">
-              <label for="historial_periodo">Periodo</label>
-              <input id="historial_periodo" name="historial_periodo" type="text" placeholder="Ej. 01 de abril al 30 de marzo" required />
-            </div>
+    <section class="panel filter-panel tab-section" data-tab="observaciones">
+      <div class="panel-header">
+        <h2>Catálogo de filtros de titulares</h2>
+        <p>Filtra por periodos y titulares registrados en el historial.</p>
+      </div>
+      <form class="record-form filters-form" autocomplete="off">
+        <div class="form-grid">
+          <div class="field">
+            <label for="titular_periodo_informe">Periodo Informe</label>
+            <select id="titular_periodo_informe" name="titular_periodo_informe">
+              <option value="">Todos</option>
+            </select>
           </div>
-          <button class="btn-primary" type="submit" {% if not can_edit %}disabled{% endif %}>Guardar en historial</button>
-        </form>
-      </section>
-    {% endif %}
+          <div class="field">
+            <label for="titular_nombre">Titular</label>
+            <select id="titular_nombre" name="titular_nombre">
+              <option value="">Todos</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="admin_periodo">Periodo Administrativo</label>
+            <select id="admin_periodo" name="admin_periodo">
+              <option value="">Todos</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="admin_nombre">Administrativo</label>
+            <select id="admin_nombre" name="admin_nombre">
+              <option value="">Todos</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="cedula_resultados">Cédula de resultados</label>
+            <select id="cedula_resultados" name="cedula_resultados">
+              <option value="">Todos</option>
+            </select>
+          </div>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel anexo-count-panel tab-section" data-tab="observaciones">
+      <div class="panel-header">
+        <h2>Conteo por tipo de anexo</h2>
+        <p>Resumen rápido por ejercicio seleccionado.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Tipo de anexo</th>
+              <th>Emitidas</th>
+              <th>Pendientes</th>
+              <th>Solventadas</th>
+            </tr>
+          </thead>
+          <tbody id="anexoCountBody">
+            <tr>
+              <td colspan="4" class="muted">Selecciona un ejercicio.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel tab-section" data-tab="observaciones">
+      <div class="panel-header">
+        <h2>Resumen PDP</h2>
+        <p>Totales de montos emitidos, solventados y pendientes.</p>
+      </div>
+      <div class="table-wrap table-summary">
+        <table>
+          <thead>
+            <tr>
+              <th>Resumen PDP</th>
+              <th>Monto emitido</th>
+              <th>Monto solventado</th>
+              <th>Monto pendiente</th>
+            </tr>
+          </thead>
+          <tbody id="pdpSummaryBody">
+            <tr>
+              <td colspan="4" class="muted">Sin resultados.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel tab-section" data-tab="observaciones">
+      <div class="panel-header">
+        <h2>Solventado vs Pendiente</h2>
+        <p>Distribución del monto PDP según estado.</p>
+      </div>
+      <div class="chart-card summary-chart">
+        <h3>Gráfico de pastel</h3>
+        <canvas id="pdpDonut" height="180"></canvas>
+      </div>
+    </section>
+
+    <section class="panel observaciones-panel tab-section" data-tab="observaciones">
+      <div class="panel-header">
+        <h2>Observaciones por ejercicio</h2>
+        <p>Consulta integrada de entes, titulares y observaciones registradas.</p>
+      </div>
+      <form class="record-form filters-form" autocomplete="off">
+        <div class="form-grid">
+          <div class="field">
+            <label for="obs_fuente">Fuente de financiamiento</label>
+            <select id="obs_fuente" name="obs_fuente">
+              <option value="">Todas</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="obs_tipo_anexo">Tipo de anexo</label>
+            <select id="obs_tipo_anexo" name="obs_tipo_anexo">
+              <option value="">Todos</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="obs_estado">Estado</label>
+            <select id="obs_estado" name="obs_estado">
+              <option value="">Todos</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="obs_ramo">Ramo 33</label>
+            <select id="obs_ramo" name="obs_ramo">
+              <option value="">Todos</option>
+              <option value="Si">Si</option>
+              <option value="No">No</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="obs_oficio">Oficio</label>
+            <select id="obs_oficio" name="obs_oficio">
+              <option value="">Todos</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn-secondary" type="button" id="obs_clear">Limpiar filtros</button>
+      </form>
+      <div class="table-meta">
+        <span id="obsCount">Selecciona un ejercicio para ver resultados.</span>
+      </div>
+      <div class="table-wrap">
+        <table class="table-compact">
+          <thead>
+            <tr>
+              <th>Ente</th>
+              <th>Anexo</th>
+              <th>No. Obs</th>
+              <th>Estado</th>
+              <th>Oficio</th>
+              <th>Fecha</th>
+              <th>Fuente</th>
+              <th>PDP detalle</th>
+              <th>Monto emitido</th>
+              <th>Monto solventado</th>
+              <th>Monto pendiente</th>
+            </tr>
+          </thead>
+          <tbody id="obsTableBody">
+            <tr>
+              <td colspan="11" class="muted">Sin resultados.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="table-pagination" id="obsPagination">
+        <button class="btn-secondary" type="button" id="obsPrev">Anterior</button>
+        <span id="obsPageInfo">Página 1 de 1</span>
+        <button class="btn-secondary" type="button" id="obsNext">Siguiente</button>
+      </div>
+    </section>
+
+    <section class="panel catalogo-panel tab-section" data-tab="catalogo">
+      <div class="panel-header">
+        <h2>Catálogo de entes</h2>
+        <p>Consulta el ID único, el nombre actual y si hubo cambios de nombre.</p>
+      </div>
+      <form class="record-form" autocomplete="off">
+        <div class="form-grid">
+          <div class="field field-full">
+            <label for="catalogo_search">Buscar ente</label>
+            <input id="catalogo_search" name="catalogo_search" type="text" placeholder="Número o nombre del ente" />
+          </div>
+        </div>
+      </form>
+      <div class="table-meta">
+        <span id="catalogoCount">Selecciona un ejercicio para ver resultados.</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Número</th>
+              <th>Nombre en el Ejercicio</th>
+            </tr>
+          </thead>
+          <tbody id="catalogoBody">
+            <tr>
+              <td colspan="2" class="muted">Sin resultados.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
   </main>
 
   <footer class="site-footer">
@@ -391,169 +283,227 @@
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script>
-    const ejercicioSelect = document.getElementById("ejercicio");
-    const enteInput = document.getElementById("ente_id");
-    const entesList = document.getElementById("entesList");
-    const enteNombreInput = document.getElementById("ente_nombre");
-    const enteNumeroInput = document.getElementById("ente_numero");
-    const responsableSelect = document.getElementById("responsable_hist_id");
-    const administradorSelect = document.getElementById("administrador_hist_id");
-    const responsablePeriodo = document.getElementById("responsable_periodo");
-    const administradorPeriodo = document.getElementById("administrador_periodo");
-    let entesCache = {};
-    let historialCache = [];
+    const mainEjercicio = document.getElementById("main_ejercicio");
+    const obsEnteInput = document.getElementById("obs_ente_id");
+    const mainTipoAuditoria = document.getElementById("main_tipo_auditoria");
+    const obsTipoAnexo = document.getElementById("obs_tipo_anexo");
+    const obsEstado = document.getElementById("obs_estado");
+    const obsFuente = document.getElementById("obs_fuente");
+    const obsRamo = document.getElementById("obs_ramo");
+    const obsOficio = document.getElementById("obs_oficio");
+    const titularPeriodo = document.getElementById("titular_periodo_informe");
+    const titularNombre = document.getElementById("titular_nombre");
+    const adminPeriodo = document.getElementById("admin_periodo");
+    const adminNombre = document.getElementById("admin_nombre");
+    const cedulaResultados = document.getElementById("cedula_resultados");
+    const obsClear = document.getElementById("obs_clear");
+    const obsTableBody = document.getElementById("obsTableBody");
+    const obsCount = document.getElementById("obsCount");
+    const pdpSummaryBody = document.getElementById("pdpSummaryBody");
+    const obsPagination = document.getElementById("obsPagination");
+    const obsPrev = document.getElementById("obsPrev");
+    const obsNext = document.getElementById("obsNext");
+    const obsPageInfo = document.getElementById("obsPageInfo");
+    const pdpDonutCanvas = document.getElementById("pdpDonut");
+    const catalogoBody = document.getElementById("catalogoBody");
+    const catalogoCount = document.getElementById("catalogoCount");
+    const catalogoSearch = document.getElementById("catalogo_search");
 
-    if (ejercicioSelect && enteInput && entesList) {
-      const montoInput = document.getElementById("monto_pdp");
-      const anexoInputs = document.querySelectorAll("input[name='tipo_anexo']");
-      const irregularidadInput = document.getElementById("irregularidad_concepto");
+    if (mainEjercicio && obsEnteInput && obsTableBody) {
+      const anexoCountBody = document.getElementById("anexoCountBody");
+      const tabButtons = document.querySelectorAll(".tab-button");
+      const tabSections = document.querySelectorAll(".tab-section");
 
-      ejercicioSelect.addEventListener("change", async () => {
-        const value = ejercicioSelect.value;
-        entesList.innerHTML = "";
-        entesCache = {};
-        enteInput.value = "";
-        enteNombreInput.value = "";
-        enteNumeroInput.value = "";
-        responsableSelect.innerHTML = "<option value=\"\" disabled selected>Selecciona</option>";
-        administradorSelect.innerHTML = "<option value=\"\" disabled selected>Selecciona</option>";
-        responsablePeriodo.textContent = "Periodo: —";
-        administradorPeriodo.textContent = "Periodo: —";
-        if (!value) {
+      let pdpDonutChart = null;
+      let obsRows = [];
+      let obsPage = 1;
+      const obsPageSize = 20;
+
+      const setObsEnabled = (enabled) => {
+        [
+          obsEnteInput,
+          mainTipoAuditoria,
+          obsTipoAnexo,
+          obsEstado,
+          obsFuente,
+          obsRamo,
+          obsOficio,
+          titularPeriodo,
+          titularNombre,
+          adminPeriodo,
+          adminNombre,
+          cedulaResultados,
+          obsClear,
+          obsPrev,
+          obsNext,
+        ].forEach((el) => {
+          if (el) {
+            el.disabled = !enabled;
+          }
+        });
+      };
+
+      const setCatalogoEnabled = (enabled) => {
+        if (catalogoSearch) {
+          catalogoSearch.disabled = !enabled;
+        }
+      };
+
+      const resetSelect = (selectEl, placeholder) => {
+        if (!selectEl) {
           return;
         }
+        selectEl.innerHTML = `<option value="">${placeholder}</option>`;
+      };
 
-        try {
-          const response = await fetch(`/entes?ejercicio=${encodeURIComponent(value)}`);
-          if (!response.ok) {
-            return;
+      const renderObservaciones = (rows) => {
+        obsRows = rows;
+        obsPage = 1;
+        renderObservacionesPage();
+      };
+
+      const formatMonto = (value) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) {
+          return "—";
+        }
+        return numeric.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      };
+
+      const renderPdpSummary = (rows) => {
+        if (!pdpSummaryBody) {
+          return;
+        }
+        const pdpRows = rows.filter((row) => row.tipo_anexo === "PDP");
+        if (!pdpRows.length) {
+          pdpSummaryBody.innerHTML = "<tr><td colspan=\"4\" class=\"muted\">Sin resultados.</td></tr>";
+          if (pdpDonutChart) {
+            pdpDonutChart.data.labels = ["Sin datos"];
+            pdpDonutChart.data.datasets[0].data = [0];
+            pdpDonutChart.update();
           }
-          const data = await response.json();
-          entesCache = data.reduce((acc, item) => {
-            acc[item.ente_id] = item;
+          return;
+        }
+        const totals = pdpRows.reduce(
+          (acc, row) => {
+            acc.emitido += Number(row.monto_pdp_emitido || 0);
+            acc.solventado += Number(row.monto_pdp_solventado || 0);
+            acc.pendiente += Number(row.monto_pdp_pendiente || 0);
             return acc;
-          }, {});
-          entesList.innerHTML = data
-            .map(
-              (item) =>
-                `<option value="${item.ente_id}">${item.ente_nombre}</option>`
-            )
-            .join("");
-        } catch (error) {
-          console.error(error);
-        }
-      });
+          },
+          { emitido: 0, solventado: 0, pendiente: 0 }
+        );
+        pdpSummaryBody.innerHTML = `
+          <tr>
+            <td><strong>Totales</strong></td>
+            <td><strong>${formatMonto(totals.emitido)}</strong></td>
+            <td><strong>${formatMonto(totals.solventado)}</strong></td>
+            <td><strong>${formatMonto(totals.pendiente)}</strong></td>
+          </tr>
+        `;
 
-      enteInput.addEventListener("focus", () => {
-        if (ejercicioSelect.value) {
-          ejercicioSelect.dispatchEvent(new Event("change"));
+        const donutLabels = ["Solventado", "Pendiente"];
+        const donutData = [totals.solventado, totals.pendiente];
+        const donutColors = ["#4b7a55", "#b18934"];
+        if (pdpDonutCanvas) {
+          if (pdpDonutChart) {
+            pdpDonutChart.data.labels = donutLabels;
+            pdpDonutChart.data.datasets[0].data = donutData;
+            pdpDonutChart.update();
+          } else {
+            pdpDonutChart = new Chart(pdpDonutCanvas, {
+              type: "doughnut",
+              data: {
+                labels: donutLabels,
+                datasets: [
+                  {
+                    data: donutData,
+                    backgroundColor: donutColors,
+                    borderWidth: 0,
+                  },
+                ],
+              },
+              options: {
+                responsive: true,
+                plugins: { legend: { position: "bottom" } },
+              },
+            });
+          }
         }
-      });
+      };
 
-      enteInput.addEventListener("input", () => {
-        const ente = entesCache[enteInput.value];
-        if (ente) {
-          enteNombreInput.value = ente.ente_nombre;
-          enteNumeroInput.value = ente.ente_numero;
-        } else {
-          enteNombreInput.value = "";
-          enteNumeroInput.value = "";
-        }
-        loadHistorial();
-      });
-
-      async function loadHistorial() {
-        const ejercicio = ejercicioSelect.value;
-        const enteId = enteInput.value;
-        if (!ejercicio || !enteId) {
+      const renderObservacionesPage = () => {
+        if (!obsRows.length) {
+          obsTableBody.innerHTML = "<tr><td colspan=\"11\" class=\"muted\">Sin resultados.</td></tr>";
+          obsCount.textContent = "0 observaciones encontradas.";
+          renderPdpSummary([]);
+          if (obsPageInfo) {
+            obsPageInfo.textContent = "Página 0 de 0";
+          }
+          if (obsPagination) {
+            obsPagination.style.display = "none";
+          }
+          if (obsPrev) obsPrev.disabled = true;
+          if (obsNext) obsNext.disabled = true;
           return;
         }
-        try {
-          const response = await fetch(
-            `/historial?ejercicio=${encodeURIComponent(ejercicio)}&ente_id=${encodeURIComponent(enteId)}`
-          );
-          if (!response.ok) {
-            return;
-          }
-          const data = await response.json();
-          historialCache = data;
-          const responsables = data.filter((item) => item.rol === "Responsable");
-          const administradores = data.filter((item) => item.rol === "Administrador");
 
-          responsableSelect.innerHTML = "<option value=\"\" disabled selected>Selecciona</option>";
-          administradorSelect.innerHTML = "<option value=\"\" disabled selected>Selecciona</option>";
-
-          responsables.forEach((item) => {
-            const option = document.createElement("option");
-            option.value = item.id;
-            option.textContent = `${item.nombre}`;
-            option.dataset.periodo = item.periodo;
-            responsableSelect.appendChild(option);
-          });
-
-          administradores.forEach((item) => {
-            const option = document.createElement("option");
-            option.value = item.id;
-            option.textContent = `${item.nombre}`;
-            option.dataset.periodo = item.periodo;
-            administradorSelect.appendChild(option);
-          });
-        } catch (error) {
-          console.error(error);
+        const showPagination = obsRows.length > 50;
+        let totalPages = 1;
+        let pageRows = obsRows;
+        if (showPagination) {
+          totalPages = Math.ceil(obsRows.length / obsPageSize);
+          if (obsPage > totalPages) obsPage = totalPages;
+          const start = (obsPage - 1) * obsPageSize;
+          pageRows = obsRows.slice(start, start + obsPageSize);
+        } else {
+          obsPage = 1;
         }
-      }
 
-      function updatePeriodo(selectEl, labelEl) {
-        const option = selectEl.selectedOptions[0];
-        const periodo = option ? option.dataset.periodo : "";
-        labelEl.textContent = `Periodo: ${periodo || "—"}`;
-      }
+        obsTableBody.innerHTML = pageRows.map((row) => {
+          const pdpDetalle = row.tipo_anexo === "PDP"
+            ? [
+                row.pdp_no_irregularidad,
+                row.pdp_concepto_irregularidad,
+                row.pdp_subconcepto_irregularidad,
+              ].filter(Boolean).join(" · ") || "—"
+            : "—";
+          const montoEmitido = row.tipo_anexo === "PDP" ? formatMonto(row.monto_pdp_emitido) : "—";
+          const montoSolventado = row.tipo_anexo === "PDP" ? formatMonto(row.monto_pdp_solventado) : "—";
+          const montoPendiente = row.tipo_anexo === "PDP" ? formatMonto(row.monto_pdp_pendiente) : "—";
 
-      responsableSelect.addEventListener("change", () => {
-        updatePeriodo(responsableSelect, responsablePeriodo);
-      });
-
-      administradorSelect.addEventListener("change", () => {
-        updatePeriodo(administradorSelect, administradorPeriodo);
-      });
-
-      function toggleMonto() {
-        const selected = document.querySelector("input[name='tipo_anexo']:checked");
-        const isPdp = selected && selected.value === "PDP";
-        montoInput.disabled = !isPdp;
-        montoInput.required = Boolean(isPdp);
-        irregularidadInput.disabled = !isPdp;
-        irregularidadInput.required = false;
-        if (!isPdp) {
-          montoInput.value = "";
-          irregularidadInput.value = "";
+          return `
+            <tr>
+              <td>
+                ${row.ente_nombre || "—"}
+              </td>
+              <td><span class="tag">${row.tipo_anexo || "—"}</span></td>
+              <td>${row.numero_observacion ?? "—"}</td>
+              <td><span class="tag tag-state">${row.estado || "—"}</span></td>
+              <td>${row.oficio || "—"}</td>
+              <td>${row.fecha_notificacion || "—"}</td>
+              <td>${row.fuente_financiamiento || "—"}</td>
+              <td>${pdpDetalle}</td>
+              <td>${montoEmitido}</td>
+              <td>${montoSolventado}</td>
+              <td>${montoPendiente}</td>
+            </tr>
+          `;
+        }).join("");
+        obsCount.textContent = `${obsRows.length} observaciones encontradas.`;
+        renderPdpSummary(obsRows);
+        if (obsPageInfo) {
+          obsPageInfo.textContent = `Página ${obsPage} de ${totalPages}`;
         }
-      }
+        if (obsPagination) {
+          obsPagination.style.display = showPagination ? "flex" : "none";
+        }
+        if (obsPrev) obsPrev.disabled = !showPagination || obsPage <= 1;
+        if (obsNext) obsNext.disabled = !showPagination || obsPage >= totalPages;
+      };
 
-      anexoInputs.forEach((input) => {
-        input.addEventListener("change", toggleMonto);
-      });
-      toggleMonto();
-    }
-    const oficioEjercicio = document.getElementById("oficio_ejercicio");
-    const oficioEnteSelect = document.getElementById("oficio_ente_id");
-    const oficioFuenteSelect = document.getElementById("oficio_fuente_id");
-
-    if (oficioEjercicio && oficioEnteSelect && oficioFuenteSelect) {
-      function resetSelect(selectEl, placeholderText) {
-        selectEl.innerHTML = "";
-        const option = document.createElement("option");
-        option.value = "";
-        option.disabled = true;
-        option.selected = true;
-        option.textContent = placeholderText;
-        selectEl.appendChild(option);
-      }
-
-      async function loadOficioEntes() {
-        const ejercicio = oficioEjercicio.value;
-        resetSelect(oficioEnteSelect, "Selecciona");
-        resetSelect(oficioFuenteSelect, "Selecciona");
+      const loadObsEntes = async (ejercicio) => {
+        resetSelect(obsEnteInput, "Todos los entes");
         if (!ejercicio) {
           return;
         }
@@ -566,138 +516,468 @@
           data.forEach((ente) => {
             const option = document.createElement("option");
             option.value = ente.ente_id;
-            option.textContent = `${ente.ente_id} · ${ente.ente_nombre}`;
-            oficioEnteSelect.appendChild(option);
+            option.textContent = `${ente.ente_numero || "—"} · ${ente.ente_nombre}`;
+            obsEnteInput.appendChild(option);
           });
         } catch (error) {
           console.error(error);
         }
-      }
+      };
 
-      async function loadOficioFuentes() {
-        const ejercicio = oficioEjercicio.value;
-        const enteId = oficioEnteSelect.value;
-        resetSelect(oficioFuenteSelect, "Selecciona");
-        if (!ejercicio || !enteId) {
+      const loadFiltros = async (ejercicio, enteId = "", tipoAuditoria = "") => {
+        const currentTitular = titularNombre.value;
+        const currentTitularPeriodo = titularPeriodo.value;
+        const currentAdmin = adminNombre.value;
+        const currentAdminPeriodo = adminPeriodo.value;
+        const currentAuditoria = mainTipoAuditoria ? mainTipoAuditoria.value : "";
+        resetSelect(mainTipoAuditoria, "Todas");
+        resetSelect(obsTipoAnexo, "Todos");
+        resetSelect(obsEstado, "Todos");
+        resetSelect(obsFuente, "Todas");
+        resetSelect(obsRamo, "Todos");
+        if (obsRamo) {
+          obsRamo.innerHTML = `
+            <option value="">Todos</option>
+            <option value="Si">Si</option>
+            <option value="No">No</option>
+          `;
+        }
+        resetSelect(obsOficio, "Todos");
+        resetSelect(titularPeriodo, "Todos");
+        resetSelect(titularNombre, "Todos");
+        resetSelect(adminPeriodo, "Todos");
+        resetSelect(adminNombre, "Todos");
+        resetSelect(cedulaResultados, "Todos");
+        if (!ejercicio) {
           return;
         }
         try {
-          const response = await fetch(
-            `/fuentes-ente?ejercicio=${encodeURIComponent(ejercicio)}&ente_id=${encodeURIComponent(enteId)}`
-          );
+          const params = new URLSearchParams({ ejercicio });
+          if (enteId) {
+            params.set("ente_id", enteId);
+          }
+          if (tipoAuditoria) {
+            params.set("tipo_auditoria", tipoAuditoria);
+          }
+          if (currentTitular) {
+            params.set("titular", currentTitular);
+          }
+          if (currentAdmin) {
+            params.set("administrativo", currentAdmin);
+          }
+          const response = await fetch(`/observaciones-filtros?${params.toString()}`);
           if (!response.ok) {
             return;
           }
           const data = await response.json();
-          data.forEach((fuente) => {
+          if (mainTipoAuditoria) {
+            (data.tipo_auditoria || []).forEach((item) => {
+              const option = document.createElement("option");
+              option.value = item;
+              option.textContent = item;
+              mainTipoAuditoria.appendChild(option);
+            });
+            if (currentAuditoria && mainTipoAuditoria.querySelector(`option[value="${currentAuditoria}"]`)) {
+              mainTipoAuditoria.value = currentAuditoria;
+            }
+          }
+          (data.tipo_anexo || []).forEach((item) => {
             const option = document.createElement("option");
-            option.value = fuente.id;
-            option.textContent = fuente.nombre;
-            oficioFuenteSelect.appendChild(option);
+            option.value = item;
+            option.textContent = item;
+            obsTipoAnexo.appendChild(option);
           });
+          (data.estado || []).forEach((item) => {
+            const option = document.createElement("option");
+            option.value = item;
+            option.textContent = item;
+            obsEstado.appendChild(option);
+          });
+          (data.fuente_financiamiento || []).forEach((item) => {
+            const option = document.createElement("option");
+            option.value = item;
+            option.textContent = item;
+            obsFuente.appendChild(option);
+          });
+          (data.ramo_33 || []).forEach((item) => {
+            const normalized = String(item || "").trim().toLowerCase();
+            if (normalized === "si" || normalized === "no") {
+              return;
+            }
+          });
+          (data.oficios || []).forEach((item) => {
+            const option = document.createElement("option");
+            option.value = item;
+            option.textContent = item;
+            obsOficio.appendChild(option);
+          });
+          (data.periodo_informe || []).forEach((item) => {
+            const option = document.createElement("option");
+            option.value = item;
+            option.textContent = item;
+            titularPeriodo.appendChild(option);
+          });
+          (data.titulares || []).forEach((item) => {
+            const option = document.createElement("option");
+            option.value = item;
+            option.textContent = item;
+            titularNombre.appendChild(option);
+          });
+          (data.periodo_admin || []).forEach((item) => {
+            const option = document.createElement("option");
+            option.value = item;
+            option.textContent = item;
+            adminPeriodo.appendChild(option);
+          });
+          (data.administrativos || []).forEach((item) => {
+            const option = document.createElement("option");
+            option.value = item;
+            option.textContent = item;
+            adminNombre.appendChild(option);
+          });
+          (data.cedulas || []).forEach((item) => {
+            const option = document.createElement("option");
+            option.value = item;
+            option.textContent = item;
+            cedulaResultados.appendChild(option);
+          });
+          if (currentTitular && titularNombre.querySelector(`option[value="${currentTitular}"]`)) {
+            titularNombre.value = currentTitular;
+          } else {
+            titularNombre.value = "";
+          }
+          if (currentTitularPeriodo && titularPeriodo.querySelector(`option[value="${currentTitularPeriodo}"]`)) {
+            titularPeriodo.value = currentTitularPeriodo;
+          } else {
+            titularPeriodo.value = "";
+          }
+          if (currentAdmin && adminNombre.querySelector(`option[value="${currentAdmin}"]`)) {
+            adminNombre.value = currentAdmin;
+          } else {
+            adminNombre.value = "";
+          }
+          if (currentAdminPeriodo && adminPeriodo.querySelector(`option[value="${currentAdminPeriodo}"]`)) {
+            adminPeriodo.value = currentAdminPeriodo;
+          } else {
+            adminPeriodo.value = "";
+          }
         } catch (error) {
           console.error(error);
         }
-      }
+      };
 
-      oficioEjercicio.addEventListener("change", loadOficioEntes);
-      oficioEnteSelect.addEventListener("change", loadOficioFuentes);
-      loadOficioEntes();
-    }
-
-    async function renderCharts() {
-      const totalsCanvas = document.getElementById("chartTotals");
-      const estadosCanvas = document.getElementById("chartEstados");
-      if (!totalsCanvas || !estadosCanvas) {
-        return;
-      }
-      try {
-        const response = await fetch("/stats");
-        if (!response.ok) {
+      const loadObservaciones = async () => {
+        const ejercicio = mainEjercicio.value;
+        const enteId = obsEnteInput.value.trim();
+        if (!ejercicio) {
+          obsTableBody.innerHTML = "<tr><td colspan=\"11\" class=\"muted\">Selecciona un ejercicio.</td></tr>";
+          obsCount.textContent = "Selecciona un ejercicio para ver resultados.";
+          obsRows = [];
+          obsPage = 1;
+          renderPdpSummary([]);
+          if (obsPageInfo) {
+            obsPageInfo.textContent = "Página 0 de 0";
+          }
+          if (obsPagination) {
+            obsPagination.style.display = "none";
+          }
+          if (obsPrev) obsPrev.disabled = true;
+          if (obsNext) obsNext.disabled = true;
           return;
         }
-        const data = await response.json();
-        const totals = data.totals || [];
-        const estados = data.estados || [];
+        const params = new URLSearchParams({ ejercicio });
+        if (enteId) {
+          params.set("ente_id", enteId);
+        }
+        if (obsTipoAnexo.value) {
+          params.set("tipo_anexo", obsTipoAnexo.value);
+        }
+        if (mainTipoAuditoria && mainTipoAuditoria.value) {
+          params.set("tipo_auditoria", mainTipoAuditoria.value);
+        }
+        if (obsEstado.value) {
+          params.set("estado", obsEstado.value);
+        }
+        if (obsFuente.value) {
+          params.set("fuente_financiamiento", obsFuente.value);
+        }
+        if (obsRamo.value) {
+          params.set("ramo_33", obsRamo.value);
+        }
+        if (obsOficio.value.trim()) {
+          params.set("oficio", obsOficio.value.trim());
+        }
+        if (titularNombre.value) {
+          params.set("titular", titularNombre.value);
+        }
+        if (titularPeriodo.value) {
+          params.set("periodo_informe", titularPeriodo.value);
+        }
+        if (adminNombre.value) {
+          params.set("administrativo", adminNombre.value);
+        }
+        if (adminPeriodo.value) {
+          params.set("periodo_admin", adminPeriodo.value);
+        }
+        try {
+          const response = await fetch(`/observaciones?${params.toString()}`);
+          if (!response.ok) {
+            throw new Error("Fetch failed");
+          }
+          const data = await response.json();
+          renderObservaciones(data);
+        } catch (error) {
+          console.error(error);
+          obsTableBody.innerHTML = "<tr><td colspan=\"10\" class=\"muted\">No se pudo cargar la información.</td></tr>";
+        }
+      };
 
-        const ejercicios = ["2023", "2024", "2025"];
-        const totalData = ejercicios.map((ejercicio) => {
-          const row = totals.find((item) => item.ejercicio === ejercicio);
-          return row ? row.total : 0;
+      const renderAnexoCount = (stats, ejercicio) => {
+        const tiposEstados = (stats.tipos_estados || []).filter((row) => row.ejercicio === ejercicio);
+        if (!tiposEstados.length) {
+          anexoCountBody.innerHTML = "<tr><td colspan=\"4\" class=\"muted\">Sin datos para el ejercicio.</td></tr>";
+          return;
+        }
+        const agrupados = tiposEstados.reduce((acc, row) => {
+          const tipo = row.tipo_anexo || "Sin tipo";
+          if (!acc[tipo]) {
+            acc[tipo] = { emitidas: 0, pendientes: 0, solventadas: 0 };
+          }
+          const estado = (row.estado || "").toLowerCase();
+          if (estado === "pendiente") acc[tipo].pendientes += row.total;
+          if (estado === "solventado") acc[tipo].solventadas += row.total;
+          return acc;
+        }, {});
+
+        const filas = Object.entries(agrupados).sort((a, b) => a[0].localeCompare(b[0]));
+        let totalEmitidas = 0;
+        let totalPendientes = 0;
+        let totalSolventadas = 0;
+
+        const rowsHtml = filas.map(([tipo, data]) => {
+          const emitidas = data.pendientes + data.solventadas;
+          totalEmitidas += emitidas;
+          totalPendientes += data.pendientes;
+          totalSolventadas += data.solventadas;
+          return `
+          <tr>
+            <td>${tipo}</td>
+            <td>${emitidas}</td>
+            <td>${data.pendientes}</td>
+            <td>${data.solventadas}</td>
+          </tr>
+        `;
+        }).join("");
+
+        const totalRow = `
+          <tr>
+            <td><strong>Totales</strong></td>
+            <td><strong>${totalEmitidas}</strong></td>
+            <td><strong>${totalPendientes}</strong></td>
+            <td><strong>${totalSolventadas}</strong></td>
+          </tr>
+        `;
+        anexoCountBody.innerHTML = rowsHtml + totalRow;
+      };
+
+      const loadAnexoCount = async () => {
+        if (!mainEjercicio.value) {
+          return;
+        }
+        const enteFilter = obsEnteInput ? obsEnteInput.value.trim() : "";
+        const statsParams = new URLSearchParams();
+        if (enteFilter) {
+          statsParams.set("ente_id", enteFilter);
+        }
+        const statsUrl = statsParams.toString()
+          ? `/observaciones-stats?${statsParams.toString()}`
+          : "/observaciones-stats";
+        const statsResponse = await fetch(statsUrl);
+        if (statsResponse.ok) {
+          const statsData = await statsResponse.json();
+          renderAnexoCount(statsData, mainEjercicio.value);
+        }
+      };
+
+      const loadCatalogo = async () => {
+        const ejercicio = mainEjercicio.value;
+        if (!ejercicio) {
+          catalogoBody.innerHTML = "<tr><td colspan=\"2\" class=\"muted\">Selecciona un ejercicio.</td></tr>";
+          catalogoCount.textContent = "Selecciona un ejercicio para ver resultados.";
+          return;
+        }
+        try {
+          const response = await fetch(`/catalogo-entes?ejercicio=${encodeURIComponent(ejercicio)}`);
+          if (!response.ok) {
+            throw new Error("Fetch failed");
+          }
+          const data = await response.json();
+          catalogoCache = data;
+          renderCatalogo(data);
+        } catch (error) {
+          console.error(error);
+          catalogoBody.innerHTML = "<tr><td colspan=\"2\" class=\"muted\">No se pudo cargar la información.</td></tr>";
+        }
+      };
+
+      const renderCatalogo = (rows) => {
+        const query = catalogoSearch.value.trim().toLowerCase();
+        const filtered = rows.filter((row) => {
+          if (!query) {
+            return true;
+          }
+          return [
+            row.ente_numero,
+            row.ente_nombre,
+          ]
+            .filter(Boolean)
+            .some((value) => String(value).toLowerCase().includes(query));
         });
 
-        new Chart(totalsCanvas, {
-          type: "bar",
-          data: {
-            labels: ejercicios,
-            datasets: [
-              {
-                label: "Registros",
-                data: totalData,
-                backgroundColor: ["#1f3b2c", "#355c40", "#4b7a55"],
-                borderRadius: 6,
-              },
-            ],
-          },
-          options: {
-            responsive: true,
-            plugins: {
-              legend: { display: false },
-            },
-            scales: {
-              y: {
-                beginAtZero: true,
-                grid: { color: "rgba(31, 59, 44, 0.1)" },
-              },
-              x: {
-                grid: { display: false },
-              },
-            },
-          },
+        if (!filtered.length) {
+          catalogoBody.innerHTML = "<tr><td colspan=\"2\" class=\"muted\">Sin resultados.</td></tr>";
+          catalogoCount.textContent = "0 entes encontrados.";
+          return;
+        }
+
+        catalogoBody.innerHTML = filtered.map((row) => `
+          <tr>
+            <td>${row.ente_numero || "—"}</td>
+            <td>${row.ente_nombre || "—"}</td>
+          </tr>
+        `).join("");
+        catalogoCount.textContent = `${filtered.length} entes encontrados.`;
+      };
+
+      let catalogoCache = [];
+      const updateCatalogoSearch = () => {
+        renderCatalogo(catalogoCache);
+      };
+
+      const setTab = (tabName) => {
+        tabButtons.forEach((button) => {
+          button.classList.toggle("is-active", button.dataset.tab === tabName);
         });
-
-        const estadoLabels = ["Emitido", "Solventado", "Pendiente"];
-        const estadoColors = {
-          Emitido: "#b18934",
-          Solventado: "#1f3b2c",
-          Pendiente: "#6b7a70",
-        };
-
-        const datasets = estadoLabels.map((estado) => ({
-          label: estado,
-          data: ejercicios.map((ejercicio) => {
-            const row = estados.find(
-              (item) => item.ejercicio === ejercicio && item.estado === estado
-            );
-            return row ? row.total : 0;
-          }),
-          backgroundColor: estadoColors[estado],
-          borderRadius: 6,
-        }));
-
-        new Chart(estadosCanvas, {
-          type: "bar",
-          data: {
-            labels: ejercicios,
-            datasets,
-          },
-          options: {
-            responsive: true,
-            plugins: {
-              legend: { position: "bottom" },
-            },
-            scales: {
-              x: { stacked: true, grid: { display: false } },
-              y: { stacked: true, beginAtZero: true },
-            },
-          },
+        tabSections.forEach((section) => {
+          section.style.display = section.dataset.tab === tabName ? "block" : "none";
         });
-      } catch (error) {
-        console.error(error);
+      };
+
+      tabButtons.forEach((button) => {
+        button.addEventListener("click", () => setTab(button.dataset.tab));
+      });
+      setTab("observaciones");
+
+      mainEjercicio.addEventListener("change", async () => {
+        setObsEnabled(Boolean(mainEjercicio.value));
+        setCatalogoEnabled(Boolean(mainEjercicio.value));
+        obsEnteInput.value = "";
+        if (mainTipoAuditoria) {
+          mainTipoAuditoria.value = "";
+        }
+        await loadObsEntes(mainEjercicio.value);
+        await loadFiltros(mainEjercicio.value, "", "");
+        obsTipoAnexo.value = "";
+        obsEstado.value = "";
+        obsFuente.value = "";
+        obsRamo.value = "";
+        obsOficio.value = "";
+        titularPeriodo.value = "";
+        titularNombre.value = "";
+        adminPeriodo.value = "";
+        adminNombre.value = "";
+        cedulaResultados.value = "";
+        await loadObservaciones();
+        await loadAnexoCount();
+        await loadCatalogo();
+      });
+      obsEnteInput.addEventListener("change", async () => {
+        await loadFiltros(mainEjercicio.value, obsEnteInput.value.trim(), mainTipoAuditoria ? mainTipoAuditoria.value : "");
+        await loadObservaciones();
+        await loadAnexoCount();
+      });
+      if (mainTipoAuditoria) {
+        mainTipoAuditoria.addEventListener("change", async () => {
+          await loadFiltros(mainEjercicio.value, obsEnteInput.value.trim(), mainTipoAuditoria.value);
+          await loadObservaciones();
+          await loadAnexoCount();
+        });
       }
-    }
+      titularNombre.addEventListener("change", async () => {
+        titularPeriodo.value = "";
+        await loadFiltros(
+          mainEjercicio.value,
+          obsEnteInput.value.trim(),
+          mainTipoAuditoria ? mainTipoAuditoria.value : ""
+        );
+        await loadObservaciones();
+        await loadAnexoCount();
+      });
+      adminNombre.addEventListener("change", async () => {
+        adminPeriodo.value = "";
+        await loadFiltros(
+          mainEjercicio.value,
+          obsEnteInput.value.trim(),
+          mainTipoAuditoria ? mainTipoAuditoria.value : ""
+        );
+        await loadObservaciones();
+        await loadAnexoCount();
+      });
+      obsEnteInput.addEventListener("keyup", (event) => {
+        if (event.key === "Enter") {
+          loadObservaciones();
+        }
+      });
+      obsEnteInput.addEventListener("change", loadAnexoCount);
+      [
+        obsTipoAnexo,
+        obsEstado,
+        obsFuente,
+        obsRamo,
+        obsOficio,
+        titularPeriodo,
+        adminPeriodo,
+      ].forEach((select) => {
+        select.addEventListener("change", loadObservaciones);
+      });
+      obsClear.addEventListener("click", async () => {
+        obsTipoAnexo.value = "";
+        obsEstado.value = "";
+        obsFuente.value = "";
+        obsRamo.value = "";
+        obsOficio.value = "";
+        titularPeriodo.value = "";
+        titularNombre.value = "";
+        adminPeriodo.value = "";
+        adminNombre.value = "";
+        cedulaResultados.value = "";
+        await loadFiltros(
+          mainEjercicio.value,
+          obsEnteInput.value.trim(),
+          mainTipoAuditoria ? mainTipoAuditoria.value : ""
+        );
+        await loadObservaciones();
+        await loadAnexoCount();
+      });
 
-    renderCharts();
+      if (obsPrev) {
+        obsPrev.addEventListener("click", () => {
+          obsPage = Math.max(1, obsPage - 1);
+          renderObservacionesPage();
+        });
+      }
+      if (obsNext) {
+        obsNext.addEventListener("click", () => {
+          obsPage += 1;
+          renderObservacionesPage();
+        });
+      }
+
+      catalogoSearch.addEventListener("input", updateCatalogoSearch);
+
+      setObsEnabled(false);
+      setCatalogoEnabled(false);
+    }
   </script>
 </body>
 </html>
