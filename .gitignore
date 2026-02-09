@@ -21,6 +21,7 @@ env/
 # Flask cache and instance data
 instance/
 *.db
+!sifeet.db
 *.sqlite3
 *.sqlite
 *.log
