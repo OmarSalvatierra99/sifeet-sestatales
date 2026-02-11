@@ -161,7 +161,7 @@
               <option value="No">No</option>
             </select>
           </div>
-          <div class="field">
+          <div class="field" id="obs_concepto_field">
             <label for="obs_concepto_irregularidad">Concepto de Irrecularidad</label>
             <select id="obs_concepto_irregularidad" name="obs_concepto_irregularidad">
               <option value="">Todos</option>
@@ -279,6 +279,7 @@
     const obsFuente = document.getElementById("obs_fuente");
     const obsRamo = document.getElementById("obs_ramo");
     const obsConceptoIrregularidad = document.getElementById("obs_concepto_irregularidad");
+    const obsConceptoField = document.getElementById("obs_concepto_field");
     const cedulaResultados = document.getElementById("cedula_resultados");
     const obsResponsablesBody = document.getElementById("obsResponsablesBody");
     const obsClear = document.getElementById("obs_clear");
@@ -337,6 +338,19 @@
           return;
         }
         selectEl.innerHTML = `<option value="">${placeholder}</option>`;
+      };
+
+      const syncConceptoIrregularidadVisibility = () => {
+        const showConcepto = obsTipoAnexo && obsTipoAnexo.value === "PDP";
+        if (obsConceptoField) {
+          obsConceptoField.style.display = showConcepto ? "flex" : "none";
+        }
+        if (obsConceptoIrregularidad) {
+          obsConceptoIrregularidad.disabled = !showConcepto;
+          if (!showConcepto) {
+            obsConceptoIrregularidad.value = "";
+          }
+        }
       };
 
       const renderObservaciones = (rows) => {
@@ -630,7 +644,7 @@
           if (currentRamo) {
             params.set("ramo_33", currentRamo);
           }
-          if (currentConcepto) {
+          if (currentTipoAnexo === "PDP" && currentConcepto) {
             params.set("concepto_irregularidad", currentConcepto);
           }
           if (currentCedula) {
@@ -691,18 +705,24 @@
               return;
             }
           });
-          (data.conceptos_irregularidad || []).forEach((item) => {
-            const option = document.createElement("option");
-            option.value = item;
-            option.textContent = item;
-            obsConceptoIrregularidad.appendChild(option);
-          });
+          if (obsTipoAnexo.value === "PDP") {
+            (data.conceptos_irregularidad || []).forEach((item) => {
+              const option = document.createElement("option");
+              option.value = item;
+              option.textContent = item;
+              obsConceptoIrregularidad.appendChild(option);
+            });
+          }
           if (currentRamo && obsRamo.querySelector(`option[value="${currentRamo}"]`)) {
             obsRamo.value = currentRamo;
           } else {
             obsRamo.value = "";
           }
-          if (currentConcepto && obsConceptoIrregularidad.querySelector(`option[value="${currentConcepto}"]`)) {
+          if (
+            obsTipoAnexo.value === "PDP"
+            && currentConcepto
+            && obsConceptoIrregularidad.querySelector(`option[value="${currentConcepto}"]`)
+          ) {
             obsConceptoIrregularidad.value = currentConcepto;
           } else {
             obsConceptoIrregularidad.value = "";
@@ -717,7 +737,11 @@
             cedulaResultados.value = currentCedula;
           } else {
             cedulaResultados.value = "";
+            if (cedulaResultados.options.length > 1) {
+              cedulaResultados.selectedIndex = 1;
+            }
           }
+          syncConceptoIrregularidadVisibility();
         } catch (error) {
           console.error(error);
         }
@@ -768,7 +792,7 @@
         if (obsRamo.value) {
           params.set("ramo_33", obsRamo.value);
         }
-        if (obsConceptoIrregularidad.value) {
+        if (obsTipoAnexo.value === "PDP" && obsConceptoIrregularidad.value) {
           params.set("concepto_irregularidad", obsConceptoIrregularidad.value);
         }
         if (cedulaResultados.value) {
@@ -782,7 +806,10 @@
           const data = await response.json();
           renderObservaciones(data);
           if (cedulaResultados.value) {
-            const responsablesResponse = await fetch(`/observaciones-responsables?${params.toString()}`);
+            const responsablesParams = new URLSearchParams(params.toString());
+            responsablesParams.delete("tipo_anexo");
+            responsablesParams.delete("concepto_irregularidad");
+            const responsablesResponse = await fetch(`/observaciones-responsables?${responsablesParams.toString()}`);
             if (!responsablesResponse.ok) {
               throw new Error("Responsables fetch failed");
             }
@@ -829,7 +856,7 @@
         if (obsRamo.value) {
           params.set("ramo_33", obsRamo.value);
         }
-        if (obsConceptoIrregularidad.value) {
+        if (obsTipoAnexo.value === "PDP" && obsConceptoIrregularidad.value) {
           params.set("concepto_irregularidad", obsConceptoIrregularidad.value);
         }
         if (cedulaResultados.value) {
@@ -991,6 +1018,7 @@
         obsRamo.value = "";
         obsConceptoIrregularidad.value = "";
         cedulaResultados.value = "";
+        syncConceptoIrregularidadVisibility();
         await loadObsEntes(mainEjercicio.value);
         await loadFiltros(mainEjercicio.value, "", "");
         await loadObservaciones();
@@ -1011,6 +1039,16 @@
           await loadAnexoCount();
         });
       }
+      obsTipoAnexo.addEventListener("change", async () => {
+        syncConceptoIrregularidadVisibility();
+        await loadFiltros(
+          mainEjercicio.value,
+          obsEnteInput.value.trim(),
+          mainTipoAuditoria ? mainTipoAuditoria.value : ""
+        );
+        await loadObservaciones();
+        await loadAnexoCount();
+      });
       obsEnteInput.addEventListener("keyup", (event) => {
         if (event.key === "Enter") {
           loadObservaciones();
@@ -1018,7 +1056,6 @@
       });
       obsEnteInput.addEventListener("change", loadAnexoCount);
       [
-        obsTipoAnexo,
         obsEstado,
         obsFuente,
         obsRamo,
@@ -1034,6 +1071,7 @@
         obsRamo.value = "";
         obsConceptoIrregularidad.value = "";
         cedulaResultados.value = "";
+        syncConceptoIrregularidadVisibility();
         await loadFiltros(
           mainEjercicio.value,
           obsEnteInput.value.trim(),
@@ -1063,6 +1101,7 @@
 
       setObsEnabled(false);
       setCatalogoEnabled(false);
+      syncConceptoIrregularidadVisibility();
 
       (async () => {
         const ejercicios = await loadEjercicios();

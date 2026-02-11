@@ -96,7 +96,7 @@ def normalize_text_key(value: str) -> str:
 def normalize_tipo_auditoria(value: str) -> str:
     clean = (value or "").strip()
     key = normalize_text_key(clean)
-    if key in {"auditoria", "auditoria financiera", "financiera"}:
+    if key in {"auditoria", "auditoria financiera", "financiera", "financiero"}:
         return "Financiera"
     if key in {"obra publica", "obra"}:
         return "Obra Pública"
@@ -917,8 +917,10 @@ def observaciones_api():
         filter_clauses.append("observaciones.ramo_33 = ?")
         params.append(ramo_33)
     if concepto_irregularidad:
-        filter_clauses.append("observaciones.pdp_concepto_irregularidad = ?")
-        params.append(concepto_irregularidad)
+        filter_clauses.append(
+            "(observaciones.pdp_concepto_irregularidad = ? OR observaciones.pdp_subconcepto_irregularidad = ?)"
+        )
+        params.extend([concepto_irregularidad, concepto_irregularidad])
     if periodo_cedula:
         filter_clauses.append("observaciones.periodo_cedula = ?")
         params.append(periodo_cedula)
@@ -1068,8 +1070,8 @@ def observaciones_filtros():
         scoped_clauses.append("ramo_33 = ?")
         scoped_params.append(ramo_33)
     if concepto_irregularidad:
-        scoped_clauses.append("pdp_concepto_irregularidad = ?")
-        scoped_params.append(concepto_irregularidad)
+        scoped_clauses.append("(pdp_concepto_irregularidad = ? OR pdp_subconcepto_irregularidad = ?)")
+        scoped_params.extend([concepto_irregularidad, concepto_irregularidad])
     if periodo_cedula:
         scoped_clauses.append("periodo_cedula = ?")
         scoped_params.append(periodo_cedula)
@@ -1130,13 +1132,21 @@ def observaciones_filtros():
     ).fetchall()
     conceptos = db.execute(
         f"""
-        SELECT DISTINCT pdp_concepto_irregularidad
-        FROM observaciones
-        WHERE {scoped_where}
-          AND pdp_concepto_irregularidad IS NOT NULL AND pdp_concepto_irregularidad != ''
-        ORDER BY pdp_concepto_irregularidad
+        SELECT DISTINCT concepto
+        FROM (
+            SELECT pdp_concepto_irregularidad AS concepto
+            FROM observaciones
+            WHERE {scoped_where}
+              AND pdp_concepto_irregularidad IS NOT NULL AND pdp_concepto_irregularidad != ''
+            UNION
+            SELECT pdp_subconcepto_irregularidad AS concepto
+            FROM observaciones
+            WHERE {scoped_where}
+              AND pdp_subconcepto_irregularidad IS NOT NULL AND pdp_subconcepto_irregularidad != ''
+        )
+        ORDER BY concepto
         """,
-        scoped_params,
+        scoped_params + scoped_params,
     ).fetchall()
     ente_nombre = None
     if ente_id:
@@ -1267,12 +1277,10 @@ def observaciones_filtros():
 def observaciones_responsables():
     ejercicio = request.args.get("ejercicio", "").strip()
     ente_id = normalize_ente_id(request.args.get("ente_id", ""))
-    tipo_anexo = request.args.get("tipo_anexo", "").strip()
     tipo_auditoria = normalize_tipo_auditoria(request.args.get("tipo_auditoria", ""))
     estado = request.args.get("estado", "").strip()
     fuente = request.args.get("fuente_financiamiento", "").strip()
     ramo_33 = request.args.get("ramo_33", "").strip()
-    concepto_irregularidad = request.args.get("concepto_irregularidad", "").strip()
     periodo_cedula = request.args.get("periodo_cedula", "").strip()
     if not ejercicio or not periodo_cedula:
         return jsonify([])
@@ -1283,9 +1291,6 @@ def observaciones_responsables():
     if ente_id:
         filter_clauses.append(f"{normalize_ente_id_sql('o.ente_id')} = ?")
         params.append(ente_id)
-    if tipo_anexo:
-        filter_clauses.append("o.tipo_anexo = ?")
-        params.append(tipo_anexo)
     if tipo_auditoria:
         filter_clauses.append("o.tipo_auditoria = ?")
         params.append(tipo_auditoria)
@@ -1298,9 +1303,6 @@ def observaciones_responsables():
     if ramo_33:
         filter_clauses.append("o.ramo_33 = ?")
         params.append(ramo_33)
-    if concepto_irregularidad:
-        filter_clauses.append("o.pdp_concepto_irregularidad = ?")
-        params.append(concepto_irregularidad)
     if periodo_cedula:
         filter_clauses.append("o.periodo_cedula = ?")
         params.append(periodo_cedula)
@@ -1432,8 +1434,10 @@ def observaciones_exportar():
         filter_clauses.append("observaciones.ramo_33 = ?")
         params.append(ramo_33)
     if concepto_irregularidad:
-        filter_clauses.append("observaciones.pdp_concepto_irregularidad = ?")
-        params.append(concepto_irregularidad)
+        filter_clauses.append(
+            "(observaciones.pdp_concepto_irregularidad = ? OR observaciones.pdp_subconcepto_irregularidad = ?)"
+        )
+        params.extend([concepto_irregularidad, concepto_irregularidad])
     if periodo_cedula:
         filter_clauses.append("observaciones.periodo_cedula = ?")
         params.append(periodo_cedula)
