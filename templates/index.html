@@ -33,7 +33,7 @@
     <section class="panel filter-panel">
       <div class="panel-header">
         <h2>Filtro principal</h2>
-        <p>Selecciona el ejercicio para desplegar toda la información.</p>
+        <p>Selecciona el ejercicio y aplica filtros combinados para observar y administrar datos.</p>
       </div>
       <form class="record-form filters-form" autocomplete="off">
         <div class="form-grid">
@@ -41,9 +41,6 @@
             <label for="main_ejercicio">Ejercicio</label>
             <select id="main_ejercicio" name="main_ejercicio" required>
               <option value="" disabled selected>Selecciona</option>
-              <option value="2023">2023</option>
-              <option value="2024">2024</option>
-              <option value="2025">2025</option>
             </select>
           </div>
           <div class="field">
@@ -64,47 +61,6 @@
         <button class="tab-button is-active" type="button" data-tab="observaciones">Observaciones</button>
         <button class="tab-button" type="button" data-tab="catalogo">Catálogo de entes</button>
       </div>
-    </section>
-
-    <section class="panel filter-panel tab-section" data-tab="observaciones">
-      <div class="panel-header">
-        <h2>Catálogo de filtros de titulares</h2>
-        <p>Filtra por periodos y titulares registrados en el historial.</p>
-      </div>
-      <form class="record-form filters-form" autocomplete="off">
-        <div class="form-grid">
-          <div class="field">
-            <label for="titular_periodo_informe">Periodo Informe</label>
-            <select id="titular_periodo_informe" name="titular_periodo_informe">
-              <option value="">Todos</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="titular_nombre">Titular</label>
-            <select id="titular_nombre" name="titular_nombre">
-              <option value="">Todos</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="admin_periodo">Periodo Administrativo</label>
-            <select id="admin_periodo" name="admin_periodo">
-              <option value="">Todos</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="admin_nombre">Administrativo</label>
-            <select id="admin_nombre" name="admin_nombre">
-              <option value="">Todos</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="cedula_resultados">Cédula de resultados</label>
-            <select id="cedula_resultados" name="cedula_resultados">
-              <option value="">Todos</option>
-            </select>
-          </div>
-        </div>
-      </form>
     </section>
 
     <section class="panel anexo-count-panel tab-section" data-tab="observaciones">
@@ -169,10 +125,16 @@
     <section class="panel observaciones-panel tab-section" data-tab="observaciones">
       <div class="panel-header">
         <h2>Observaciones por ejercicio</h2>
-        <p>Consulta integrada de entes, titulares y observaciones registradas.</p>
+        <p>Filtros unificados para consulta integrada de entes, titulares y observaciones.</p>
       </div>
       <form class="record-form filters-form" autocomplete="off">
         <div class="form-grid">
+          <div class="field">
+            <label for="cedula_resultados">Cédula de resultados</label>
+            <select id="cedula_resultados" name="cedula_resultados">
+              <option value="">Todos</option>
+            </select>
+          </div>
           <div class="field">
             <label for="obs_fuente">Fuente de financiamiento</label>
             <select id="obs_fuente" name="obs_fuente">
@@ -208,6 +170,28 @@
         </div>
         <button class="btn-secondary" type="button" id="obs_clear">Limpiar filtros</button>
       </form>
+      <div class="obs-responsables" id="obsResponsables">
+        <h3>Titulares y administrativos del periodo</h3>
+        <div class="table-wrap">
+          <table class="table-compact">
+            <thead>
+              <tr>
+                <th>Ente</th>
+                <th>Tipo auditoría</th>
+                <th>Titular</th>
+                <th>Periodo titular</th>
+                <th>Administrativo</th>
+                <th>Periodo administrativo</th>
+              </tr>
+            </thead>
+            <tbody id="obsResponsablesBody">
+              <tr>
+                <td colspan="6" class="muted">Selecciona una cédula de resultados para consultar responsables.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
       <div class="table-meta">
         <span id="obsCount">Selecciona un ejercicio para ver resultados.</span>
       </div>
@@ -291,11 +275,8 @@
     const obsFuente = document.getElementById("obs_fuente");
     const obsRamo = document.getElementById("obs_ramo");
     const obsOficio = document.getElementById("obs_oficio");
-    const titularPeriodo = document.getElementById("titular_periodo_informe");
-    const titularNombre = document.getElementById("titular_nombre");
-    const adminPeriodo = document.getElementById("admin_periodo");
-    const adminNombre = document.getElementById("admin_nombre");
     const cedulaResultados = document.getElementById("cedula_resultados");
+    const obsResponsablesBody = document.getElementById("obsResponsablesBody");
     const obsClear = document.getElementById("obs_clear");
     const obsTableBody = document.getElementById("obsTableBody");
     const obsCount = document.getElementById("obsCount");
@@ -328,10 +309,6 @@
           obsFuente,
           obsRamo,
           obsOficio,
-          titularPeriodo,
-          titularNombre,
-          adminPeriodo,
-          adminNombre,
           cedulaResultados,
           obsClear,
           obsPrev,
@@ -360,6 +337,55 @@
         obsRows = rows;
         obsPage = 1;
         renderObservacionesPage();
+        renderResponsablesPeriodo(rows);
+      };
+
+      const renderResponsablesPeriodo = (rows) => {
+        if (!obsResponsablesBody) {
+          return;
+        }
+        if (!cedulaResultados.value) {
+          obsResponsablesBody.innerHTML = `
+            <tr>
+              <td colspan="6" class="muted">Selecciona una cédula de resultados para consultar responsables.</td>
+            </tr>
+          `;
+          return;
+        }
+        const unique = new Map();
+        rows.forEach((row) => {
+          const key = [
+            row.ente_id || "",
+            row.ente_nombre || "",
+            row.tipo_auditoria || "",
+            row.responsable_nombre || "",
+            row.responsable_periodo || "",
+            row.administrador_nombre || "",
+            row.administrador_periodo || "",
+          ].join("|");
+          if (!unique.has(key)) {
+            unique.set(key, row);
+          }
+        });
+        const responsables = Array.from(unique.values());
+        if (!responsables.length) {
+          obsResponsablesBody.innerHTML = `
+            <tr>
+              <td colspan="6" class="muted">Sin responsables para la cédula seleccionada.</td>
+            </tr>
+          `;
+          return;
+        }
+        obsResponsablesBody.innerHTML = responsables.map((row) => `
+          <tr>
+            <td>${row.ente_nombre || "—"}</td>
+            <td>${row.tipo_auditoria || "—"}</td>
+            <td>${row.responsable_nombre || "—"}</td>
+            <td>${row.responsable_periodo || "—"}</td>
+            <td>${row.administrador_nombre || "—"}</td>
+            <td>${row.administrador_periodo || "—"}</td>
+          </tr>
+        `).join("");
       };
 
       const formatMonto = (value) => {
@@ -524,12 +550,45 @@
         }
       };
 
+      const loadEjercicios = async () => {
+        mainEjercicio.innerHTML = "<option value=\"\" disabled selected>Selecciona</option>";
+        try {
+          const response = await fetch("/ejercicios-disponibles");
+          if (!response.ok) {
+            throw new Error("Fetch failed");
+          }
+          const data = await response.json();
+          data.forEach((item) => {
+            const option = document.createElement("option");
+            option.value = item.ejercicio;
+            if (Number(item.total_observaciones || 0) > 0) {
+              option.textContent = `${item.ejercicio} (${item.total_observaciones} observaciones)`;
+            } else {
+              option.textContent = `${item.ejercicio} (sin observaciones)`;
+            }
+            mainEjercicio.appendChild(option);
+          });
+          return data;
+        } catch (error) {
+          console.error(error);
+          ["2023", "2024", "2025"].forEach((year) => {
+            const option = document.createElement("option");
+            option.value = year;
+            option.textContent = year;
+            mainEjercicio.appendChild(option);
+          });
+          return [];
+        }
+      };
+
       const loadFiltros = async (ejercicio, enteId = "", tipoAuditoria = "") => {
-        const currentTitular = titularNombre.value;
-        const currentTitularPeriodo = titularPeriodo.value;
-        const currentAdmin = adminNombre.value;
-        const currentAdminPeriodo = adminPeriodo.value;
         const currentAuditoria = mainTipoAuditoria ? mainTipoAuditoria.value : "";
+        const currentTipoAnexo = obsTipoAnexo.value;
+        const currentEstado = obsEstado.value;
+        const currentFuente = obsFuente.value;
+        const currentRamo = obsRamo.value;
+        const currentOficio = obsOficio.value;
+        const currentCedula = cedulaResultados.value;
         resetSelect(mainTipoAuditoria, "Todas");
         resetSelect(obsTipoAnexo, "Todos");
         resetSelect(obsEstado, "Todos");
@@ -543,10 +602,6 @@
           `;
         }
         resetSelect(obsOficio, "Todos");
-        resetSelect(titularPeriodo, "Todos");
-        resetSelect(titularNombre, "Todos");
-        resetSelect(adminPeriodo, "Todos");
-        resetSelect(adminNombre, "Todos");
         resetSelect(cedulaResultados, "Todos");
         if (!ejercicio) {
           return;
@@ -559,11 +614,23 @@
           if (tipoAuditoria) {
             params.set("tipo_auditoria", tipoAuditoria);
           }
-          if (currentTitular) {
-            params.set("titular", currentTitular);
+          if (currentTipoAnexo) {
+            params.set("tipo_anexo", currentTipoAnexo);
           }
-          if (currentAdmin) {
-            params.set("administrativo", currentAdmin);
+          if (currentEstado) {
+            params.set("estado", currentEstado);
+          }
+          if (currentFuente) {
+            params.set("fuente_financiamiento", currentFuente);
+          }
+          if (currentRamo) {
+            params.set("ramo_33", currentRamo);
+          }
+          if (currentOficio) {
+            params.set("oficio", currentOficio);
+          }
+          if (currentCedula) {
+            params.set("periodo_cedula", currentCedula);
           }
           const response = await fetch(`/observaciones-filtros?${params.toString()}`);
           if (!response.ok) {
@@ -587,18 +654,33 @@
             option.textContent = item;
             obsTipoAnexo.appendChild(option);
           });
+          if (currentTipoAnexo && obsTipoAnexo.querySelector(`option[value="${currentTipoAnexo}"]`)) {
+            obsTipoAnexo.value = currentTipoAnexo;
+          } else {
+            obsTipoAnexo.value = "";
+          }
           (data.estado || []).forEach((item) => {
             const option = document.createElement("option");
             option.value = item;
             option.textContent = item;
             obsEstado.appendChild(option);
           });
+          if (currentEstado && obsEstado.querySelector(`option[value="${currentEstado}"]`)) {
+            obsEstado.value = currentEstado;
+          } else {
+            obsEstado.value = "";
+          }
           (data.fuente_financiamiento || []).forEach((item) => {
             const option = document.createElement("option");
             option.value = item;
             option.textContent = item;
             obsFuente.appendChild(option);
           });
+          if (currentFuente && obsFuente.querySelector(`option[value="${currentFuente}"]`)) {
+            obsFuente.value = currentFuente;
+          } else {
+            obsFuente.value = "";
+          }
           (data.ramo_33 || []).forEach((item) => {
             const normalized = String(item || "").trim().toLowerCase();
             if (normalized === "si" || normalized === "no") {
@@ -611,55 +693,26 @@
             option.textContent = item;
             obsOficio.appendChild(option);
           });
-          (data.periodo_informe || []).forEach((item) => {
-            const option = document.createElement("option");
-            option.value = item;
-            option.textContent = item;
-            titularPeriodo.appendChild(option);
-          });
-          (data.titulares || []).forEach((item) => {
-            const option = document.createElement("option");
-            option.value = item;
-            option.textContent = item;
-            titularNombre.appendChild(option);
-          });
-          (data.periodo_admin || []).forEach((item) => {
-            const option = document.createElement("option");
-            option.value = item;
-            option.textContent = item;
-            adminPeriodo.appendChild(option);
-          });
-          (data.administrativos || []).forEach((item) => {
-            const option = document.createElement("option");
-            option.value = item;
-            option.textContent = item;
-            adminNombre.appendChild(option);
-          });
+          if (currentRamo && obsRamo.querySelector(`option[value="${currentRamo}"]`)) {
+            obsRamo.value = currentRamo;
+          } else {
+            obsRamo.value = "";
+          }
+          if (currentOficio && obsOficio.querySelector(`option[value="${currentOficio}"]`)) {
+            obsOficio.value = currentOficio;
+          } else {
+            obsOficio.value = "";
+          }
           (data.cedulas || []).forEach((item) => {
             const option = document.createElement("option");
             option.value = item;
             option.textContent = item;
             cedulaResultados.appendChild(option);
           });
-          if (currentTitular && titularNombre.querySelector(`option[value="${currentTitular}"]`)) {
-            titularNombre.value = currentTitular;
+          if (currentCedula && cedulaResultados.querySelector(`option[value="${currentCedula}"]`)) {
+            cedulaResultados.value = currentCedula;
           } else {
-            titularNombre.value = "";
-          }
-          if (currentTitularPeriodo && titularPeriodo.querySelector(`option[value="${currentTitularPeriodo}"]`)) {
-            titularPeriodo.value = currentTitularPeriodo;
-          } else {
-            titularPeriodo.value = "";
-          }
-          if (currentAdmin && adminNombre.querySelector(`option[value="${currentAdmin}"]`)) {
-            adminNombre.value = currentAdmin;
-          } else {
-            adminNombre.value = "";
-          }
-          if (currentAdminPeriodo && adminPeriodo.querySelector(`option[value="${currentAdminPeriodo}"]`)) {
-            adminPeriodo.value = currentAdminPeriodo;
-          } else {
-            adminPeriodo.value = "";
+            cedulaResultados.value = "";
           }
         } catch (error) {
           console.error(error);
@@ -672,6 +725,13 @@
         if (!ejercicio) {
           obsTableBody.innerHTML = "<tr><td colspan=\"11\" class=\"muted\">Selecciona un ejercicio.</td></tr>";
           obsCount.textContent = "Selecciona un ejercicio para ver resultados.";
+          if (obsResponsablesBody) {
+            obsResponsablesBody.innerHTML = `
+              <tr>
+                <td colspan="6" class="muted">Selecciona una cédula de resultados para consultar responsables.</td>
+              </tr>
+            `;
+          }
           obsRows = [];
           obsPage = 1;
           renderPdpSummary([]);
@@ -707,17 +767,8 @@
         if (obsOficio.value.trim()) {
           params.set("oficio", obsOficio.value.trim());
         }
-        if (titularNombre.value) {
-          params.set("titular", titularNombre.value);
-        }
-        if (titularPeriodo.value) {
-          params.set("periodo_informe", titularPeriodo.value);
-        }
-        if (adminNombre.value) {
-          params.set("administrativo", adminNombre.value);
-        }
-        if (adminPeriodo.value) {
-          params.set("periodo_admin", adminPeriodo.value);
+        if (cedulaResultados.value) {
+          params.set("periodo_cedula", cedulaResultados.value);
         }
         try {
           const response = await fetch(`/observaciones?${params.toString()}`);
@@ -868,29 +919,27 @@
       });
       setTab("observaciones");
 
-      mainEjercicio.addEventListener("change", async () => {
+      const handleEjercicioChange = async () => {
         setObsEnabled(Boolean(mainEjercicio.value));
         setCatalogoEnabled(Boolean(mainEjercicio.value));
         obsEnteInput.value = "";
         if (mainTipoAuditoria) {
           mainTipoAuditoria.value = "";
         }
-        await loadObsEntes(mainEjercicio.value);
-        await loadFiltros(mainEjercicio.value, "", "");
         obsTipoAnexo.value = "";
         obsEstado.value = "";
         obsFuente.value = "";
         obsRamo.value = "";
         obsOficio.value = "";
-        titularPeriodo.value = "";
-        titularNombre.value = "";
-        adminPeriodo.value = "";
-        adminNombre.value = "";
         cedulaResultados.value = "";
+        await loadObsEntes(mainEjercicio.value);
+        await loadFiltros(mainEjercicio.value, "", "");
         await loadObservaciones();
         await loadAnexoCount();
         await loadCatalogo();
-      });
+      };
+
+      mainEjercicio.addEventListener("change", handleEjercicioChange);
       obsEnteInput.addEventListener("change", async () => {
         await loadFiltros(mainEjercicio.value, obsEnteInput.value.trim(), mainTipoAuditoria ? mainTipoAuditoria.value : "");
         await loadObservaciones();
@@ -903,26 +952,6 @@
           await loadAnexoCount();
         });
       }
-      titularNombre.addEventListener("change", async () => {
-        titularPeriodo.value = "";
-        await loadFiltros(
-          mainEjercicio.value,
-          obsEnteInput.value.trim(),
-          mainTipoAuditoria ? mainTipoAuditoria.value : ""
-        );
-        await loadObservaciones();
-        await loadAnexoCount();
-      });
-      adminNombre.addEventListener("change", async () => {
-        adminPeriodo.value = "";
-        await loadFiltros(
-          mainEjercicio.value,
-          obsEnteInput.value.trim(),
-          mainTipoAuditoria ? mainTipoAuditoria.value : ""
-        );
-        await loadObservaciones();
-        await loadAnexoCount();
-      });
       obsEnteInput.addEventListener("keyup", (event) => {
         if (event.key === "Enter") {
           loadObservaciones();
@@ -935,8 +964,7 @@
         obsFuente,
         obsRamo,
         obsOficio,
-        titularPeriodo,
-        adminPeriodo,
+        cedulaResultados,
       ].forEach((select) => {
         select.addEventListener("change", loadObservaciones);
       });
@@ -946,10 +974,6 @@
         obsFuente.value = "";
         obsRamo.value = "";
         obsOficio.value = "";
-        titularPeriodo.value = "";
-        titularNombre.value = "";
-        adminPeriodo.value = "";
-        adminNombre.value = "";
         cedulaResultados.value = "";
         await loadFiltros(
           mainEjercicio.value,
@@ -977,6 +1001,20 @@
 
       setObsEnabled(false);
       setCatalogoEnabled(false);
+
+      (async () => {
+        const ejercicios = await loadEjercicios();
+        if (!ejercicios.length) {
+          return;
+        }
+        const preferred =
+          ejercicios.find((item) => Number(item.total_observaciones || 0) > 0)
+          || ejercicios[0];
+        if (preferred && preferred.ejercicio) {
+          mainEjercicio.value = preferred.ejercicio;
+          await handleEjercicioChange();
+        }
+      })();
     }
   </script>
 </body>
