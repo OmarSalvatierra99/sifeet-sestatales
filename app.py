@@ -1,11 +1,14 @@
 from datetime import datetime
 from functools import wraps
+from io import BytesIO
 import os
 import re
 import sqlite3
 import unicodedata
 
-from flask import Flask, render_template, request, redirect, url_for, g, jsonify, session
+from flask import Flask, render_template, request, redirect, url_for, g, jsonify, session, send_file
+from openpyxl import Workbook
+from openpyxl.styles import Font
 from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -40,6 +43,20 @@ MONTHS_ES = {
     "11": "noviembre",
     "12": "diciembre",
 }
+MONTHS_ES_TO_NUM = {normalize_key: number for number, normalize_key in (
+    ("01", "enero"),
+    ("02", "febrero"),
+    ("03", "marzo"),
+    ("04", "abril"),
+    ("05", "mayo"),
+    ("06", "junio"),
+    ("07", "julio"),
+    ("08", "agosto"),
+    ("09", "septiembre"),
+    ("10", "octubre"),
+    ("11", "noviembre"),
+    ("12", "diciembre"),
+)}
 
 
 def periodo_sql(alias: str) -> str:
@@ -65,6 +82,61 @@ def normalize_ente_id(value: str) -> str:
 
 def normalize_ente_id_sql(column: str) -> str:
     return f"RTRIM(TRIM(COALESCE({column}, '')), '.')"
+
+
+def normalize_text_key(value: str) -> str:
+    clean = (value or "").strip().lower()
+    if not clean:
+        return ""
+    clean = unicodedata.normalize("NFKD", clean)
+    clean = "".join(char for char in clean if not unicodedata.combining(char))
+    return re.sub(r"\s+", " ", clean).strip()
+
+
+def normalize_tipo_auditoria(value: str) -> str:
+    clean = (value or "").strip()
+    key = normalize_text_key(clean)
+    if key in {"auditoria", "auditoria financiera", "financiera"}:
+        return "Financiera"
+    if key in {"obra publica", "obra"}:
+        return "Obra Pública"
+    if key == "cuenta publica":
+        return "Cuenta Pública"
+    return clean
+
+
+def parse_periodo_cedula(ejercicio: str, periodo_cedula: str):
+    if not ejercicio or not periodo_cedula:
+        return None, None
+    match = re.match(
+        r"^\s*(\d{1,2})\s+de\s+([a-zA-ZáéíóúÁÉÍÓÚñÑ]+)\s+al\s+(\d{1,2})\s+de\s+([a-zA-ZáéíóúÁÉÍÓÚñÑ]+)\s*$",
+        periodo_cedula,
+    )
+    if not match:
+        return None, None
+
+    start_day = int(match.group(1))
+    start_month_key = normalize_text_key(match.group(2))
+    end_day = int(match.group(3))
+    end_month_key = normalize_text_key(match.group(4))
+
+    start_month = MONTHS_ES_TO_NUM.get(start_month_key)
+    end_month = MONTHS_ES_TO_NUM.get(end_month_key)
+    if not start_month or not end_month:
+        return None, None
+
+    try:
+        year = int(str(ejercicio).strip())
+    except ValueError:
+        return None, None
+
+    try:
+        start_date = datetime(year, int(start_month), start_day)
+        end_date = datetime(year, int(end_month), end_day)
+    except ValueError:
+        return None, None
+
+    return start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
 
 
 
@@ -809,11 +881,11 @@ def observaciones_api():
     ejercicio = request.args.get("ejercicio", "").strip()
     ente_id = normalize_ente_id(request.args.get("ente_id", ""))
     tipo_anexo = request.args.get("tipo_anexo", "").strip()
-    tipo_auditoria = request.args.get("tipo_auditoria", "").strip()
+    tipo_auditoria = normalize_tipo_auditoria(request.args.get("tipo_auditoria", ""))
     estado = request.args.get("estado", "").strip()
     fuente = request.args.get("fuente_financiamiento", "").strip()
     ramo_33 = request.args.get("ramo_33", "").strip()
-    oficio = request.args.get("oficio", "").strip()
+    concepto_irregularidad = request.args.get("concepto_irregularidad", "").strip()
     periodo_informe = request.args.get("periodo_informe", "").strip()
     titular = request.args.get("titular", "").strip()
     periodo_admin = request.args.get("periodo_admin", "").strip()
@@ -844,9 +916,9 @@ def observaciones_api():
     if ramo_33:
         filter_clauses.append("observaciones.ramo_33 = ?")
         params.append(ramo_33)
-    if oficio:
-        filter_clauses.append("observaciones.oficio = ?")
-        params.append(oficio)
+    if concepto_irregularidad:
+        filter_clauses.append("observaciones.pdp_concepto_irregularidad = ?")
+        params.append(concepto_irregularidad)
     if periodo_cedula:
         filter_clauses.append("observaciones.periodo_cedula = ?")
         params.append(periodo_cedula)
@@ -958,12 +1030,12 @@ def observaciones_api():
 def observaciones_filtros():
     ejercicio = request.args.get("ejercicio", "").strip()
     ente_id = normalize_ente_id(request.args.get("ente_id", ""))
-    tipo_auditoria = request.args.get("tipo_auditoria", "").strip()
+    tipo_auditoria = normalize_tipo_auditoria(request.args.get("tipo_auditoria", ""))
     tipo_anexo = request.args.get("tipo_anexo", "").strip()
     estado = request.args.get("estado", "").strip()
     fuente = request.args.get("fuente_financiamiento", "").strip()
     ramo_33 = request.args.get("ramo_33", "").strip()
-    oficio = request.args.get("oficio", "").strip()
+    concepto_irregularidad = request.args.get("concepto_irregularidad", "").strip()
     periodo_cedula = request.args.get("periodo_cedula", "").strip()
     titular_seleccionado = request.args.get("titular", "").strip()
     administrativo_seleccionado = request.args.get("administrativo", "").strip()
@@ -995,9 +1067,9 @@ def observaciones_filtros():
     if ramo_33:
         scoped_clauses.append("ramo_33 = ?")
         scoped_params.append(ramo_33)
-    if oficio:
-        scoped_clauses.append("oficio = ?")
-        scoped_params.append(oficio)
+    if concepto_irregularidad:
+        scoped_clauses.append("pdp_concepto_irregularidad = ?")
+        scoped_params.append(concepto_irregularidad)
     if periodo_cedula:
         scoped_clauses.append("periodo_cedula = ?")
         scoped_params.append(periodo_cedula)
@@ -1056,23 +1128,23 @@ def observaciones_filtros():
         """,
         scoped_params,
     ).fetchall()
-    oficios = db.execute(
+    conceptos = db.execute(
         f"""
-        SELECT DISTINCT oficio
+        SELECT DISTINCT pdp_concepto_irregularidad
         FROM observaciones
         WHERE {scoped_where}
-          AND oficio IS NOT NULL AND oficio != ''
-        ORDER BY oficio
+          AND pdp_concepto_irregularidad IS NOT NULL AND pdp_concepto_irregularidad != ''
+        ORDER BY pdp_concepto_irregularidad
         """,
         scoped_params,
     ).fetchall()
     ente_nombre = None
     if ente_id:
         ente_row = db.execute(
-            """
+            f"""
             SELECT ente_nombre
             FROM entes_detalle
-            WHERE ejercicio = ? AND ente_id = ?
+            WHERE ejercicio = ? AND {normalize_ente_id_sql('ente_id')} = ?
             """,
             (ejercicio, ente_id),
         ).fetchone()
@@ -1091,29 +1163,35 @@ def observaciones_filtros():
         periodo_titular_clause = "AND nombre = ?"
         periodos_params.append(titular_seleccionado)
 
+    titular_tipo_clause = ""
+    titular_tipo_params = []
+    if tipo_auditoria:
+        titular_tipo_clause = "AND tipo_auditoria = ?"
+        titular_tipo_params.append(tipo_auditoria)
+
     periodos_informe = db.execute(
         f"""
         SELECT DISTINCT {periodo_sql("historial_titulares")} AS periodo
         FROM historial_titulares
         WHERE ejercicio = ? {titular_clause} {periodo_titular_clause}
-          AND tipo_auditoria = ?
+          {titular_tipo_clause}
           AND tipo_registro = 'titular'
           AND fecha_inicio IS NOT NULL AND fecha_fin IS NOT NULL
         ORDER BY fecha_inicio
         """,
-        periodos_params + [tipo_auditoria or "Financiera"],
+        periodos_params + titular_tipo_params,
     ).fetchall()
     titulares = db.execute(
         f"""
         SELECT DISTINCT nombre
         FROM historial_titulares
         WHERE ejercicio = ? {titular_clause}
-          AND tipo_auditoria = ?
+          {titular_tipo_clause}
           AND tipo_registro = 'titular'
           AND nombre IS NOT NULL AND nombre != ''
         ORDER BY nombre
         """,
-        titular_params + [tipo_auditoria or "Financiera"],
+        titular_params + titular_tipo_params,
     ).fetchall()
 
     admin_params = [ejercicio]
@@ -1128,29 +1206,35 @@ def observaciones_filtros():
         periodo_admin_clause = "AND nombre = ?"
         admin_periodos_params.append(administrativo_seleccionado)
 
+    admin_tipo_clause = ""
+    admin_tipo_params = []
+    if tipo_auditoria:
+        admin_tipo_clause = "AND tipo_auditoria = ?"
+        admin_tipo_params.append(tipo_auditoria)
+
     periodos_admin = db.execute(
         f"""
         SELECT DISTINCT {periodo_sql("historial_titulares")} AS periodo
         FROM historial_titulares
         WHERE ejercicio = ? {admin_clause} {periodo_admin_clause}
-          AND tipo_auditoria = ?
+          {admin_tipo_clause}
           AND tipo_registro = 'director_administrativo'
           AND fecha_inicio IS NOT NULL AND fecha_fin IS NOT NULL
         ORDER BY fecha_inicio
         """,
-        admin_periodos_params + [tipo_auditoria or "Financiera"],
+        admin_periodos_params + admin_tipo_params,
     ).fetchall()
     administrativos = db.execute(
         f"""
         SELECT DISTINCT nombre
         FROM historial_titulares
         WHERE ejercicio = ? {admin_clause}
-          AND tipo_auditoria = ?
+          {admin_tipo_clause}
           AND tipo_registro = 'director_administrativo'
           AND nombre IS NOT NULL AND nombre != ''
         ORDER BY nombre
         """,
-        admin_params + [tipo_auditoria or "Financiera"],
+        admin_params + admin_tipo_params,
     ).fetchall()
     cedulas = db.execute(
         f"""
@@ -1168,7 +1252,7 @@ def observaciones_filtros():
     filtros["estado"] = [row[0] for row in estados]
     filtros["fuente_financiamiento"] = [row[0] for row in fuentes]
     filtros["ramo_33"] = [row[0] for row in ramos]
-    filtros["oficios"] = [row[0] for row in oficios]
+    filtros["conceptos_irregularidad"] = [row[0] for row in conceptos]
     filtros["periodo_informe"] = [row[0] for row in periodos_informe]
     filtros["titulares"] = [row[0] for row in titulares]
     filtros["periodo_admin"] = [row[0] for row in periodos_admin]
@@ -1178,15 +1262,334 @@ def observaciones_filtros():
     return jsonify(filtros)
 
 
+@app.get("/observaciones-responsables")
+@login_required
+def observaciones_responsables():
+    ejercicio = request.args.get("ejercicio", "").strip()
+    ente_id = normalize_ente_id(request.args.get("ente_id", ""))
+    tipo_anexo = request.args.get("tipo_anexo", "").strip()
+    tipo_auditoria = normalize_tipo_auditoria(request.args.get("tipo_auditoria", ""))
+    estado = request.args.get("estado", "").strip()
+    fuente = request.args.get("fuente_financiamiento", "").strip()
+    ramo_33 = request.args.get("ramo_33", "").strip()
+    concepto_irregularidad = request.args.get("concepto_irregularidad", "").strip()
+    periodo_cedula = request.args.get("periodo_cedula", "").strip()
+    if not ejercicio or not periodo_cedula:
+        return jsonify([])
+
+    db = get_db()
+    filter_clauses = ["o.ejercicio = ?"]
+    params = [ejercicio]
+    if ente_id:
+        filter_clauses.append(f"{normalize_ente_id_sql('o.ente_id')} = ?")
+        params.append(ente_id)
+    if tipo_anexo:
+        filter_clauses.append("o.tipo_anexo = ?")
+        params.append(tipo_anexo)
+    if tipo_auditoria:
+        filter_clauses.append("o.tipo_auditoria = ?")
+        params.append(tipo_auditoria)
+    if estado:
+        filter_clauses.append("o.estado = ?")
+        params.append(estado)
+    if fuente:
+        filter_clauses.append("o.fuente_financiamiento = ?")
+        params.append(fuente)
+    if ramo_33:
+        filter_clauses.append("o.ramo_33 = ?")
+        params.append(ramo_33)
+    if concepto_irregularidad:
+        filter_clauses.append("o.pdp_concepto_irregularidad = ?")
+        params.append(concepto_irregularidad)
+    if periodo_cedula:
+        filter_clauses.append("o.periodo_cedula = ?")
+        params.append(periodo_cedula)
+
+    where_sql = " AND ".join(filter_clauses)
+    observaciones_rows = db.execute(
+        f"""
+        SELECT DISTINCT
+            o.ejercicio,
+            o.ente_id,
+            o.ente_nombre,
+            ed.ente_nombre AS ente_detalle_nombre,
+            o.tipo_auditoria,
+            o.periodo_cedula
+        FROM observaciones AS o
+        LEFT JOIN entes_detalle AS ed
+            ON {normalize_ente_id_sql("o.ente_id")} = {normalize_ente_id_sql("ed.ente_id")}
+            AND o.ejercicio = ed.ejercicio
+        WHERE {where_sql}
+        ORDER BY o.ente_nombre ASC, o.tipo_auditoria ASC
+        """,
+        params,
+    ).fetchall()
+
+    resultado = []
+    for row in observaciones_rows:
+        cedula_inicio, cedula_fin = parse_periodo_cedula(row["ejercicio"], row["periodo_cedula"])
+        if not cedula_inicio or not cedula_fin:
+            continue
+
+        nombres_ente = []
+        for candidate in [row["ente_nombre"], row["ente_detalle_nombre"]]:
+            value = (candidate or "").strip()
+            if value and value not in nombres_ente:
+                nombres_ente.append(value)
+        if not nombres_ente:
+            continue
+
+        placeholders = ", ".join(["?"] * len(nombres_ente))
+        historial_rows = db.execute(
+            f"""
+            SELECT
+                h.tipo_registro,
+                h.nombre,
+                {periodo_sql("h")} AS periodo
+            FROM historial_titulares AS h
+            WHERE h.ejercicio = ?
+              AND h.tipo_auditoria = ?
+              AND h.ente IN ({placeholders})
+              AND h.tipo_registro IN ('titular', 'director_administrativo')
+              AND h.nombre IS NOT NULL AND h.nombre != ''
+              AND date(h.fecha_inicio) <= date(?)
+              AND date(h.fecha_fin) >= date(?)
+            ORDER BY h.tipo_registro ASC, h.fecha_inicio ASC, h.nombre ASC
+            """,
+            [row["ejercicio"], row["tipo_auditoria"], *nombres_ente, cedula_fin, cedula_inicio],
+        ).fetchall()
+
+        titulares = []
+        administrativos = []
+        titulares_seen = set()
+        administrativos_seen = set()
+        for item in historial_rows:
+            payload = {
+                "nombre": item["nombre"],
+                "periodo": item["periodo"],
+            }
+            key = (payload["nombre"], payload["periodo"])
+            if item["tipo_registro"] == "titular":
+                if key in titulares_seen:
+                    continue
+                titulares_seen.add(key)
+                titulares.append(payload)
+            elif item["tipo_registro"] == "director_administrativo":
+                if key in administrativos_seen:
+                    continue
+                administrativos_seen.add(key)
+                administrativos.append(payload)
+
+        resultado.append(
+            {
+                "ejercicio": row["ejercicio"],
+                "ente_id": row["ente_id"],
+                "ente_nombre": row["ente_nombre"] or row["ente_detalle_nombre"] or "—",
+                "tipo_auditoria": row["tipo_auditoria"],
+                "periodo_cedula": row["periodo_cedula"],
+                "titulares": titulares,
+                "administrativos": administrativos,
+            }
+        )
+
+    return jsonify(resultado)
+
+
+@app.get("/observaciones-exportar")
+@login_required
+def observaciones_exportar():
+    ejercicio = request.args.get("ejercicio", "").strip()
+    ente_id = normalize_ente_id(request.args.get("ente_id", ""))
+    tipo_anexo = request.args.get("tipo_anexo", "").strip()
+    tipo_auditoria = normalize_tipo_auditoria(request.args.get("tipo_auditoria", ""))
+    estado = request.args.get("estado", "").strip()
+    fuente = request.args.get("fuente_financiamiento", "").strip()
+    ramo_33 = request.args.get("ramo_33", "").strip()
+    concepto_irregularidad = request.args.get("concepto_irregularidad", "").strip()
+    periodo_cedula = request.args.get("periodo_cedula", "").strip()
+    if not ejercicio:
+        return jsonify({"error": "ejercicio requerido"}), 400
+
+    db = get_db()
+    params = [ejercicio]
+    filter_clauses = []
+    if ente_id:
+        filter_clauses.append(f"{normalize_ente_id_sql('observaciones.ente_id')} = ?")
+        params.append(ente_id)
+    if tipo_anexo:
+        filter_clauses.append("observaciones.tipo_anexo = ?")
+        params.append(tipo_anexo)
+    if tipo_auditoria:
+        filter_clauses.append("observaciones.tipo_auditoria = ?")
+        params.append(tipo_auditoria)
+    if estado:
+        filter_clauses.append("observaciones.estado = ?")
+        params.append(estado)
+    if fuente:
+        filter_clauses.append("observaciones.fuente_financiamiento = ?")
+        params.append(fuente)
+    if ramo_33:
+        filter_clauses.append("observaciones.ramo_33 = ?")
+        params.append(ramo_33)
+    if concepto_irregularidad:
+        filter_clauses.append("observaciones.pdp_concepto_irregularidad = ?")
+        params.append(concepto_irregularidad)
+    if periodo_cedula:
+        filter_clauses.append("observaciones.periodo_cedula = ?")
+        params.append(periodo_cedula)
+
+    filter_sql = ""
+    if filter_clauses:
+        filter_sql = " AND " + " AND ".join(filter_clauses)
+
+    rows = db.execute(
+        f"""
+        SELECT
+            observaciones.ente_nombre,
+            observaciones.tipo_anexo,
+            observaciones.numero_observacion,
+            observaciones.estado,
+            observaciones.fecha_notificacion,
+            observaciones.fuente_financiamiento,
+            observaciones.pdp_concepto_irregularidad,
+            observaciones.monto_pdp_emitido,
+            observaciones.monto_pdp_solventado,
+            observaciones.monto_pdp_pendiente,
+            observaciones.tipo_auditoria
+        FROM observaciones
+        LEFT JOIN entes_detalle
+            ON {normalize_ente_id_sql("observaciones.ente_id")} = {normalize_ente_id_sql("entes_detalle.ente_id")}
+            AND observaciones.ejercicio = entes_detalle.ejercicio
+        WHERE observaciones.ejercicio = ?
+        {filter_sql}
+        ORDER BY
+            CAST(entes_detalle.ente_numero AS REAL) ASC,
+            entes_detalle.ente_numero ASC,
+            observaciones.ente_id ASC,
+            observaciones.tipo_anexo ASC,
+            observaciones.numero_observacion ASC
+        """,
+        params,
+    ).fetchall()
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Observaciones"
+
+    headers = [
+        "Ente",
+        "Tipo auditoria",
+        "Anexo",
+        "No. Obs",
+        "Estado",
+        "Fecha",
+        "Fuente",
+        "Concepto de Irrecularidad",
+        "Monto emitido",
+        "Monto solventado",
+        "Monto pendiente",
+    ]
+    sheet.append(headers)
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+
+    total_observaciones = 0
+    total_emitido = 0.0
+    total_solventado = 0.0
+    total_pendiente = 0.0
+    conteo_pdp = 0
+    conteo_pendiente = 0
+    conteo_solventado = 0
+
+    for row in rows:
+        monto_emitido = float(row["monto_pdp_emitido"] or 0)
+        monto_solventado = float(row["monto_pdp_solventado"] or 0)
+        monto_pendiente = float(row["monto_pdp_pendiente"] or 0)
+        total_observaciones += 1
+        total_emitido += monto_emitido
+        total_solventado += monto_solventado
+        total_pendiente += monto_pendiente
+        if (row["tipo_anexo"] or "") == "PDP":
+            conteo_pdp += 1
+        if (row["estado"] or "").strip().lower() == "pendiente":
+            conteo_pendiente += 1
+        if (row["estado"] or "").strip().lower() == "solventado":
+            conteo_solventado += 1
+
+        sheet.append(
+            [
+                row["ente_nombre"] or "—",
+                row["tipo_auditoria"] or "—",
+                row["tipo_anexo"] or "—",
+                row["numero_observacion"] if row["numero_observacion"] is not None else "—",
+                row["estado"] or "—",
+                row["fecha_notificacion"] or "—",
+                row["fuente_financiamiento"] or "—",
+                row["pdp_concepto_irregularidad"] or "—",
+                monto_emitido if (row["tipo_anexo"] or "") == "PDP" else 0,
+                monto_solventado if (row["tipo_anexo"] or "") == "PDP" else 0,
+                monto_pendiente if (row["tipo_anexo"] or "") == "PDP" else 0,
+            ]
+        )
+
+    last_data_row = sheet.max_row
+    for row_idx in range(2, last_data_row + 1):
+        for col in (9, 10, 11):
+            sheet.cell(row=row_idx, column=col).number_format = "#,##0.00"
+
+    summary_start = sheet.max_row + 2
+    sheet.cell(row=summary_start, column=1, value="Subtotal / Resumen").font = Font(bold=True)
+    summary_rows = [
+        ("Total observaciones", total_observaciones),
+        ("Observaciones PDP", conteo_pdp),
+        ("Observaciones pendientes", conteo_pendiente),
+        ("Observaciones solventadas", conteo_solventado),
+        ("Monto total emitido", total_emitido),
+        ("Monto total solventado", total_solventado),
+        ("Monto total pendiente", total_pendiente),
+    ]
+    for offset, (label, value) in enumerate(summary_rows, start=1):
+        current_row = summary_start + offset
+        sheet.cell(row=current_row, column=1, value=label).font = Font(bold=True)
+        sheet.cell(row=current_row, column=2, value=value)
+        if "Monto" in label:
+            sheet.cell(row=current_row, column=2).number_format = "#,##0.00"
+
+    for column_cells in sheet.columns:
+        max_len = 0
+        for cell in column_cells:
+            val = "" if cell.value is None else str(cell.value)
+            if len(val) > max_len:
+                max_len = len(val)
+        sheet.column_dimensions[column_cells[0].column_letter].width = min(max(12, max_len + 2), 50)
+
+    stream = BytesIO()
+    workbook.save(stream)
+    stream.seek(0)
+    filename = f"observaciones_{ejercicio}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return send_file(
+        stream,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
 @app.get("/observaciones-stats")
 @login_required
 def observaciones_stats():
     ente_id = normalize_ente_id(request.args.get("ente_id", ""))
-    where_clause = ""
+    tipo_auditoria = normalize_tipo_auditoria(request.args.get("tipo_auditoria", ""))
+    where_clauses = []
     params = []
     if ente_id:
-        where_clause = f"WHERE {normalize_ente_id_sql('ente_id')} = ?"
+        where_clauses.append(f"{normalize_ente_id_sql('ente_id')} = ?")
         params.append(ente_id)
+    if tipo_auditoria:
+        where_clauses.append("tipo_auditoria = ?")
+        params.append(tipo_auditoria)
+
+    where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
     db = get_db()
     totals = db.execute(
@@ -1245,10 +1648,16 @@ def observaciones_stats():
     ).fetchall()
 
     pdp_where = "WHERE tipo_anexo = 'PDP'"
+    pdp_clauses = []
     pdp_params = []
     if ente_id:
-        pdp_where = f"WHERE {normalize_ente_id_sql('ente_id')} = ? AND tipo_anexo = 'PDP'"
+        pdp_clauses.append(f"{normalize_ente_id_sql('ente_id')} = ?")
         pdp_params.append(ente_id)
+    if tipo_auditoria:
+        pdp_clauses.append("tipo_auditoria = ?")
+        pdp_params.append(tipo_auditoria)
+    if pdp_clauses:
+        pdp_where = f"WHERE {' AND '.join(pdp_clauses)} AND tipo_anexo = 'PDP'"
 
     pdp = db.execute(
         f"""

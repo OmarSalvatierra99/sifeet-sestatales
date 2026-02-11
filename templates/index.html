@@ -162,14 +162,19 @@
             </select>
           </div>
           <div class="field">
-            <label for="obs_oficio">Oficio</label>
-            <select id="obs_oficio" name="obs_oficio">
+            <label for="obs_concepto_irregularidad">Concepto de Irrecularidad</label>
+            <select id="obs_concepto_irregularidad" name="obs_concepto_irregularidad">
               <option value="">Todos</option>
             </select>
           </div>
         </div>
         <button class="btn-secondary" type="button" id="obs_clear">Limpiar filtros</button>
       </form>
+      <div class="obs-export-card">
+        <h3>Exportar observaciones</h3>
+        <p>Descarga en Excel las observaciones usando los filtros activos.</p>
+        <button class="btn-secondary" type="button" id="obs_export">Exportar a Excel</button>
+      </div>
       <div class="obs-responsables" id="obsResponsables">
         <h3>Titulares y administrativos del periodo</h3>
         <div class="table-wrap">
@@ -203,10 +208,9 @@
               <th>Anexo</th>
               <th>No. Obs</th>
               <th>Estado</th>
-              <th>Oficio</th>
               <th>Fecha</th>
               <th>Fuente</th>
-              <th>PDP detalle</th>
+              <th>Concepto de Irrecularidad</th>
               <th>Monto emitido</th>
               <th>Monto solventado</th>
               <th>Monto pendiente</th>
@@ -214,7 +218,7 @@
           </thead>
           <tbody id="obsTableBody">
             <tr>
-              <td colspan="11" class="muted">Sin resultados.</td>
+              <td colspan="10" class="muted">Sin resultados.</td>
             </tr>
           </tbody>
         </table>
@@ -274,10 +278,11 @@
     const obsEstado = document.getElementById("obs_estado");
     const obsFuente = document.getElementById("obs_fuente");
     const obsRamo = document.getElementById("obs_ramo");
-    const obsOficio = document.getElementById("obs_oficio");
+    const obsConceptoIrregularidad = document.getElementById("obs_concepto_irregularidad");
     const cedulaResultados = document.getElementById("cedula_resultados");
     const obsResponsablesBody = document.getElementById("obsResponsablesBody");
     const obsClear = document.getElementById("obs_clear");
+    const obsExport = document.getElementById("obs_export");
     const obsTableBody = document.getElementById("obsTableBody");
     const obsCount = document.getElementById("obsCount");
     const pdpSummaryBody = document.getElementById("pdpSummaryBody");
@@ -308,9 +313,10 @@
           obsEstado,
           obsFuente,
           obsRamo,
-          obsOficio,
+          obsConceptoIrregularidad,
           cedulaResultados,
           obsClear,
+          obsExport,
           obsPrev,
           obsNext,
         ].forEach((el) => {
@@ -337,7 +343,6 @@
         obsRows = rows;
         obsPage = 1;
         renderObservacionesPage();
-        renderResponsablesPeriodo(rows);
       };
 
       const renderResponsablesPeriodo = (rows) => {
@@ -354,15 +359,7 @@
         }
         const unique = new Map();
         rows.forEach((row) => {
-          const key = [
-            row.ente_id || "",
-            row.ente_nombre || "",
-            row.tipo_auditoria || "",
-            row.responsable_nombre || "",
-            row.responsable_periodo || "",
-            row.administrador_nombre || "",
-            row.administrador_periodo || "",
-          ].join("|");
+          const key = [row.ente_id || "", row.ente_nombre || "", row.tipo_auditoria || ""].join("|");
           if (!unique.has(key)) {
             unique.set(key, row);
           }
@@ -376,14 +373,26 @@
           `;
           return;
         }
+        const formatNombreList = (items) => {
+          if (!items || !items.length) {
+            return "—";
+          }
+          return items.map((item) => item.nombre || "—").join("<br>");
+        };
+        const formatPeriodoList = (items) => {
+          if (!items || !items.length) {
+            return "—";
+          }
+          return items.map((item) => item.periodo || "—").join("<br>");
+        };
         obsResponsablesBody.innerHTML = responsables.map((row) => `
           <tr>
             <td>${row.ente_nombre || "—"}</td>
             <td>${row.tipo_auditoria || "—"}</td>
-            <td>${row.responsable_nombre || "—"}</td>
-            <td>${row.responsable_periodo || "—"}</td>
-            <td>${row.administrador_nombre || "—"}</td>
-            <td>${row.administrador_periodo || "—"}</td>
+            <td>${formatNombreList(row.titulares)}</td>
+            <td>${formatPeriodoList(row.titulares)}</td>
+            <td>${formatNombreList(row.administrativos)}</td>
+            <td>${formatPeriodoList(row.administrativos)}</td>
           </tr>
         `).join("");
       };
@@ -460,7 +469,7 @@
 
       const renderObservacionesPage = () => {
         if (!obsRows.length) {
-          obsTableBody.innerHTML = "<tr><td colspan=\"11\" class=\"muted\">Sin resultados.</td></tr>";
+          obsTableBody.innerHTML = "<tr><td colspan=\"10\" class=\"muted\">Sin resultados.</td></tr>";
           obsCount.textContent = "0 observaciones encontradas.";
           renderPdpSummary([]);
           if (obsPageInfo) {
@@ -487,12 +496,8 @@
         }
 
         obsTableBody.innerHTML = pageRows.map((row) => {
-          const pdpDetalle = row.tipo_anexo === "PDP"
-            ? [
-                row.pdp_no_irregularidad,
-                row.pdp_concepto_irregularidad,
-                row.pdp_subconcepto_irregularidad,
-              ].filter(Boolean).join(" · ") || "—"
+          const conceptoIrregularidad = row.tipo_anexo === "PDP"
+            ? (row.pdp_concepto_irregularidad || row.pdp_subconcepto_irregularidad || "—")
             : "—";
           const montoEmitido = row.tipo_anexo === "PDP" ? formatMonto(row.monto_pdp_emitido) : "—";
           const montoSolventado = row.tipo_anexo === "PDP" ? formatMonto(row.monto_pdp_solventado) : "—";
@@ -506,10 +511,9 @@
               <td><span class="tag">${row.tipo_anexo || "—"}</span></td>
               <td>${row.numero_observacion ?? "—"}</td>
               <td><span class="tag tag-state">${row.estado || "—"}</span></td>
-              <td>${row.oficio || "—"}</td>
               <td>${row.fecha_notificacion || "—"}</td>
               <td>${row.fuente_financiamiento || "—"}</td>
-              <td>${pdpDetalle}</td>
+              <td>${conceptoIrregularidad}</td>
               <td>${montoEmitido}</td>
               <td>${montoSolventado}</td>
               <td>${montoPendiente}</td>
@@ -587,7 +591,7 @@
         const currentEstado = obsEstado.value;
         const currentFuente = obsFuente.value;
         const currentRamo = obsRamo.value;
-        const currentOficio = obsOficio.value;
+        const currentConcepto = obsConceptoIrregularidad.value;
         const currentCedula = cedulaResultados.value;
         resetSelect(mainTipoAuditoria, "Todas");
         resetSelect(obsTipoAnexo, "Todos");
@@ -601,7 +605,7 @@
             <option value="No">No</option>
           `;
         }
-        resetSelect(obsOficio, "Todos");
+        resetSelect(obsConceptoIrregularidad, "Todos");
         resetSelect(cedulaResultados, "Todos");
         if (!ejercicio) {
           return;
@@ -626,8 +630,8 @@
           if (currentRamo) {
             params.set("ramo_33", currentRamo);
           }
-          if (currentOficio) {
-            params.set("oficio", currentOficio);
+          if (currentConcepto) {
+            params.set("concepto_irregularidad", currentConcepto);
           }
           if (currentCedula) {
             params.set("periodo_cedula", currentCedula);
@@ -687,21 +691,21 @@
               return;
             }
           });
-          (data.oficios || []).forEach((item) => {
+          (data.conceptos_irregularidad || []).forEach((item) => {
             const option = document.createElement("option");
             option.value = item;
             option.textContent = item;
-            obsOficio.appendChild(option);
+            obsConceptoIrregularidad.appendChild(option);
           });
           if (currentRamo && obsRamo.querySelector(`option[value="${currentRamo}"]`)) {
             obsRamo.value = currentRamo;
           } else {
             obsRamo.value = "";
           }
-          if (currentOficio && obsOficio.querySelector(`option[value="${currentOficio}"]`)) {
-            obsOficio.value = currentOficio;
+          if (currentConcepto && obsConceptoIrregularidad.querySelector(`option[value="${currentConcepto}"]`)) {
+            obsConceptoIrregularidad.value = currentConcepto;
           } else {
-            obsOficio.value = "";
+            obsConceptoIrregularidad.value = "";
           }
           (data.cedulas || []).forEach((item) => {
             const option = document.createElement("option");
@@ -723,7 +727,7 @@
         const ejercicio = mainEjercicio.value;
         const enteId = obsEnteInput.value.trim();
         if (!ejercicio) {
-          obsTableBody.innerHTML = "<tr><td colspan=\"11\" class=\"muted\">Selecciona un ejercicio.</td></tr>";
+          obsTableBody.innerHTML = "<tr><td colspan=\"10\" class=\"muted\">Selecciona un ejercicio.</td></tr>";
           obsCount.textContent = "Selecciona un ejercicio para ver resultados.";
           if (obsResponsablesBody) {
             obsResponsablesBody.innerHTML = `
@@ -764,8 +768,8 @@
         if (obsRamo.value) {
           params.set("ramo_33", obsRamo.value);
         }
-        if (obsOficio.value.trim()) {
-          params.set("oficio", obsOficio.value.trim());
+        if (obsConceptoIrregularidad.value) {
+          params.set("concepto_irregularidad", obsConceptoIrregularidad.value);
         }
         if (cedulaResultados.value) {
           params.set("periodo_cedula", cedulaResultados.value);
@@ -777,10 +781,61 @@
           }
           const data = await response.json();
           renderObservaciones(data);
+          if (cedulaResultados.value) {
+            const responsablesResponse = await fetch(`/observaciones-responsables?${params.toString()}`);
+            if (!responsablesResponse.ok) {
+              throw new Error("Responsables fetch failed");
+            }
+            const responsablesData = await responsablesResponse.json();
+            renderResponsablesPeriodo(responsablesData);
+          } else {
+            renderResponsablesPeriodo([]);
+          }
         } catch (error) {
           console.error(error);
           obsTableBody.innerHTML = "<tr><td colspan=\"10\" class=\"muted\">No se pudo cargar la información.</td></tr>";
+          if (obsResponsablesBody) {
+            obsResponsablesBody.innerHTML = `
+              <tr>
+                <td colspan="6" class="muted">No se pudo cargar responsables del periodo.</td>
+              </tr>
+            `;
+          }
         }
+      };
+
+      const exportObservaciones = () => {
+        const ejercicio = mainEjercicio.value;
+        if (!ejercicio) {
+          return;
+        }
+        const params = new URLSearchParams({ ejercicio });
+        const enteId = obsEnteInput.value.trim();
+        if (enteId) {
+          params.set("ente_id", enteId);
+        }
+        if (obsTipoAnexo.value) {
+          params.set("tipo_anexo", obsTipoAnexo.value);
+        }
+        if (mainTipoAuditoria && mainTipoAuditoria.value) {
+          params.set("tipo_auditoria", mainTipoAuditoria.value);
+        }
+        if (obsEstado.value) {
+          params.set("estado", obsEstado.value);
+        }
+        if (obsFuente.value) {
+          params.set("fuente_financiamiento", obsFuente.value);
+        }
+        if (obsRamo.value) {
+          params.set("ramo_33", obsRamo.value);
+        }
+        if (obsConceptoIrregularidad.value) {
+          params.set("concepto_irregularidad", obsConceptoIrregularidad.value);
+        }
+        if (cedulaResultados.value) {
+          params.set("periodo_cedula", cedulaResultados.value);
+        }
+        window.location.href = `/observaciones-exportar?${params.toString()}`;
       };
 
       const renderAnexoCount = (stats, ejercicio) => {
@@ -836,9 +891,13 @@
           return;
         }
         const enteFilter = obsEnteInput ? obsEnteInput.value.trim() : "";
+        const tipoAuditoria = mainTipoAuditoria ? mainTipoAuditoria.value.trim() : "";
         const statsParams = new URLSearchParams();
         if (enteFilter) {
           statsParams.set("ente_id", enteFilter);
+        }
+        if (tipoAuditoria) {
+          statsParams.set("tipo_auditoria", tipoAuditoria);
         }
         const statsUrl = statsParams.toString()
           ? `/observaciones-stats?${statsParams.toString()}`
@@ -930,7 +989,7 @@
         obsEstado.value = "";
         obsFuente.value = "";
         obsRamo.value = "";
-        obsOficio.value = "";
+        obsConceptoIrregularidad.value = "";
         cedulaResultados.value = "";
         await loadObsEntes(mainEjercicio.value);
         await loadFiltros(mainEjercicio.value, "", "");
@@ -963,7 +1022,7 @@
         obsEstado,
         obsFuente,
         obsRamo,
-        obsOficio,
+        obsConceptoIrregularidad,
         cedulaResultados,
       ].forEach((select) => {
         select.addEventListener("change", loadObservaciones);
@@ -973,7 +1032,7 @@
         obsEstado.value = "";
         obsFuente.value = "";
         obsRamo.value = "";
-        obsOficio.value = "";
+        obsConceptoIrregularidad.value = "";
         cedulaResultados.value = "";
         await loadFiltros(
           mainEjercicio.value,
@@ -983,6 +1042,9 @@
         await loadObservaciones();
         await loadAnexoCount();
       });
+      if (obsExport) {
+        obsExport.addEventListener("click", exportObservaciones);
+      }
 
       if (obsPrev) {
         obsPrev.addEventListener("click", () => {

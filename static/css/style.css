@@ -209,6 +209,25 @@ body {
   align-self: flex-start;
 }
 
+.obs-export-card {
+  margin: 1rem 0 1.2rem;
+  padding: 1rem;
+  background: #f7f9f7;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+}
+
+.obs-export-card h3 {
+  color: var(--color-accent);
+  font-size: 0.95rem;
+}
+
+.obs-export-card p {
+  margin: 0.3rem 0 0.8rem;
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
