@@ -662,8 +662,13 @@
               option.textContent = item;
               mainTipoAuditoria.appendChild(option);
             });
+            const auditorias = data.tipo_auditoria || [];
             if (currentAuditoria && mainTipoAuditoria.querySelector(`option[value="${currentAuditoria}"]`)) {
               mainTipoAuditoria.value = currentAuditoria;
+            } else if (auditorias.length === 1) {
+              mainTipoAuditoria.value = auditorias[0];
+            } else {
+              mainTipoAuditoria.value = "";
             }
           }
           (data.tipo_anexo || []).forEach((item) => {
@@ -805,22 +810,48 @@
           }
           const data = await response.json();
           renderObservaciones(data);
-          if (cedulaResultados.value) {
-            const responsablesParams = new URLSearchParams(params.toString());
-            responsablesParams.delete("tipo_anexo");
-            responsablesParams.delete("concepto_irregularidad");
-            const responsablesResponse = await fetch(`/observaciones-responsables?${responsablesParams.toString()}`);
-            if (!responsablesResponse.ok) {
-              throw new Error("Responsables fetch failed");
-            }
-            const responsablesData = await responsablesResponse.json();
-            renderResponsablesPeriodo(responsablesData);
-          } else {
-            renderResponsablesPeriodo([]);
-          }
+          await loadResponsablesPeriodo();
         } catch (error) {
           console.error(error);
           obsTableBody.innerHTML = "<tr><td colspan=\"10\" class=\"muted\">No se pudo cargar la información.</td></tr>";
+          if (obsResponsablesBody) {
+            obsResponsablesBody.innerHTML = `
+              <tr>
+                <td colspan="6" class="muted">No se pudo cargar responsables del periodo.</td>
+              </tr>
+            `;
+          }
+        }
+      };
+
+      const loadResponsablesPeriodo = async () => {
+        if (!cedulaResultados.value) {
+          renderResponsablesPeriodo([]);
+          return;
+        }
+        const ejercicio = mainEjercicio.value;
+        if (!ejercicio) {
+          renderResponsablesPeriodo([]);
+          return;
+        }
+        const params = new URLSearchParams({ ejercicio });
+        const enteId = obsEnteInput.value.trim();
+        if (enteId) {
+          params.set("ente_id", enteId);
+        }
+        if (mainTipoAuditoria && mainTipoAuditoria.value) {
+          params.set("tipo_auditoria", mainTipoAuditoria.value);
+        }
+        params.set("periodo_cedula", cedulaResultados.value);
+        try {
+          const response = await fetch(`/observaciones-responsables?${params.toString()}`);
+          if (!response.ok) {
+            throw new Error("Responsables fetch failed");
+          }
+          const data = await response.json();
+          renderResponsablesPeriodo(data);
+        } catch (error) {
+          console.error(error);
           if (obsResponsablesBody) {
             obsResponsablesBody.innerHTML = `
               <tr>
@@ -1028,7 +1059,10 @@
 
       mainEjercicio.addEventListener("change", handleEjercicioChange);
       obsEnteInput.addEventListener("change", async () => {
-        await loadFiltros(mainEjercicio.value, obsEnteInput.value.trim(), mainTipoAuditoria ? mainTipoAuditoria.value : "");
+        if (mainTipoAuditoria) {
+          mainTipoAuditoria.value = "";
+        }
+        await loadFiltros(mainEjercicio.value, obsEnteInput.value.trim(), "");
         await loadObservaciones();
         await loadAnexoCount();
       });

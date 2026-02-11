@@ -139,6 +139,18 @@ def parse_periodo_cedula(ejercicio: str, periodo_cedula: str):
     return start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
 
 
+def parse_historial_date(value: str):
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
 
 def get_current_user():
     username = session.get("user")
@@ -1332,6 +1344,10 @@ def observaciones_responsables():
         cedula_inicio, cedula_fin = parse_periodo_cedula(row["ejercicio"], row["periodo_cedula"])
         if not cedula_inicio or not cedula_fin:
             continue
+        cedula_inicio_date = parse_historial_date(cedula_inicio)
+        cedula_fin_date = parse_historial_date(cedula_fin)
+        if not cedula_inicio_date or not cedula_fin_date:
+            continue
 
         nombres_ente = []
         for candidate in [row["ente_nombre"], row["ente_detalle_nombre"]]:
@@ -1346,19 +1362,19 @@ def observaciones_responsables():
             f"""
             SELECT
                 h.tipo_registro,
+                h.tipo_auditoria,
                 h.nombre,
+                h.fecha_inicio,
+                h.fecha_fin,
                 {periodo_sql("h")} AS periodo
             FROM historial_titulares AS h
             WHERE h.ejercicio = ?
-              AND h.tipo_auditoria = ?
               AND h.ente IN ({placeholders})
               AND h.tipo_registro IN ('titular', 'director_administrativo')
               AND h.nombre IS NOT NULL AND h.nombre != ''
-              AND date(h.fecha_inicio) <= date(?)
-              AND date(h.fecha_fin) >= date(?)
             ORDER BY h.tipo_registro ASC, h.fecha_inicio ASC, h.nombre ASC
             """,
-            [row["ejercicio"], row["tipo_auditoria"], *nombres_ente, cedula_fin, cedula_inicio],
+            [row["ejercicio"], *nombres_ente],
         ).fetchall()
 
         titulares = []
@@ -1366,6 +1382,15 @@ def observaciones_responsables():
         titulares_seen = set()
         administrativos_seen = set()
         for item in historial_rows:
+            if normalize_tipo_auditoria(item["tipo_auditoria"] or "") != normalize_tipo_auditoria(row["tipo_auditoria"] or ""):
+                continue
+            inicio = parse_historial_date(item["fecha_inicio"])
+            fin = parse_historial_date(item["fecha_fin"])
+            if not inicio or not fin:
+                continue
+            # Inclusive overlap between [inicio, fin] and cedula range
+            if inicio > cedula_fin_date or fin < cedula_inicio_date:
+                continue
             payload = {
                 "nombre": item["nombre"],
                 "periodo": item["periodo"],
