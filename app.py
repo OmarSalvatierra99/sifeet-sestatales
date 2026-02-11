@@ -59,6 +59,14 @@ def periodo_sql(alias: str) -> str:
     )
 
 
+def normalize_ente_id(value: str) -> str:
+    return (value or "").strip().rstrip(".").strip()
+
+
+def normalize_ente_id_sql(column: str) -> str:
+    return f"RTRIM(TRIM(COALESCE({column}, '')), '.')"
+
+
 
 def get_current_user():
     username = session.get("user")
@@ -799,7 +807,7 @@ def ejercicios_disponibles():
 @login_required
 def observaciones_api():
     ejercicio = request.args.get("ejercicio", "").strip()
-    ente_id = request.args.get("ente_id", "").strip()
+    ente_id = normalize_ente_id(request.args.get("ente_id", ""))
     tipo_anexo = request.args.get("tipo_anexo", "").strip()
     tipo_auditoria = request.args.get("tipo_auditoria", "").strip()
     estado = request.args.get("estado", "").strip()
@@ -819,7 +827,7 @@ def observaciones_api():
     params = [ejercicio]
     filter_clauses = []
     if ente_id:
-        filter_clauses.append("observaciones.ente_id = ?")
+        filter_clauses.append(f"{normalize_ente_id_sql('observaciones.ente_id')} = ?")
         params.append(ente_id)
     if tipo_anexo:
         filter_clauses.append("observaciones.tipo_anexo = ?")
@@ -906,7 +914,7 @@ def observaciones_api():
             {periodo_sql("admin")} AS administrador_periodo
         FROM observaciones
         LEFT JOIN entes_detalle
-            ON observaciones.ente_id = entes_detalle.ente_id
+            ON {normalize_ente_id_sql("observaciones.ente_id")} = {normalize_ente_id_sql("entes_detalle.ente_id")}
             AND observaciones.ejercicio = entes_detalle.ejercicio
         LEFT JOIN historial_titulares AS resp
             ON resp.id = (
@@ -949,7 +957,7 @@ def observaciones_api():
 @login_required
 def observaciones_filtros():
     ejercicio = request.args.get("ejercicio", "").strip()
-    ente_id = request.args.get("ente_id", "").strip()
+    ente_id = normalize_ente_id(request.args.get("ente_id", ""))
     tipo_auditoria = request.args.get("tipo_auditoria", "").strip()
     tipo_anexo = request.args.get("tipo_anexo", "").strip()
     estado = request.args.get("estado", "").strip()
@@ -967,7 +975,7 @@ def observaciones_filtros():
     base_clauses = ["ejercicio = ?"]
     base_params = [ejercicio]
     if ente_id:
-        base_clauses.append("ente_id = ?")
+        base_clauses.append(f"{normalize_ente_id_sql('ente_id')} = ?")
         base_params.append(ente_id)
     if tipo_auditoria:
         base_clauses.append("tipo_auditoria = ?")
@@ -1012,7 +1020,7 @@ def observaciones_filtros():
         SELECT DISTINCT tipo_auditoria
         FROM observaciones
         WHERE ejercicio = ?
-          {('AND ente_id = ?' if ente_id else '')}
+          {('AND ' + normalize_ente_id_sql('ente_id') + ' = ?' if ente_id else '')}
           AND tipo_auditoria IS NOT NULL AND tipo_auditoria != ''
         ORDER BY tipo_auditoria
         """,
@@ -1173,11 +1181,11 @@ def observaciones_filtros():
 @app.get("/observaciones-stats")
 @login_required
 def observaciones_stats():
-    ente_id = request.args.get("ente_id", "").strip()
+    ente_id = normalize_ente_id(request.args.get("ente_id", ""))
     where_clause = ""
     params = []
     if ente_id:
-        where_clause = "WHERE ente_id = ?"
+        where_clause = f"WHERE {normalize_ente_id_sql('ente_id')} = ?"
         params.append(ente_id)
 
     db = get_db()
@@ -1239,7 +1247,7 @@ def observaciones_stats():
     pdp_where = "WHERE tipo_anexo = 'PDP'"
     pdp_params = []
     if ente_id:
-        pdp_where = "WHERE ente_id = ? AND tipo_anexo = 'PDP'"
+        pdp_where = f"WHERE {normalize_ente_id_sql('ente_id')} = ? AND tipo_anexo = 'PDP'"
         pdp_params.append(ente_id)
 
     pdp = db.execute(
