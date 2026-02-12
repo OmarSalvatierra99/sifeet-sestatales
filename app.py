@@ -151,6 +151,59 @@ def parse_historial_date(value: str):
     return None
 
 
+def get_ente_aliases_by_uid(
+    conn: sqlite3.Connection,
+    ejercicio: str,
+    ente_id_norm: str,
+    fallback_names=None,
+):
+    aliases = []
+    for name in (fallback_names or []):
+        clean = (name or "").strip()
+        if clean and clean not in aliases:
+            aliases.append(clean)
+
+    if not ejercicio or not ente_id_norm:
+        return aliases
+
+    base_row = conn.execute(
+        f"""
+        SELECT ente_uid, ente_nombre
+        FROM entes_detalle
+        WHERE ejercicio = ? AND {normalize_ente_id_sql('ente_id')} = ?
+        LIMIT 1
+        """,
+        (ejercicio, ente_id_norm),
+    ).fetchone()
+    if not base_row:
+        return aliases
+
+    base_name = (base_row["ente_nombre"] or "").strip()
+    if base_name and base_name not in aliases:
+        aliases.append(base_name)
+
+    ente_uid = (base_row["ente_uid"] or "").strip()
+    if not ente_uid:
+        return aliases
+
+    uid_rows = conn.execute(
+        """
+        SELECT DISTINCT ente_nombre
+        FROM entes_detalle
+        WHERE ente_uid = ?
+          AND ente_nombre IS NOT NULL
+          AND TRIM(ente_nombre) != ''
+        ORDER BY ejercicio
+        """,
+        (ente_uid,),
+    ).fetchall()
+    for row in uid_rows:
+        name = (row["ente_nombre"] or "").strip()
+        if name and name not in aliases:
+            aliases.append(name)
+    return aliases
+
+
 
 def get_current_user():
     username = session.get("user")
@@ -1160,24 +1213,14 @@ def observaciones_filtros():
         """,
         scoped_params + scoped_params,
     ).fetchall()
-    ente_nombre = None
-    if ente_id:
-        ente_row = db.execute(
-            f"""
-            SELECT ente_nombre
-            FROM entes_detalle
-            WHERE ejercicio = ? AND {normalize_ente_id_sql('ente_id')} = ?
-            """,
-            (ejercicio, ente_id),
-        ).fetchone()
-        if ente_row:
-            ente_nombre = ente_row[0]
+    ente_aliases = get_ente_aliases_by_uid(db, ejercicio, ente_id)
 
     titular_params = [ejercicio]
     titular_clause = ""
-    if ente_nombre:
-        titular_clause = "AND ente = ?"
-        titular_params.append(ente_nombre)
+    if ente_aliases:
+        placeholders = ", ".join(["?"] * len(ente_aliases))
+        titular_clause = f"AND TRIM(COALESCE(ente, '')) IN ({placeholders})"
+        titular_params.extend(ente_aliases)
 
     periodos_params = titular_params.copy()
     periodo_titular_clause = ""
@@ -1218,9 +1261,10 @@ def observaciones_filtros():
 
     admin_params = [ejercicio]
     admin_clause = ""
-    if ente_nombre:
-        admin_clause = "AND ente = ?"
-        admin_params.append(ente_nombre)
+    if ente_aliases:
+        placeholders = ", ".join(["?"] * len(ente_aliases))
+        admin_clause = f"AND TRIM(COALESCE(ente, '')) IN ({placeholders})"
+        admin_params.extend(ente_aliases)
 
     admin_periodos_params = admin_params.copy()
     periodo_admin_clause = ""
@@ -1327,6 +1371,7 @@ def observaciones_responsables():
             o.ente_id,
             o.ente_nombre,
             ed.ente_nombre AS ente_detalle_nombre,
+            ed.ente_uid AS ente_uid,
             o.tipo_auditoria,
             o.periodo_cedula
         FROM observaciones AS o
@@ -1340,6 +1385,7 @@ def observaciones_responsables():
     ).fetchall()
 
     resultado = []
+    uid_alias_cache = {}
     for row in observaciones_rows:
         cedula_inicio, cedula_fin = parse_periodo_cedula(row["ejercicio"], row["periodo_cedula"])
         if not cedula_inicio or not cedula_fin:
@@ -1354,6 +1400,28 @@ def observaciones_responsables():
             value = (candidate or "").strip()
             if value and value not in nombres_ente:
                 nombres_ente.append(value)
+        ente_uid = (row["ente_uid"] or "").strip()
+        if ente_uid:
+            if ente_uid not in uid_alias_cache:
+                alias_rows = db.execute(
+                    """
+                    SELECT DISTINCT ente_nombre
+                    FROM entes_detalle
+                    WHERE ente_uid = ?
+                      AND ente_nombre IS NOT NULL
+                      AND TRIM(ente_nombre) != ''
+                    ORDER BY ejercicio
+                    """,
+                    (ente_uid,),
+                ).fetchall()
+                uid_alias_cache[ente_uid] = [
+                    (alias_row["ente_nombre"] or "").strip()
+                    for alias_row in alias_rows
+                    if (alias_row["ente_nombre"] or "").strip()
+                ]
+            for alias_name in uid_alias_cache[ente_uid]:
+                if alias_name not in nombres_ente:
+                    nombres_ente.append(alias_name)
         if not nombres_ente:
             continue
 
