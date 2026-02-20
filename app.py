@@ -204,6 +204,81 @@ def get_ente_aliases_by_uid(
     return aliases
 
 
+def get_ente_uid_by_ejercicio_id(
+    conn: sqlite3.Connection,
+    ejercicio: str,
+    ente_id_norm: str,
+) -> str:
+    if not ejercicio or not ente_id_norm:
+        return ""
+    row = conn.execute(
+        f"""
+        SELECT ente_uid
+        FROM entes_detalle
+        WHERE ejercicio = ? AND {normalize_ente_id_sql('ente_id')} = ?
+        LIMIT 1
+        """,
+        (ejercicio, ente_id_norm),
+    ).fetchone()
+    if not row:
+        return ""
+    return (row["ente_uid"] or "").strip()
+
+
+def backfill_historial_ente_uids(conn: sqlite3.Connection) -> None:
+    pending_rows = conn.execute(
+        """
+        SELECT id, ejercicio, ente
+        FROM historial_titulares
+        WHERE ente_uid IS NULL OR TRIM(ente_uid) = ''
+        ORDER BY id
+        """
+    ).fetchall()
+    if not pending_rows:
+        return
+
+    catalog_rows = conn.execute(
+        """
+        SELECT ejercicio, ente_uid, ente_nombre
+        FROM entes_detalle
+        WHERE ente_uid IS NOT NULL AND TRIM(ente_uid) != ''
+        """
+    ).fetchall()
+    name_map = {}
+    sigla_map = {}
+    for row in catalog_rows:
+        ejercicio = str(row["ejercicio"]).strip()
+        ente_uid = (row["ente_uid"] or "").strip()
+        ente_nombre = (row["ente_nombre"] or "").strip()
+        if not ejercicio or not ente_uid or not ente_nombre:
+            continue
+        name_key = normalize_text(ente_nombre)
+        sigla_key = extract_sigla(ente_nombre)
+        if name_key:
+            name_map.setdefault((ejercicio, name_key), ente_uid)
+        if sigla_key:
+            sigla_map.setdefault((ejercicio, sigla_key), ente_uid)
+
+    for row in pending_rows:
+        row_id = row["id"]
+        ejercicio = str(row["ejercicio"]).strip()
+        ente_nombre = (row["ente"] or "").strip()
+        if not ejercicio or not ente_nombre:
+            continue
+        ente_uid = ""
+        sigla_key = extract_sigla(ente_nombre)
+        if sigla_key:
+            ente_uid = sigla_map.get((ejercicio, sigla_key), "")
+        if not ente_uid:
+            ente_uid = name_map.get((ejercicio, normalize_text(ente_nombre)), "")
+        if not ente_uid:
+            continue
+        conn.execute(
+            "UPDATE historial_titulares SET ente_uid = ? WHERE id = ?",
+            (ente_uid, row_id),
+        )
+
+
 
 def get_current_user():
     username = session.get("user")
@@ -344,6 +419,7 @@ def backfill_ente_uids(conn: sqlite3.Connection) -> None:
 
 def init_db() -> None:
     with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS registros (
@@ -370,6 +446,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS historial_titulares (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 ejercicio INTEGER NOT NULL,
+                ente_uid TEXT,
                 ente TEXT NOT NULL,
                 tipo_auditoria TEXT NOT NULL,
                 nombre TEXT NOT NULL,
@@ -485,6 +562,8 @@ def init_db() -> None:
             conn.execute(
                 "ALTER TABLE historial_titulares ADD COLUMN tipo_auditoria TEXT NOT NULL DEFAULT 'Financiera'"
             )
+        if "ente_uid" not in historial_columns:
+            conn.execute("ALTER TABLE historial_titulares ADD COLUMN ente_uid TEXT")
         if "tipo_anexo_origen" not in existing_columns:
             conn.execute(
                 "ALTER TABLE registros ADD COLUMN tipo_anexo_origen TEXT"
@@ -619,6 +698,7 @@ def init_db() -> None:
         ).fetchone()[0]
         if missing_uid:
             backfill_ente_uids(conn)
+        backfill_historial_ente_uids(conn)
         conn.commit()
 
 
@@ -740,7 +820,7 @@ def historial():
         if get_current_user()["role"] != "editor":
             return redirect(url_for("index", notice="no_permission"))
         ejercicio = request.form.get("historial_ejercicio", "").strip()
-        ente_id = request.form.get("historial_ente_id", "").strip()
+        ente_id = normalize_ente_id(request.form.get("historial_ente_id", ""))
         nombre = request.form.get("historial_nombre", "").strip()
         cargo = request.form.get("historial_cargo", "").strip()
         fecha_inicio = request.form.get("historial_fecha_inicio", "").strip()
@@ -753,25 +833,27 @@ def historial():
 
         db = get_db()
         ente_row = db.execute(
-            """
-            SELECT ente_nombre
+            f"""
+            SELECT ente_nombre, ente_uid
             FROM entes_detalle
-            WHERE ejercicio = ? AND ente_id = ?
+            WHERE ejercicio = ? AND {normalize_ente_id_sql('ente_id')} = ?
             """,
             (ejercicio, ente_id),
         ).fetchone()
         if ente_row is None:
             return redirect(url_for("index", notice="historial_error"))
-        ente_nombre = ente_row[0]
+        ente_nombre = ente_row["ente_nombre"]
+        ente_uid = (ente_row["ente_uid"] or "").strip()
         db.execute(
             """
             INSERT INTO historial_titulares (
-                ejercicio, ente, tipo_auditoria, nombre, cargo, fecha_inicio, fecha_fin, tipo_registro
+                ejercicio, ente_uid, ente, tipo_auditoria, nombre, cargo, fecha_inicio, fecha_fin, tipo_registro
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 int(ejercicio),
+                ente_uid or None,
                 ente_nombre,
                 tipo_auditoria,
                 nombre,
@@ -785,21 +867,56 @@ def historial():
         return redirect(url_for("index", notice="historial_saved"))
 
     ejercicio = request.args.get("ejercicio", "").strip()
-    ente_id = request.args.get("ente_id", "").strip()
+    ente_id = normalize_ente_id(request.args.get("ente_id", ""))
     if not ejercicio or not ente_id:
         return jsonify([])
 
     db = get_db()
+    ente_info = db.execute(
+        f"""
+        SELECT ente_uid, ente_nombre
+        FROM entes_detalle
+        WHERE ejercicio = ? AND {normalize_ente_id_sql('ente_id')} = ?
+        LIMIT 1
+        """,
+        (ejercicio, ente_id),
+    ).fetchone()
+    if not ente_info:
+        return jsonify([])
+
+    ente_uid = (ente_info["ente_uid"] or "").strip()
+    ente_aliases = get_ente_aliases_by_uid(
+        db,
+        ejercicio,
+        ente_id,
+        fallback_names=[ente_info["ente_nombre"]],
+    )
+
+    filter_clause = ""
+    filter_params = []
+    if ente_uid and ente_aliases:
+        placeholders = ", ".join(["?"] * len(ente_aliases))
+        filter_clause = (
+            f"AND (TRIM(COALESCE(ente_uid, '')) = ? OR TRIM(COALESCE(ente, '')) IN ({placeholders}))"
+        )
+        filter_params.extend([ente_uid, *ente_aliases])
+    elif ente_uid:
+        filter_clause = "AND TRIM(COALESCE(ente_uid, '')) = ?"
+        filter_params.append(ente_uid)
+    elif ente_aliases:
+        placeholders = ", ".join(["?"] * len(ente_aliases))
+        filter_clause = f"AND TRIM(COALESCE(ente, '')) IN ({placeholders})"
+        filter_params.extend(ente_aliases)
+
     rows = db.execute(
-        """
+        f"""
         SELECT id, nombre, cargo, fecha_inicio, fecha_fin, tipo_registro, tipo_auditoria
         FROM historial_titulares
-        WHERE ejercicio = ? AND ente = (
-            SELECT ente_nombre FROM entes_detalle WHERE ejercicio = ? AND ente_id = ?
-        )
+        WHERE ejercicio = ?
+        {filter_clause}
         ORDER BY id DESC
         """,
-        (ejercicio, ejercicio, ente_id),
+        [ejercicio, *filter_params],
     ).fetchall()
     return jsonify([dict(row) for row in rows])
 
@@ -1061,7 +1178,13 @@ def observaciones_api():
                 FROM historial_titulares
                 WHERE ejercicio = observaciones.ejercicio
                   AND tipo_auditoria = observaciones.tipo_auditoria
-                  AND ente = COALESCE(observaciones.ente_nombre, entes_detalle.ente_nombre)
+                  AND (
+                      (
+                          TRIM(COALESCE(entes_detalle.ente_uid, '')) != ''
+                          AND TRIM(COALESCE(historial_titulares.ente_uid, '')) = TRIM(entes_detalle.ente_uid)
+                      )
+                      OR ente = COALESCE(observaciones.ente_nombre, entes_detalle.ente_nombre)
+                  )
                   AND tipo_registro = 'titular'
                 ORDER BY id DESC
                 LIMIT 1
@@ -1072,7 +1195,13 @@ def observaciones_api():
                 FROM historial_titulares
                 WHERE ejercicio = observaciones.ejercicio
                   AND tipo_auditoria = observaciones.tipo_auditoria
-                  AND ente = COALESCE(observaciones.ente_nombre, entes_detalle.ente_nombre)
+                  AND (
+                      (
+                          TRIM(COALESCE(entes_detalle.ente_uid, '')) != ''
+                          AND TRIM(COALESCE(historial_titulares.ente_uid, '')) = TRIM(entes_detalle.ente_uid)
+                      )
+                      OR ente = COALESCE(observaciones.ente_nombre, entes_detalle.ente_nombre)
+                  )
                   AND tipo_registro = 'director_administrativo'
                 ORDER BY id DESC
                 LIMIT 1
@@ -1214,10 +1343,20 @@ def observaciones_filtros():
         scoped_params + scoped_params,
     ).fetchall()
     ente_aliases = get_ente_aliases_by_uid(db, ejercicio, ente_id)
+    ente_uid = get_ente_uid_by_ejercicio_id(db, ejercicio, ente_id)
 
     titular_params = [ejercicio]
     titular_clause = ""
-    if ente_aliases:
+    if ente_uid and ente_aliases:
+        placeholders = ", ".join(["?"] * len(ente_aliases))
+        titular_clause = (
+            f"AND (TRIM(COALESCE(ente_uid, '')) = ? OR TRIM(COALESCE(ente, '')) IN ({placeholders}))"
+        )
+        titular_params.extend([ente_uid, *ente_aliases])
+    elif ente_uid:
+        titular_clause = "AND TRIM(COALESCE(ente_uid, '')) = ?"
+        titular_params.append(ente_uid)
+    elif ente_aliases:
         placeholders = ", ".join(["?"] * len(ente_aliases))
         titular_clause = f"AND TRIM(COALESCE(ente, '')) IN ({placeholders})"
         titular_params.extend(ente_aliases)
@@ -1261,7 +1400,16 @@ def observaciones_filtros():
 
     admin_params = [ejercicio]
     admin_clause = ""
-    if ente_aliases:
+    if ente_uid and ente_aliases:
+        placeholders = ", ".join(["?"] * len(ente_aliases))
+        admin_clause = (
+            f"AND (TRIM(COALESCE(ente_uid, '')) = ? OR TRIM(COALESCE(ente, '')) IN ({placeholders}))"
+        )
+        admin_params.extend([ente_uid, *ente_aliases])
+    elif ente_uid:
+        admin_clause = "AND TRIM(COALESCE(ente_uid, '')) = ?"
+        admin_params.append(ente_uid)
+    elif ente_aliases:
         placeholders = ", ".join(["?"] * len(ente_aliases))
         admin_clause = f"AND TRIM(COALESCE(ente, '')) IN ({placeholders})"
         admin_params.extend(ente_aliases)
@@ -1385,7 +1533,6 @@ def observaciones_responsables():
     ).fetchall()
 
     resultado = []
-    uid_alias_cache = {}
     for row in observaciones_rows:
         cedula_inicio, cedula_fin = parse_periodo_cedula(row["ejercicio"], row["periodo_cedula"])
         if not cedula_inicio or not cedula_fin:
@@ -1395,37 +1542,35 @@ def observaciones_responsables():
         if not cedula_inicio_date or not cedula_fin_date:
             continue
 
-        nombres_ente = []
-        for candidate in [row["ente_nombre"], row["ente_detalle_nombre"]]:
-            value = (candidate or "").strip()
-            if value and value not in nombres_ente:
-                nombres_ente.append(value)
-        ente_uid = (row["ente_uid"] or "").strip()
-        if ente_uid:
-            if ente_uid not in uid_alias_cache:
-                alias_rows = db.execute(
-                    """
-                    SELECT DISTINCT ente_nombre
-                    FROM entes_detalle
-                    WHERE ente_uid = ?
-                      AND ente_nombre IS NOT NULL
-                      AND TRIM(ente_nombre) != ''
-                    ORDER BY ejercicio
-                    """,
-                    (ente_uid,),
-                ).fetchall()
-                uid_alias_cache[ente_uid] = [
-                    (alias_row["ente_nombre"] or "").strip()
-                    for alias_row in alias_rows
-                    if (alias_row["ente_nombre"] or "").strip()
-                ]
-            for alias_name in uid_alias_cache[ente_uid]:
-                if alias_name not in nombres_ente:
-                    nombres_ente.append(alias_name)
-        if not nombres_ente:
+        ente_id_norm = normalize_ente_id(row["ente_id"])
+        nombres_ente = get_ente_aliases_by_uid(
+            db,
+            row["ejercicio"],
+            ente_id_norm,
+            fallback_names=[row["ente_nombre"], row["ente_detalle_nombre"]],
+        )
+        ente_uid = (
+            get_ente_uid_by_ejercicio_id(db, row["ejercicio"], ente_id_norm)
+            or (row["ente_uid"] or "").strip()
+        )
+        scope_clause = ""
+        scope_params = []
+        if ente_uid and nombres_ente:
+            placeholders = ", ".join(["?"] * len(nombres_ente))
+            scope_clause = (
+                f"AND (TRIM(COALESCE(h.ente_uid, '')) = ? OR TRIM(COALESCE(h.ente, '')) IN ({placeholders}))"
+            )
+            scope_params.extend([ente_uid, *nombres_ente])
+        elif ente_uid:
+            scope_clause = "AND TRIM(COALESCE(h.ente_uid, '')) = ?"
+            scope_params.append(ente_uid)
+        elif nombres_ente:
+            placeholders = ", ".join(["?"] * len(nombres_ente))
+            scope_clause = f"AND TRIM(COALESCE(h.ente, '')) IN ({placeholders})"
+            scope_params.extend(nombres_ente)
+        else:
             continue
 
-        placeholders = ", ".join(["?"] * len(nombres_ente))
         historial_rows = db.execute(
             f"""
             SELECT
@@ -1437,12 +1582,12 @@ def observaciones_responsables():
                 {periodo_sql("h")} AS periodo
             FROM historial_titulares AS h
             WHERE h.ejercicio = ?
-              AND h.ente IN ({placeholders})
+              {scope_clause}
               AND h.tipo_registro IN ('titular', 'director_administrativo')
               AND h.nombre IS NOT NULL AND h.nombre != ''
             ORDER BY h.tipo_registro ASC, h.fecha_inicio ASC, h.nombre ASC
             """,
-            [row["ejercicio"], *nombres_ente],
+            [row["ejercicio"], *scope_params],
         ).fetchall()
 
         titulares = []
@@ -1581,7 +1726,7 @@ def observaciones_exportar():
         "Estado",
         "Fecha",
         "Fuente",
-        "Concepto de Irrecularidad",
+        "Concepto de Irregularidad",
         "Monto emitido",
         "Monto solventado",
         "Monto pendiente",
