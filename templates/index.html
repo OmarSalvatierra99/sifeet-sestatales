@@ -950,14 +950,16 @@
         }
         const enteFilter = obsEnteInput ? obsEnteInput.value.trim() : "";
         const tipoAuditoria = mainTipoAuditoria ? mainTipoAuditoria.value.trim() : "";
-        const statsParams = new URLSearchParams({ ejercicio: mainEjercicio.value });
+        const statsParams = new URLSearchParams();
         if (enteFilter) {
           statsParams.set("ente_id", enteFilter);
         }
         if (tipoAuditoria) {
           statsParams.set("tipo_auditoria", tipoAuditoria);
         }
-        const statsUrl = `/observaciones-stats?${statsParams.toString()}`;
+        const statsUrl = statsParams.toString()
+          ? `/observaciones-stats?${statsParams.toString()}`
+          : "/observaciones-stats";
         const statsResponse = await fetch(statsUrl);
         if (statsResponse.ok) {
           const statsData = await statsResponse.json();
