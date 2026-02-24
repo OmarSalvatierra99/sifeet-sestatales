@@ -1974,19 +1974,15 @@ def observaciones_exportar():
 @app.get("/observaciones-stats")
 @login_required
 def observaciones_stats():
-    ejercicio = request.args.get("ejercicio", "").strip()
     ente_id = normalize_ente_id(request.args.get("ente_id", ""))
     tipo_auditoria = normalize_tipo_auditoria(request.args.get("tipo_auditoria", ""))
     where_clauses = []
     params = []
-    if ejercicio:
-        where_clauses.append("ejercicio = ?")
-        params.append(ejercicio)
     if ente_id:
         where_clauses.append(f"{normalize_ente_id_sql('ente_id')} = ?")
         params.append(ente_id)
     if tipo_auditoria:
-        where_clauses.append(f"{normalize_tipo_auditoria_sql('tipo_auditoria')} = ?")
+        where_clauses.append("tipo_auditoria = ?")
         params.append(tipo_auditoria)
 
     where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
@@ -2050,14 +2046,11 @@ def observaciones_stats():
     pdp_where = "WHERE tipo_anexo = 'PDP'"
     pdp_clauses = []
     pdp_params = []
-    if ejercicio:
-        pdp_clauses.append("ejercicio = ?")
-        pdp_params.append(ejercicio)
     if ente_id:
         pdp_clauses.append(f"{normalize_ente_id_sql('ente_id')} = ?")
         pdp_params.append(ente_id)
     if tipo_auditoria:
-        pdp_clauses.append(f"{normalize_tipo_auditoria_sql('tipo_auditoria')} = ?")
+        pdp_clauses.append("tipo_auditoria = ?")
         pdp_params.append(tipo_auditoria)
     if pdp_clauses:
         pdp_where = f"WHERE {' AND '.join(pdp_clauses)} AND tipo_anexo = 'PDP'"

@@ -1657,9 +1657,12 @@ def observaciones_responsables():
     resultado = []
     for row in observaciones_rows:
         cedula_inicio, cedula_fin = parse_periodo_cedula(row["ejercicio"], row["periodo_cedula"])
-        cedula_inicio_date = parse_historial_date(cedula_inicio) if cedula_inicio else None
-        cedula_fin_date = parse_historial_date(cedula_fin) if cedula_fin else None
-        has_cedula_overlap_window = bool(cedula_inicio_date and cedula_fin_date)
+        if not cedula_inicio or not cedula_fin:
+            continue
+        cedula_inicio_date = parse_historial_date(cedula_inicio)
+        cedula_fin_date = parse_historial_date(cedula_fin)
+        if not cedula_inicio_date or not cedula_fin_date:
+            continue
 
         ente_id_norm = normalize_ente_id(row["ente_id"])
         resolved_ente = resolve_ente_across_exercises(
@@ -1696,13 +1699,6 @@ def observaciones_responsables():
         else:
             continue
 
-        tipo_auditoria_norm = normalize_tipo_auditoria(row["tipo_auditoria"] or "")
-        tipo_clause = ""
-        tipo_params = []
-        if tipo_auditoria_norm:
-            tipo_clause = f"AND {normalize_tipo_auditoria_sql('h.tipo_auditoria')} = ?"
-            tipo_params.append(tipo_auditoria_norm)
-
         historial_rows = db.execute(
             f"""
             SELECT
@@ -1715,63 +1711,42 @@ def observaciones_responsables():
             FROM historial_titulares AS h
             WHERE h.ejercicio = ?
               {scope_clause}
-              {tipo_clause}
               AND h.tipo_registro IN ('titular', 'director_administrativo')
               AND h.nombre IS NOT NULL AND h.nombre != ''
             ORDER BY h.tipo_registro ASC, h.fecha_inicio ASC, h.nombre ASC
             """,
-            [row["ejercicio"], *scope_params, *tipo_params],
+            [row["ejercicio"], *scope_params],
         ).fetchall()
 
-        exact_titulares = []
-        exact_administrativos = []
-        approx_titulares = []
-        approx_administrativos = []
-        exact_titulares_seen = set()
-        exact_administrativos_seen = set()
-        approx_titulares_seen = set()
-        approx_administrativos_seen = set()
-
+        titulares = []
+        administrativos = []
+        titulares_seen = set()
+        administrativos_seen = set()
         for item in historial_rows:
             if normalize_tipo_auditoria(item["tipo_auditoria"] or "") != normalize_tipo_auditoria(row["tipo_auditoria"] or ""):
                 continue
             inicio = parse_historial_date(item["fecha_inicio"])
             fin = parse_historial_date(item["fecha_fin"])
+            if not inicio or not fin:
+                continue
+            # Inclusive overlap between [inicio, fin] and cedula range
+            if inicio > cedula_fin_date or fin < cedula_inicio_date:
+                continue
             payload = {
                 "nombre": item["nombre"],
                 "periodo": item["periodo"],
             }
             key = (payload["nombre"], payload["periodo"])
-
-            exact_overlap = False
-            if has_cedula_overlap_window and inicio and fin:
-                # Inclusive overlap between [inicio, fin] and cedula range.
-                exact_overlap = not (inicio > cedula_fin_date or fin < cedula_inicio_date)
-
             if item["tipo_registro"] == "titular":
-                if key not in approx_titulares_seen:
-                    approx_titulares_seen.add(key)
-                    approx_titulares.append(payload)
-                if exact_overlap and key not in exact_titulares_seen:
-                    exact_titulares_seen.add(key)
-                    exact_titulares.append(payload)
+                if key in titulares_seen:
+                    continue
+                titulares_seen.add(key)
+                titulares.append(payload)
             elif item["tipo_registro"] == "director_administrativo":
-                if key not in approx_administrativos_seen:
-                    approx_administrativos_seen.add(key)
-                    approx_administrativos.append(payload)
-                if exact_overlap and key not in exact_administrativos_seen:
-                    exact_administrativos_seen.add(key)
-                    exact_administrativos.append(payload)
-
-        has_exact_match = bool(exact_titulares or exact_administrativos)
-        if has_cedula_overlap_window and has_exact_match:
-            titulares = exact_titulares
-            administrativos = exact_administrativos
-            match_tipo = "exacto"
-        else:
-            titulares = approx_titulares
-            administrativos = approx_administrativos
-            match_tipo = "aproximado"
+                if key in administrativos_seen:
+                    continue
+                administrativos_seen.add(key)
+                administrativos.append(payload)
 
         resultado.append(
             {
@@ -1780,7 +1755,6 @@ def observaciones_responsables():
                 "ente_nombre": row["ente_nombre"] or row["ente_detalle_nombre"] or "—",
                 "tipo_auditoria": row["tipo_auditoria"],
                 "periodo_cedula": row["periodo_cedula"],
-                "match_tipo": match_tipo,
                 "titulares": titulares,
                 "administrativos": administrativos,
             }
@@ -1974,19 +1948,15 @@ def observaciones_exportar():
 @app.get("/observaciones-stats")
 @login_required
 def observaciones_stats():
-    ejercicio = request.args.get("ejercicio", "").strip()
     ente_id = normalize_ente_id(request.args.get("ente_id", ""))
     tipo_auditoria = normalize_tipo_auditoria(request.args.get("tipo_auditoria", ""))
     where_clauses = []
     params = []
-    if ejercicio:
-        where_clauses.append("ejercicio = ?")
-        params.append(ejercicio)
     if ente_id:
         where_clauses.append(f"{normalize_ente_id_sql('ente_id')} = ?")
         params.append(ente_id)
     if tipo_auditoria:
-        where_clauses.append(f"{normalize_tipo_auditoria_sql('tipo_auditoria')} = ?")
+        where_clauses.append("tipo_auditoria = ?")
         params.append(tipo_auditoria)
 
     where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
@@ -2050,14 +2020,11 @@ def observaciones_stats():
     pdp_where = "WHERE tipo_anexo = 'PDP'"
     pdp_clauses = []
     pdp_params = []
-    if ejercicio:
-        pdp_clauses.append("ejercicio = ?")
-        pdp_params.append(ejercicio)
     if ente_id:
         pdp_clauses.append(f"{normalize_ente_id_sql('ente_id')} = ?")
         pdp_params.append(ente_id)
     if tipo_auditoria:
-        pdp_clauses.append(f"{normalize_tipo_auditoria_sql('tipo_auditoria')} = ?")
+        pdp_clauses.append("tipo_auditoria = ?")
         pdp_params.append(tipo_auditoria)
     if pdp_clauses:
         pdp_where = f"WHERE {' AND '.join(pdp_clauses)} AND tipo_anexo = 'PDP'"
