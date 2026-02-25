@@ -1240,107 +1240,86 @@ def observaciones_filtros():
 
     db = get_db()
     filtros = {}
-    base_clauses = ["ejercicio = ?"]
-    base_params = [ejercicio]
-    if ente_id:
-        base_clauses.append(f"{normalize_ente_id_sql('ente_id')} = ?")
-        base_params.append(ente_id)
-    if tipo_auditoria:
-        base_clauses.append("tipo_auditoria = ?")
-        base_params.append(tipo_auditoria)
+    selected = {
+        "tipo_auditoria": tipo_auditoria,
+        "tipo_anexo": tipo_anexo,
+        "estado": estado,
+        "fuente_financiamiento": fuente,
+        "ramo_33": ramo_33,
+        "concepto_irregularidad": concepto_irregularidad,
+        "periodo_cedula": periodo_cedula,
+    }
 
-    scoped_clauses = list(base_clauses)
-    scoped_params = list(base_params)
-    if tipo_anexo:
-        scoped_clauses.append("tipo_anexo = ?")
-        scoped_params.append(tipo_anexo)
-    if estado:
-        scoped_clauses.append("estado = ?")
-        scoped_params.append(estado)
-    if fuente:
-        scoped_clauses.append("fuente_financiamiento = ?")
-        scoped_params.append(fuente)
-    if ramo_33:
-        scoped_clauses.append("ramo_33 = ?")
-        scoped_params.append(ramo_33)
-    if concepto_irregularidad:
-        scoped_clauses.append("(pdp_concepto_irregularidad = ? OR pdp_subconcepto_irregularidad = ?)")
-        scoped_params.extend([concepto_irregularidad, concepto_irregularidad])
-    if periodo_cedula:
-        scoped_clauses.append("periodo_cedula = ?")
-        scoped_params.append(periodo_cedula)
+    def build_observaciones_scope(exclude_key: str = ""):
+        clauses = ["ejercicio = ?"]
+        params = [ejercicio]
+        if ente_id:
+            clauses.append(f"{normalize_ente_id_sql('ente_id')} = ?")
+            params.append(ente_id)
 
-    base_where = " AND ".join(base_clauses)
-    scoped_where = " AND ".join(scoped_clauses)
+        for key, value in selected.items():
+            if key == exclude_key or not value:
+                continue
+            if key == "tipo_auditoria":
+                clauses.append("tipo_auditoria = ?")
+                params.append(value)
+            elif key == "tipo_anexo":
+                clauses.append("tipo_anexo = ?")
+                params.append(value)
+            elif key == "estado":
+                clauses.append("estado = ?")
+                params.append(value)
+            elif key == "fuente_financiamiento":
+                clauses.append("fuente_financiamiento = ?")
+                params.append(value)
+            elif key == "ramo_33":
+                clauses.append("ramo_33 = ?")
+                params.append(value)
+            elif key == "periodo_cedula":
+                clauses.append("periodo_cedula = ?")
+                params.append(value)
+            elif key == "concepto_irregularidad":
+                clauses.append("(pdp_concepto_irregularidad = ? OR pdp_subconcepto_irregularidad = ?)")
+                params.extend([value, value])
+        return " AND ".join(clauses), params
 
-    tipos = db.execute(
-        f"""
-        SELECT DISTINCT tipo_anexo
-        FROM observaciones
-        WHERE {base_where}
-          AND tipo_anexo IS NOT NULL AND tipo_anexo != ''
-        ORDER BY tipo_anexo
-        """,
-        base_params,
-    ).fetchall()
-    auditorias = db.execute(
-        f"""
-        SELECT DISTINCT tipo_auditoria
-        FROM observaciones
-        WHERE ejercicio = ?
-          {('AND ' + normalize_ente_id_sql('ente_id') + ' = ?' if ente_id else '')}
-          AND tipo_auditoria IS NOT NULL AND tipo_auditoria != ''
-        ORDER BY tipo_auditoria
-        """,
-        [ejercicio, ente_id] if ente_id else [ejercicio],
-    ).fetchall()
-    estados = db.execute(
-        f"""
-        SELECT DISTINCT estado
-        FROM observaciones
-        WHERE {scoped_where}
-          AND estado IS NOT NULL AND estado != ''
-        ORDER BY estado
-        """,
-        scoped_params,
-    ).fetchall()
-    fuentes = db.execute(
-        f"""
-        SELECT DISTINCT fuente_financiamiento
-        FROM observaciones
-        WHERE {scoped_where}
-          AND fuente_financiamiento IS NOT NULL AND fuente_financiamiento != ''
-        ORDER BY fuente_financiamiento
-        """,
-        scoped_params,
-    ).fetchall()
-    ramos = db.execute(
-        f"""
-        SELECT DISTINCT ramo_33
-        FROM observaciones
-        WHERE {scoped_where}
-          AND ramo_33 IS NOT NULL AND ramo_33 != ''
-        ORDER BY ramo_33
-        """,
-        scoped_params,
-    ).fetchall()
+    def query_distinct(column: str, exclude_key: str):
+        where_sql, where_params = build_observaciones_scope(exclude_key)
+        return db.execute(
+            f"""
+            SELECT DISTINCT {column} AS value
+            FROM observaciones
+            WHERE {where_sql}
+              AND {column} IS NOT NULL AND TRIM({column}) != ''
+            ORDER BY value
+            """,
+            where_params,
+        ).fetchall()
+
+    auditorias = query_distinct("tipo_auditoria", "tipo_auditoria")
+    tipos = query_distinct("tipo_anexo", "tipo_anexo")
+    estados = query_distinct("estado", "estado")
+    fuentes = query_distinct("fuente_financiamiento", "fuente_financiamiento")
+    ramos = query_distinct("ramo_33", "ramo_33")
+    cedulas = query_distinct("periodo_cedula", "periodo_cedula")
+    concepto_where, concepto_params = build_observaciones_scope("concepto_irregularidad")
     conceptos = db.execute(
         f"""
         SELECT DISTINCT concepto
         FROM (
             SELECT pdp_concepto_irregularidad AS concepto
             FROM observaciones
-            WHERE {scoped_where}
-              AND pdp_concepto_irregularidad IS NOT NULL AND pdp_concepto_irregularidad != ''
+            WHERE {concepto_where}
+              AND pdp_concepto_irregularidad IS NOT NULL AND TRIM(pdp_concepto_irregularidad) != ''
             UNION
             SELECT pdp_subconcepto_irregularidad AS concepto
             FROM observaciones
-            WHERE {scoped_where}
-              AND pdp_subconcepto_irregularidad IS NOT NULL AND pdp_subconcepto_irregularidad != ''
+            WHERE {concepto_where}
+              AND pdp_subconcepto_irregularidad IS NOT NULL AND TRIM(pdp_subconcepto_irregularidad) != ''
         )
         ORDER BY concepto
         """,
-        scoped_params + scoped_params,
+        concepto_params + concepto_params,
     ).fetchall()
     ente_aliases = get_ente_aliases_by_uid(db, ejercicio, ente_id)
     ente_uid = get_ente_uid_by_ejercicio_id(db, ejercicio, ente_id)
@@ -1450,17 +1429,6 @@ def observaciones_filtros():
         """,
         admin_params + admin_tipo_params,
     ).fetchall()
-    cedulas = db.execute(
-        f"""
-        SELECT DISTINCT periodo_cedula
-        FROM observaciones
-        WHERE {scoped_where}
-          AND periodo_cedula IS NOT NULL AND periodo_cedula != ''
-        ORDER BY periodo_cedula
-        """,
-        scoped_params,
-    ).fetchall()
-
     filtros["tipo_anexo"] = [row[0] for row in tipos]
     filtros["tipo_auditoria"] = [row[0] for row in auditorias]
     filtros["estado"] = [row[0] for row in estados]
