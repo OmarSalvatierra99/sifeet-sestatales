@@ -848,9 +848,14 @@ tbody tr:hover td {
   position: static;
 }
 
+.login-page {
+  min-height: 100vh;
+}
+
 .login-content {
   grid-template-columns: 1fr;
   align-items: start;
+  flex: 1;
 }
 
 .login-panel {
@@ -877,6 +882,90 @@ tbody tr:hover td {
 
 .login-form .btn-primary {
   width: 100%;
+}
+
+.login-page .site-footer {
+  margin-top: auto;
+}
+
+.loader-page .site-header {
+  position: sticky;
+}
+
+.loader-content {
+  grid-template-columns: 1fr;
+  gap: 1.1rem;
+}
+
+.loader-intro {
+  border-left: 4px solid var(--color-gold);
+}
+
+.loader-tip {
+  margin-top: 1rem;
+  padding: 0.8rem 0.9rem;
+  background: #f7f9f7;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: 10px;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.loader-card .record-form {
+  gap: 1rem;
+}
+
+.loader-checkbox-field {
+  justify-content: flex-end;
+  align-self: end;
+}
+
+.loader-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+  color: var(--color-ink);
+}
+
+.loader-checkbox input {
+  width: auto;
+  min-height: 0;
+  accent-color: var(--color-accent);
+}
+
+.loader-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.loader-result {
+  border-top: 3px solid var(--color-accent-soft);
+}
+
+.loader-code-block {
+  margin-top: 0.85rem;
+  padding: 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: #fafcfb;
+}
+
+.loader-code-block strong {
+  display: block;
+  color: var(--color-accent);
+  margin-bottom: 0.35rem;
+}
+
+.loader-code-block pre {
+  margin: 0;
+  font-family: "Consolas", "Menlo", monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #263238;
 }
 
 @media (max-width: 1100px) {
@@ -992,5 +1081,19 @@ tbody tr:hover td {
   .table-pagination {
     justify-content: center;
     flex-wrap: wrap;
+  }
+
+  .loader-actions {
+    flex-direction: column;
+  }
+
+  .loader-actions .btn-primary,
+  .loader-actions .btn-secondary {
+    width: 100%;
+  }
+
+  .loader-checkbox-field {
+    justify-content: flex-start;
+    align-self: auto;
   }
 }

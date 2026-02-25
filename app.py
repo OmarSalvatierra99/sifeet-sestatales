@@ -2,8 +2,11 @@ from datetime import datetime
 from functools import wraps
 from io import BytesIO
 import os
+from pathlib import Path
 import re
 import sqlite3
+import subprocess
+import sys
 import unicodedata
 
 from flask import Flask, render_template, request, redirect, url_for, g, jsonify, session, send_file
@@ -29,6 +32,10 @@ USERS = {
     "luis": {
         "password_hash": generate_password_hash("luis2025"),
         "role": "viewer",
+    },
+    "gabo": {
+        "password_hash": generate_password_hash("gabo2025"),
+        "role": "loader",
     },
 }
 
@@ -296,6 +303,21 @@ def get_current_user():
     if not user:
         return None
     return {"username": username, "role": user["role"]}
+
+
+def user_can_view_data(user: dict | None) -> bool:
+    return bool(user and user.get("role") in {"viewer", "editor"})
+
+
+def user_can_load_data(user: dict | None) -> bool:
+    return bool(user and user.get("role") in {"loader", "editor"})
+
+
+def ensure_data_view_access():
+    user = get_current_user()
+    if not user_can_view_data(user):
+        return redirect(url_for("carga", notice="no_view_permission"))
+    return None
 
 
 def login_required(view):
@@ -817,9 +839,13 @@ def login():
             session.clear()
             session["user"] = username
             session["role"] = user["role"]
+            if user["role"] == "loader":
+                return redirect(url_for("carga"))
             return redirect(next_url)
     else:
         if get_current_user() is not None:
+            if get_current_user()["role"] == "loader":
+                return redirect(url_for("carga"))
             return redirect(url_for("index"))
         next_url = request.args.get("next", "")
     return render_template("login.html", error=error, next_url=next_url)
@@ -831,9 +857,156 @@ def logout():
     return redirect(url_for("login"))
 
 
+def resolve_project_path(raw_path: str, *, must_exist: bool) -> Path:
+    clean = (raw_path or "").strip()
+    if not clean:
+        raise ValueError("Debes indicar una ruta de archivo.")
+    path = Path(clean)
+    if not path.is_absolute():
+        path = Path(BASE_DIR) / path
+    resolved = path.resolve()
+    base = Path(BASE_DIR).resolve()
+    if resolved != base and base not in resolved.parents:
+        raise ValueError("La ruta debe estar dentro del proyecto.")
+    if must_exist and not resolved.exists():
+        raise ValueError(f"No existe el archivo: {resolved}")
+    return resolved
+
+
+def run_loader_command(command: list[str]) -> dict:
+    result = subprocess.run(
+        command,
+        cwd=BASE_DIR,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return {
+        "ok": result.returncode == 0,
+        "returncode": result.returncode,
+        "command": " ".join(command),
+        "stdout": (result.stdout or "").strip(),
+        "stderr": (result.stderr or "").strip(),
+    }
+
+
+@app.route("/carga", methods=["GET", "POST"])
+@login_required
+def carga():
+    user = get_current_user()
+    if not user_can_load_data(user):
+        return redirect(url_for("index", notice="no_permission"))
+
+    result = None
+    form_data = {
+        "template_ejercicio": "",
+        "template_out": "bases/historial_titulares_template.csv",
+        "template_tipo_auditoria": "Financiera",
+        "csv_path": "",
+        "csv_ejercicio": "",
+        "csv_replace": "0",
+        "json_path": "",
+        "json_ejercicio": "",
+        "json_tipo_auditoria": "Financiera",
+    }
+
+    if request.method == "POST":
+        action = (request.form.get("action") or "").strip()
+        form_data.update(
+            {
+                "template_ejercicio": (request.form.get("template_ejercicio") or "").strip(),
+                "template_out": (request.form.get("template_out") or "").strip() or "bases/historial_titulares_template.csv",
+                "template_tipo_auditoria": (request.form.get("template_tipo_auditoria") or "").strip() or "Financiera",
+                "csv_path": (request.form.get("csv_path") or "").strip(),
+                "csv_ejercicio": (request.form.get("csv_ejercicio") or "").strip(),
+                "csv_replace": "1" if request.form.get("csv_replace") else "0",
+                "json_path": (request.form.get("json_path") or "").strip(),
+                "json_ejercicio": (request.form.get("json_ejercicio") or "").strip(),
+                "json_tipo_auditoria": (request.form.get("json_tipo_auditoria") or "").strip() or "Financiera",
+            }
+        )
+
+        try:
+            command = [sys.executable]
+            if action == "template_generate":
+                if not form_data["template_ejercicio"]:
+                    raise ValueError("Debes indicar el ejercicio para generar plantilla.")
+                out_path = resolve_project_path(form_data["template_out"], must_exist=False)
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                command.extend(
+                    [
+                        "scripts/make_historial_titulares_template.py",
+                        "--db",
+                        DB_PATH,
+                        "--ejercicio",
+                        str(int(form_data["template_ejercicio"])),
+                        "--tipo-auditoria",
+                        form_data["template_tipo_auditoria"],
+                        "--out",
+                        str(out_path),
+                    ]
+                )
+            elif action in {"csv_validate", "csv_import"}:
+                csv_path = resolve_project_path(form_data["csv_path"], must_exist=True)
+                command.extend(
+                    [
+                        "scripts/import_historial_titulares.py",
+                        "--db",
+                        DB_PATH,
+                        "--csv",
+                        str(csv_path),
+                    ]
+                )
+                if form_data["csv_ejercicio"]:
+                    command.extend(["--ejercicio", str(int(form_data["csv_ejercicio"]))])
+                if form_data["csv_replace"] == "1":
+                    command.append("--replace")
+                if action == "csv_validate":
+                    command.append("--dry-run")
+            elif action in {"json_validate", "json_import"}:
+                json_path = resolve_project_path(form_data["json_path"], must_exist=True)
+                command.extend(
+                    [
+                        "scripts/import_historial_titulares_json.py",
+                        "--db",
+                        DB_PATH,
+                        "--json",
+                        str(json_path),
+                        "--tipo-auditoria",
+                        form_data["json_tipo_auditoria"],
+                    ]
+                )
+                if form_data["json_ejercicio"]:
+                    command.extend(["--ejercicio", str(int(form_data["json_ejercicio"]))])
+                if action == "json_validate":
+                    command.append("--dry-run")
+            else:
+                raise ValueError("Acción de carga no soportada.")
+            result = run_loader_command(command)
+        except ValueError as exc:
+            result = {
+                "ok": False,
+                "returncode": 1,
+                "command": "",
+                "stdout": "",
+                "stderr": str(exc),
+            }
+
+    return render_template(
+        "carga.html",
+        user=user,
+        result=result,
+        form_data=form_data,
+    )
+
+
 @app.route("/entes", methods=["GET", "POST"])
 @login_required
 def entes():
+    denied = ensure_data_view_access()
+    if denied:
+        return denied
+
     if request.method == "POST":
         if get_current_user()["role"] != "editor":
             return redirect(url_for("index", notice="no_permission"))
@@ -900,6 +1073,10 @@ def entes():
 @app.route("/historial", methods=["GET", "POST"])
 @login_required
 def historial():
+    denied = ensure_data_view_access()
+    if denied:
+        return denied
+
     if request.method == "POST":
         if get_current_user()["role"] != "editor":
             return redirect(url_for("index", notice="no_permission"))
@@ -1082,6 +1259,10 @@ def oficios():
 @app.get("/fuentes-ente")
 @login_required
 def fuentes_ente():
+    denied = ensure_data_view_access()
+    if denied:
+        return denied
+
     ejercicio = request.args.get("ejercicio", "").strip()
     ente_id = request.args.get("ente_id", "").strip()
     if not ejercicio or not ente_id:
@@ -1105,6 +1286,10 @@ def fuentes_ente():
 @app.get("/ejercicios-disponibles")
 @login_required
 def ejercicios_disponibles():
+    denied = ensure_data_view_access()
+    if denied:
+        return denied
+
     db = get_db()
     observaciones_rows = db.execute(
         """
@@ -1144,6 +1329,10 @@ def ejercicios_disponibles():
 @app.get("/observaciones")
 @login_required
 def observaciones_api():
+    denied = ensure_data_view_access()
+    if denied:
+        return denied
+
     ejercicio = request.args.get("ejercicio", "").strip()
     ente_id = normalize_ente_id(request.args.get("ente_id", ""))
     tipo_anexo = request.args.get("tipo_anexo", "").strip()
@@ -1343,6 +1532,10 @@ def observaciones_api():
 @app.get("/observaciones-filtros")
 @login_required
 def observaciones_filtros():
+    denied = ensure_data_view_access()
+    if denied:
+        return denied
+
     ejercicio = request.args.get("ejercicio", "").strip()
     ente_id = normalize_ente_id(request.args.get("ente_id", ""))
     tipo_auditoria = normalize_tipo_auditoria(request.args.get("tipo_auditoria", ""))
@@ -1587,6 +1780,10 @@ def observaciones_filtros():
 @app.get("/observaciones-responsables")
 @login_required
 def observaciones_responsables():
+    denied = ensure_data_view_access()
+    if denied:
+        return denied
+
     ejercicio = request.args.get("ejercicio", "").strip()
     ente_id = normalize_ente_id(request.args.get("ente_id", ""))
     tipo_auditoria = normalize_tipo_auditoria(request.args.get("tipo_auditoria", ""))
@@ -1746,6 +1943,10 @@ def observaciones_responsables():
 @app.get("/observaciones-exportar")
 @login_required
 def observaciones_exportar():
+    denied = ensure_data_view_access()
+    if denied:
+        return denied
+
     ejercicio = request.args.get("ejercicio", "").strip()
     ente_id = normalize_ente_id(request.args.get("ente_id", ""))
     tipo_anexo = request.args.get("tipo_anexo", "").strip()
@@ -1928,6 +2129,10 @@ def observaciones_exportar():
 @app.get("/observaciones-stats")
 @login_required
 def observaciones_stats():
+    denied = ensure_data_view_access()
+    if denied:
+        return denied
+
     ente_id = normalize_ente_id(request.args.get("ente_id", ""))
     tipo_auditoria = normalize_tipo_auditoria(request.args.get("tipo_auditoria", ""))
     where_clauses = []
@@ -2039,6 +2244,10 @@ def observaciones_stats():
 @app.get("/catalogo-entes")
 @login_required
 def catalogo_entes():
+    denied = ensure_data_view_access()
+    if denied:
+        return denied
+
     ejercicio = request.args.get("ejercicio", "").strip()
     if not ejercicio:
         return jsonify([])
@@ -2121,6 +2330,10 @@ def irregularidades():
 @app.route("/stats")
 @login_required
 def stats():
+    denied = ensure_data_view_access()
+    if denied:
+        return denied
+
     db = get_db()
     totals = db.execute(
         """
@@ -2195,6 +2408,8 @@ def reclasificar(registro_id: int):
 @login_required
 def index():
     user = get_current_user()
+    if user and user.get("role") == "loader":
+        return redirect(url_for("carga"))
     can_edit = user["role"] == "editor" if user else False
     return render_template(
         "index.html",
