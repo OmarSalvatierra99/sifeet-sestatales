@@ -63,34 +63,10 @@
       </div>
     </section>
 
-    <section class="panel anexo-count-panel tab-section" data-tab="observaciones">
-      <div class="panel-header">
-        <h2>Conteo por tipo de anexo</h2>
-        <p>Resumen rápido por ejercicio seleccionado.</p>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Tipo de anexo</th>
-              <th>Emitidas</th>
-              <th>Pendientes</th>
-              <th>Solventadas</th>
-            </tr>
-          </thead>
-          <tbody id="anexoCountBody">
-            <tr>
-              <td colspan="4" class="muted">Selecciona un ejercicio.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="panel tab-section" data-tab="observaciones">
+    <section class="panel tab-section" data-tab="observaciones" id="summarySection">
       <div class="panel-header">
         <h2>Resumen</h2>
-        <p>Totales de observaciones emitidas, solventadas y pendientes por tipo de anexo.</p>
+        <p>Conteo general de observaciones por tipo de anexo.</p>
         <div class="chart-filter-field" style="max-width: 280px;">
           <label for="summary_tipo_anexo">Tipo de anexo (resumen)</label>
           <select id="summary_tipo_anexo" name="summary_tipo_anexo">
@@ -102,7 +78,7 @@
         <table>
           <thead>
             <tr>
-              <th>Resumen</th>
+              <th>Tipo de anexo</th>
               <th>Emitidas</th>
               <th>Solventadas</th>
               <th>Pendientes</th>
@@ -115,16 +91,37 @@
           </tbody>
         </table>
       </div>
+      <div class="table-wrap table-summary" id="pdpMontoSummaryWrap" style="display: none;">
+        <table>
+          <thead>
+            <tr>
+              <th>Montos PDP (pesos)</th>
+              <th>Emitido</th>
+              <th>Solventado</th>
+              <th>Pendiente</th>
+            </tr>
+          </thead>
+          <tbody id="pdpMontoSummaryBody">
+            <tr>
+              <td colspan="4" class="muted">Sin resultados.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </section>
 
-    <section class="panel tab-section" data-tab="observaciones">
+    <section class="panel chart-panel tab-section" data-tab="observaciones" id="pdpChartSection">
       <div class="panel-header">
-        <h2>Solventado vs Pendiente</h2>
-        <p>Distribución de observaciones según estado.</p>
+        <h2>Graficas de estado</h2>
+        <p>Conteo de observaciones por estado segun filtros seleccionados.</p>
       </div>
       <div class="chart-card summary-chart">
-        <h3>Gráfico de pastel</h3>
-        <canvas id="pdpDonut" height="180"></canvas>
+        <h3>Gráfico de pastel (conteo)</h3>
+        <canvas id="pdpCountDonut" height="180"></canvas>
+      </div>
+      <div class="chart-card summary-chart" id="pdpMontoChartWrap" style="display: none;">
+        <h3>Gráfico de pastel (montos PDP: pendiente vs solventado)</h3>
+        <canvas id="pdpMontoDonut" height="180"></canvas>
       </div>
     </section>
 
@@ -293,22 +290,26 @@
     const obsTableBody = document.getElementById("obsTableBody");
     const obsCount = document.getElementById("obsCount");
     const pdpSummaryBody = document.getElementById("pdpSummaryBody");
+    const pdpMontoSummaryWrap = document.getElementById("pdpMontoSummaryWrap");
+    const pdpMontoSummaryBody = document.getElementById("pdpMontoSummaryBody");
     const summaryTipoAnexo = document.getElementById("summary_tipo_anexo");
     const obsPagination = document.getElementById("obsPagination");
     const obsPrev = document.getElementById("obsPrev");
     const obsNext = document.getElementById("obsNext");
     const obsPageInfo = document.getElementById("obsPageInfo");
-    const pdpDonutCanvas = document.getElementById("pdpDonut");
+    const pdpMontoChartWrap = document.getElementById("pdpMontoChartWrap");
+    const pdpCountDonutCanvas = document.getElementById("pdpCountDonut");
+    const pdpMontoDonutCanvas = document.getElementById("pdpMontoDonut");
     const catalogoBody = document.getElementById("catalogoBody");
     const catalogoCount = document.getElementById("catalogoCount");
     const catalogoSearch = document.getElementById("catalogo_search");
 
     if (mainEjercicio && obsEnteInput && obsTableBody) {
-      const anexoCountBody = document.getElementById("anexoCountBody");
       const tabButtons = document.querySelectorAll(".tab-button");
       const tabSections = document.querySelectorAll(".tab-section");
 
-      let pdpDonutChart = null;
+      let pdpCountDonutChart = null;
+      let pdpMontoDonutChart = null;
       let obsRows = [];
       let obsPage = 1;
       const obsPageSize = 20;
@@ -441,20 +442,37 @@
         return numeric.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       };
 
-      const updateSummaryDonut = (solventadas, pendientes) => {
-        if (!pdpDonutCanvas) {
+      const formatPesos = (value) => new Intl.NumberFormat("es-MX", {
+        style: "currency",
+        currency: "MXN",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(Number(value || 0));
+
+      const syncPdpWidgetsVisibility = () => {
+        const showPdpWidgets = summaryTipoAnexo && summaryTipoAnexo.value === "PDP";
+        if (pdpMontoSummaryWrap) {
+          pdpMontoSummaryWrap.style.display = showPdpWidgets ? "block" : "none";
+        }
+        if (pdpMontoChartWrap) {
+          pdpMontoChartWrap.style.display = showPdpWidgets ? "block" : "none";
+        }
+      };
+
+      const updateSummaryCountDonut = (solventadas, pendientes) => {
+        if (!pdpCountDonutCanvas) {
           return;
         }
         const donutLabels = ["Solventadas", "Pendientes"];
         const donutData = [solventadas, pendientes];
         const donutColors = ["#4b7a55", "#b18934"];
-        if (pdpDonutChart) {
-          pdpDonutChart.data.labels = donutLabels;
-          pdpDonutChart.data.datasets[0].data = donutData;
-          pdpDonutChart.update();
+        if (pdpCountDonutChart) {
+          pdpCountDonutChart.data.labels = donutLabels;
+          pdpCountDonutChart.data.datasets[0].data = donutData;
+          pdpCountDonutChart.update();
           return;
         }
-        pdpDonutChart = new Chart(pdpDonutCanvas, {
+        pdpCountDonutChart = new Chart(pdpCountDonutCanvas, {
           type: "doughnut",
           data: {
             labels: donutLabels,
@@ -473,6 +491,45 @@
         });
       };
 
+      const updateSummaryMontoDonut = (solventado, pendiente) => {
+        if (!pdpMontoDonutCanvas) {
+          return;
+        }
+        const donutLabels = ["Solventado", "Pendiente"];
+        const donutData = [solventado, pendiente];
+        const donutColors = ["#4b7a55", "#b18934"];
+        if (pdpMontoDonutChart) {
+          pdpMontoDonutChart.data.labels = donutLabels;
+          pdpMontoDonutChart.data.datasets[0].data = donutData;
+          pdpMontoDonutChart.update();
+          return;
+        }
+        pdpMontoDonutChart = new Chart(pdpMontoDonutCanvas, {
+          type: "doughnut",
+          data: {
+            labels: donutLabels,
+            datasets: [
+              {
+                data: donutData,
+                backgroundColor: donutColors,
+                borderWidth: 0,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: { position: "bottom" },
+              tooltip: {
+                callbacks: {
+                  label: (context) => `${context.label}: ${formatPesos(context.raw)}`,
+                },
+              },
+            },
+          },
+        });
+      };
+
       const renderPdpSummary = (rows) => {
         if (!pdpSummaryBody) {
           return;
@@ -480,18 +537,78 @@
         try {
           const safeRows = Array.isArray(rows) ? rows : [];
           const selectedTipo = summaryTipoAnexo ? summaryTipoAnexo.value : "";
-          const filteredRows = selectedTipo
-            ? safeRows.filter((row) => String(row?.tipo_anexo || "") === selectedTipo)
-            : safeRows;
-          if (!filteredRows.length) {
+          const isPdpSelected = selectedTipo === "PDP";
+          syncPdpWidgetsVisibility();
+          if (!safeRows.length) {
             pdpSummaryBody.innerHTML = "<tr><td colspan=\"4\" class=\"muted\">Sin resultados.</td></tr>";
-            updateSummaryDonut(0, 0);
+            if (pdpMontoSummaryBody) {
+              pdpMontoSummaryBody.innerHTML = "<tr><td colspan=\"4\" class=\"muted\">Sin resultados.</td></tr>";
+            }
+            updateSummaryCountDonut(0, 0);
+            updateSummaryMontoDonut(0, 0);
             return;
           }
-          const totals = filteredRows.reduce(
+
+          const summaryRows = selectedTipo
+            ? safeRows.filter((row) => String(row?.tipo_anexo || "") === selectedTipo)
+            : safeRows;
+
+          if (!summaryRows.length) {
+            pdpSummaryBody.innerHTML = "<tr><td colspan=\"4\" class=\"muted\">Sin resultados para el tipo seleccionado.</td></tr>";
+            if (pdpMontoSummaryBody) {
+              pdpMontoSummaryBody.innerHTML = "<tr><td colspan=\"4\" class=\"muted\">Sin resultados.</td></tr>";
+            }
+            updateSummaryCountDonut(0, 0);
+            updateSummaryMontoDonut(0, 0);
+            return;
+          }
+
+          const agrupados = summaryRows.reduce((acc, row) => {
+            const tipo = row.tipo_anexo || "Sin tipo";
+            if (!acc[tipo]) {
+              acc[tipo] = { emitidas: 0, solventadas: 0, pendientes: 0 };
+            }
+            const estado = String(row?.estado || "").trim().toLowerCase();
+            acc[tipo].emitidas += 1;
+            if (estado === "solventado") {
+              acc[tipo].solventadas += 1;
+            } else if (estado === "pendiente") {
+              acc[tipo].pendientes += 1;
+            }
+            return acc;
+          }, {});
+
+          const filas = Object.entries(agrupados).sort((a, b) => a[0].localeCompare(b[0]));
+          let totalEmitidas = 0;
+          let totalSolventadas = 0;
+          let totalPendientes = 0;
+          const rowsHtml = filas.map(([tipo, data]) => {
+            totalEmitidas += data.emitidas;
+            totalSolventadas += data.solventadas;
+            totalPendientes += data.pendientes;
+            return `
+              <tr>
+                <td>${tipo}</td>
+                <td>${data.emitidas}</td>
+                <td>${data.solventadas}</td>
+                <td>${data.pendientes}</td>
+              </tr>
+            `;
+          }).join("");
+          pdpSummaryBody.innerHTML = `
+            ${rowsHtml}
+            <tr>
+              <td><strong>Totales</strong></td>
+              <td><strong>${totalEmitidas}</strong></td>
+              <td><strong>${totalSolventadas}</strong></td>
+              <td><strong>${totalPendientes}</strong></td>
+            </tr>
+          `;
+
+          const chartRows = summaryRows;
+          const totals = chartRows.reduce(
             (acc, row) => {
               const estado = String(row?.estado || "").trim().toLowerCase();
-              acc.emitidas += 1;
               if (estado === "solventado") {
                 acc.solventadas += 1;
               } else if (estado === "pendiente") {
@@ -499,22 +616,39 @@
               }
               return acc;
             },
-            { emitidas: 0, solventadas: 0, pendientes: 0 }
+            { solventadas: 0, pendientes: 0 }
           );
-
-          pdpSummaryBody.innerHTML = `
-            <tr>
-              <td><strong>Totales</strong></td>
-              <td><strong>${totals.emitidas}</strong></td>
-              <td><strong>${totals.solventadas}</strong></td>
-              <td><strong>${totals.pendientes}</strong></td>
-            </tr>
-          `;
-          updateSummaryDonut(totals.solventadas, totals.pendientes);
+          if (isPdpSelected && pdpMontoSummaryBody) {
+            const pdpMontos = chartRows.reduce(
+              (acc, row) => {
+                acc.emitido += Number(row?.monto_pdp_emitido || 0);
+                acc.solventado += Number(row?.monto_pdp_solventado || 0);
+                acc.pendiente += Number(row?.monto_pdp_pendiente || 0);
+                return acc;
+              },
+              { emitido: 0, solventado: 0, pendiente: 0 }
+            );
+            pdpMontoSummaryBody.innerHTML = `
+              <tr>
+                <td><strong>Totales</strong></td>
+                <td><strong>${formatPesos(pdpMontos.emitido)}</strong></td>
+                <td><strong>${formatPesos(pdpMontos.solventado)}</strong></td>
+                <td><strong>${formatPesos(pdpMontos.pendiente)}</strong></td>
+              </tr>
+            `;
+            updateSummaryMontoDonut(pdpMontos.solventado, pdpMontos.pendiente);
+          } else {
+            updateSummaryMontoDonut(0, 0);
+          }
+          updateSummaryCountDonut(totals.solventadas, totals.pendientes);
         } catch (error) {
           console.error("Error al renderizar resumen general:", error);
           pdpSummaryBody.innerHTML = "<tr><td colspan=\"4\" class=\"muted\">Sin resultados.</td></tr>";
-          updateSummaryDonut(0, 0);
+          if (pdpMontoSummaryBody) {
+            pdpMontoSummaryBody.innerHTML = "<tr><td colspan=\"4\" class=\"muted\">Sin resultados.</td></tr>";
+          }
+          updateSummaryCountDonut(0, 0);
+          updateSummaryMontoDonut(0, 0);
         }
       };
 
@@ -523,7 +657,6 @@
           obsTableBody.innerHTML = "<tr><td colspan=\"10\" class=\"muted\">Sin resultados.</td></tr>";
           obsCount.textContent = "0 observaciones encontradas.";
           renderPdpSummary([]);
-          renderAnexoCountFromRows([]);
           if (obsPageInfo) {
             obsPageInfo.textContent = "Página 0 de 0";
           }
@@ -574,7 +707,6 @@
         }).join("");
         obsCount.textContent = `${obsRows.length} observaciones encontradas.`;
         renderPdpSummary(obsRows);
-        renderAnexoCountFromRows(obsRows);
         if (obsPageInfo) {
           obsPageInfo.textContent = `Página ${obsPage} de ${totalPages}`;
         }
@@ -641,18 +773,13 @@
       };
 
       const getSelectedTipoAnexo = () => {
-        const summaryValue = summaryTipoAnexo ? summaryTipoAnexo.value : "";
-        const obsValue = obsTipoAnexo ? obsTipoAnexo.value : "";
-        return summaryValue || obsValue || "";
+        return obsTipoAnexo ? obsTipoAnexo.value : "";
       };
 
       const setTipoAnexoValue = (value) => {
         const normalized = value || "";
         if (obsTipoAnexo) {
           obsTipoAnexo.value = normalized;
-        }
-        if (summaryTipoAnexo) {
-          summaryTipoAnexo.value = normalized;
         }
       };
 
@@ -670,6 +797,7 @@
 
       const loadFiltros = async (ejercicio) => {
         const active = getActiveFilters();
+        const currentSummaryTipo = summaryTipoAnexo ? summaryTipoAnexo.value : "";
         resetSelect(obsEnteInput, "Todos los entes");
         resetSelect(mainTipoAuditoria, "Todas");
         resetSelect(obsTipoAnexo, "Todos");
@@ -739,6 +867,11 @@
               summaryOption.textContent = item;
               summaryTipoAnexo.appendChild(summaryOption);
             });
+            if (currentSummaryTipo && summaryTipoAnexo.querySelector(`option[value="${currentSummaryTipo}"]`)) {
+              summaryTipoAnexo.value = currentSummaryTipo;
+            } else {
+              summaryTipoAnexo.value = "";
+            }
           }
           if (active.tipo_anexo && obsTipoAnexo.querySelector(`option[value="${active.tipo_anexo}"]`)) {
             setTipoAnexoValue(active.tipo_anexo);
@@ -965,58 +1098,6 @@
         window.location.href = `/observaciones-exportar?${params.toString()}`;
       };
 
-      const renderAnexoCountFromRows = (rows) => {
-        const safeRows = Array.isArray(rows) ? rows : [];
-        if (!safeRows.length) {
-          anexoCountBody.innerHTML = "<tr><td colspan=\"4\" class=\"muted\">Sin datos para el ejercicio.</td></tr>";
-          return;
-        }
-        const agrupados = safeRows.reduce((acc, row) => {
-          const tipo = row.tipo_anexo || "Sin tipo";
-          if (!acc[tipo]) {
-            acc[tipo] = { emitidas: 0, pendientes: 0, solventadas: 0 };
-          }
-          const estado = String(row.estado || "").trim().toLowerCase();
-          if (estado === "pendiente") acc[tipo].pendientes += 1;
-          if (estado === "solventado") acc[tipo].solventadas += 1;
-          return acc;
-        }, {});
-
-        const filas = Object.entries(agrupados).sort((a, b) => a[0].localeCompare(b[0]));
-        let totalEmitidas = 0;
-        let totalPendientes = 0;
-        let totalSolventadas = 0;
-
-        const rowsHtml = filas.map(([tipo, data]) => {
-          const emitidas = data.pendientes + data.solventadas;
-          totalEmitidas += emitidas;
-          totalPendientes += data.pendientes;
-          totalSolventadas += data.solventadas;
-          return `
-          <tr>
-            <td>${tipo}</td>
-            <td>${emitidas}</td>
-            <td>${data.pendientes}</td>
-            <td>${data.solventadas}</td>
-          </tr>
-        `;
-        }).join("");
-
-        const totalRow = `
-          <tr>
-            <td><strong>Totales</strong></td>
-            <td><strong>${totalEmitidas}</strong></td>
-            <td><strong>${totalPendientes}</strong></td>
-            <td><strong>${totalSolventadas}</strong></td>
-          </tr>
-        `;
-        anexoCountBody.innerHTML = rowsHtml + totalRow;
-      };
-
-      const loadAnexoCount = async () => {
-        renderAnexoCountFromRows(obsRows);
-      };
-
       const loadCatalogo = async () => {
         const ejercicio = mainEjercicio.value;
         if (!ejercicio) {
@@ -1104,10 +1185,7 @@
         syncConceptoIrregularidadVisibility();
         await loadCatalogo();
         await loadFiltros(mainEjercicio.value);
-        await Promise.all([
-          loadObservaciones(),
-          loadAnexoCount(),
-        ]);
+        await loadObservaciones();
       };
 
       mainEjercicio.addEventListener("change", handleEjercicioChange);
@@ -1116,28 +1194,19 @@
           mainTipoAuditoria.value = "";
         }
         await loadFiltros(mainEjercicio.value);
-        await Promise.all([
-          loadObservaciones(),
-          loadAnexoCount(),
-        ]);
+        await loadObservaciones();
       });
       if (mainTipoAuditoria) {
         mainTipoAuditoria.addEventListener("change", async () => {
           await loadFiltros(mainEjercicio.value);
-          await Promise.all([
-            loadObservaciones(),
-            loadAnexoCount(),
-          ]);
+          await loadObservaciones();
         });
       }
       const handleTipoAnexoChange = async (value) => {
         setTipoAnexoValue(value);
         syncConceptoIrregularidadVisibility();
         await loadFiltros(mainEjercicio.value);
-        await Promise.all([
-          loadObservaciones(),
-          loadAnexoCount(),
-        ]);
+        await loadObservaciones();
       };
 
       obsTipoAnexo.addEventListener("change", async () => {
@@ -1157,10 +1226,7 @@
       ].forEach((select) => {
         select.addEventListener("change", async () => {
           await loadFiltros(mainEjercicio.value);
-          await Promise.all([
-            loadObservaciones(),
-            loadAnexoCount(),
-          ]);
+          await loadObservaciones();
         });
       });
       obsClear.addEventListener("click", async () => {
@@ -1172,10 +1238,7 @@
         cedulaResultados.value = "";
         syncConceptoIrregularidadVisibility();
         await loadFiltros(mainEjercicio.value);
-        await Promise.all([
-          loadObservaciones(),
-          loadAnexoCount(),
-        ]);
+        await loadObservaciones();
       });
       if (obsExport) {
         obsExport.addEventListener("click", exportObservaciones);
@@ -1194,8 +1257,8 @@
         });
       }
       if (summaryTipoAnexo) {
-        summaryTipoAnexo.addEventListener("change", async () => {
-          await handleTipoAnexoChange(summaryTipoAnexo.value);
+        summaryTipoAnexo.addEventListener("change", () => {
+          renderPdpSummary(obsRows);
         });
       }
 
