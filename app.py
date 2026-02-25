@@ -16,6 +16,14 @@ DB_PATH = os.path.join(BASE_DIR, "sifeet.db")
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key")
+template_reload_env = os.getenv("TEMPLATES_AUTO_RELOAD")
+template_auto_reload = (
+    template_reload_env.strip().lower() in {"1", "true", "yes", "on"}
+    if template_reload_env
+    else False
+)
+app.config["TEMPLATES_AUTO_RELOAD"] = template_auto_reload
+app.jinja_env.auto_reload = template_auto_reload
 
 USERS = {
     "luis": {
@@ -420,6 +428,8 @@ def backfill_ente_uids(conn: sqlite3.Connection) -> None:
 def init_db() -> None:
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS registros (
@@ -699,6 +709,78 @@ def init_db() -> None:
         if missing_uid:
             backfill_ente_uids(conn)
         backfill_historial_ente_uids(conn)
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_obs_ejercicio
+            ON observaciones (ejercicio)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_obs_ejercicio_ente
+            ON observaciones (ejercicio, ente_id)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_obs_ejercicio_auditoria
+            ON observaciones (ejercicio, tipo_auditoria)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_obs_ejercicio_anexo_estado
+            ON observaciones (ejercicio, tipo_anexo, estado)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_obs_ejercicio_filtros
+            ON observaciones (ejercicio, fuente_financiamiento, ramo_33, periodo_cedula)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_obs_pdp_concepto
+            ON observaciones (pdp_concepto_irregularidad)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_obs_pdp_subconcepto
+            ON observaciones (pdp_subconcepto_irregularidad)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_entes_ejercicio_id
+            ON entes_detalle (ejercicio, ente_id)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_entes_uid
+            ON entes_detalle (ente_uid)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_historial_scope
+            ON historial_titulares (ejercicio, tipo_auditoria, tipo_registro)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_historial_uid
+            ON historial_titulares (ente_uid, ejercicio)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_historial_ente
+            ON historial_titulares (ente, ejercicio)
+            """
+        )
         conn.commit()
 
 
@@ -709,6 +791,8 @@ def get_db() -> sqlite3.Connection:
     if "db" not in g:
         g.db = sqlite3.connect(DB_PATH)
         g.db.row_factory = sqlite3.Row
+        g.db.execute("PRAGMA busy_timeout = 5000")
+        g.db.execute("PRAGMA temp_store = MEMORY")
     return g.db
 
 
@@ -1106,18 +1190,6 @@ def observaciones_api():
     if periodo_cedula:
         filter_clauses.append("observaciones.periodo_cedula = ?")
         params.append(periodo_cedula)
-    if periodo_informe:
-        filter_clauses.append(f"{periodo_sql('resp')} = ?")
-        params.append(periodo_informe)
-    if titular:
-        filter_clauses.append("resp.nombre = ?")
-        params.append(titular)
-    if periodo_admin:
-        filter_clauses.append(f"{periodo_sql('admin')} = ?")
-        params.append(periodo_admin)
-    if administrativo:
-        filter_clauses.append("admin.nombre = ?")
-        params.append(administrativo)
     if search:
         filter_clauses.append(
             """
@@ -1137,86 +1209,133 @@ def observaciones_api():
     filter_sql = ""
     if filter_clauses:
         filter_sql = " AND " + " AND ".join(filter_clauses)
+    needs_historial_join = bool(periodo_informe or titular or periodo_admin or administrativo)
 
-    rows = db.execute(
-        f"""
-        SELECT
-            observaciones.id,
-            observaciones.ejercicio,
-            observaciones.ente_id,
-            observaciones.ente_numero,
-            observaciones.ente_nombre,
-            observaciones.tipo_auditoria,
-            observaciones.fuente_financiamiento,
-            observaciones.ramo_33,
-            observaciones.periodo_cedula,
-            observaciones.periodo_titular,
-            observaciones.oficio,
-            observaciones.fecha_notificacion,
-            observaciones.tipo_anexo,
-            observaciones.numero_observacion,
-            observaciones.estado,
-            observaciones.monto_pdp_emitido,
-            observaciones.monto_pdp_solventado,
-            observaciones.monto_pdp_pendiente,
-            observaciones.pdp_no_irregularidad,
-            observaciones.pdp_concepto_irregularidad,
-            observaciones.pdp_subconcepto_irregularidad,
-            entes_detalle.clasificacion,
-            entes_detalle.responsable AS ente_responsable,
-            resp.nombre AS responsable_nombre,
-            {periodo_sql("resp")} AS responsable_periodo,
-            admin.nombre AS administrador_nombre,
-            {periodo_sql("admin")} AS administrador_periodo
-        FROM observaciones
-        LEFT JOIN entes_detalle
-            ON {normalize_ente_id_sql("observaciones.ente_id")} = {normalize_ente_id_sql("entes_detalle.ente_id")}
-            AND observaciones.ejercicio = entes_detalle.ejercicio
-        LEFT JOIN historial_titulares AS resp
-            ON resp.id = (
-                SELECT id
-                FROM historial_titulares
-                WHERE ejercicio = observaciones.ejercicio
-                  AND tipo_auditoria = observaciones.tipo_auditoria
-                  AND (
-                      (
-                          TRIM(COALESCE(entes_detalle.ente_uid, '')) != ''
-                          AND TRIM(COALESCE(historial_titulares.ente_uid, '')) = TRIM(entes_detalle.ente_uid)
+    if needs_historial_join:
+        if periodo_informe:
+            filter_clauses.append(f"{periodo_sql('resp')} = ?")
+            params.append(periodo_informe)
+        if titular:
+            filter_clauses.append("resp.nombre = ?")
+            params.append(titular)
+        if periodo_admin:
+            filter_clauses.append(f"{periodo_sql('admin')} = ?")
+            params.append(periodo_admin)
+        if administrativo:
+            filter_clauses.append("admin.nombre = ?")
+            params.append(administrativo)
+
+        join_filter_sql = " AND " + " AND ".join(filter_clauses) if filter_clauses else ""
+        rows = db.execute(
+            f"""
+            SELECT
+                observaciones.id,
+                observaciones.ejercicio,
+                observaciones.ente_id,
+                observaciones.ente_numero,
+                observaciones.ente_nombre,
+                observaciones.tipo_auditoria,
+                observaciones.fuente_financiamiento,
+                observaciones.ramo_33,
+                observaciones.periodo_cedula,
+                observaciones.periodo_titular,
+                observaciones.oficio,
+                observaciones.fecha_notificacion,
+                observaciones.tipo_anexo,
+                observaciones.numero_observacion,
+                observaciones.estado,
+                observaciones.monto_pdp_emitido,
+                observaciones.monto_pdp_solventado,
+                observaciones.monto_pdp_pendiente,
+                observaciones.pdp_no_irregularidad,
+                observaciones.pdp_concepto_irregularidad,
+                observaciones.pdp_subconcepto_irregularidad
+            FROM observaciones
+            LEFT JOIN entes_detalle
+                ON {normalize_ente_id_sql("observaciones.ente_id")} = {normalize_ente_id_sql("entes_detalle.ente_id")}
+                AND observaciones.ejercicio = entes_detalle.ejercicio
+            LEFT JOIN historial_titulares AS resp
+                ON resp.id = (
+                    SELECT id
+                    FROM historial_titulares
+                    WHERE ejercicio = observaciones.ejercicio
+                      AND tipo_auditoria = observaciones.tipo_auditoria
+                      AND (
+                          (
+                              TRIM(COALESCE(entes_detalle.ente_uid, '')) != ''
+                              AND TRIM(COALESCE(historial_titulares.ente_uid, '')) = TRIM(entes_detalle.ente_uid)
+                          )
+                          OR ente = COALESCE(observaciones.ente_nombre, entes_detalle.ente_nombre)
                       )
-                      OR ente = COALESCE(observaciones.ente_nombre, entes_detalle.ente_nombre)
-                  )
-                  AND tipo_registro = 'titular'
-                ORDER BY id DESC
-                LIMIT 1
-            )
-        LEFT JOIN historial_titulares AS admin
-            ON admin.id = (
-                SELECT id
-                FROM historial_titulares
-                WHERE ejercicio = observaciones.ejercicio
-                  AND tipo_auditoria = observaciones.tipo_auditoria
-                  AND (
-                      (
-                          TRIM(COALESCE(entes_detalle.ente_uid, '')) != ''
-                          AND TRIM(COALESCE(historial_titulares.ente_uid, '')) = TRIM(entes_detalle.ente_uid)
+                      AND tipo_registro = 'titular'
+                    ORDER BY id DESC
+                    LIMIT 1
+                )
+            LEFT JOIN historial_titulares AS admin
+                ON admin.id = (
+                    SELECT id
+                    FROM historial_titulares
+                    WHERE ejercicio = observaciones.ejercicio
+                      AND tipo_auditoria = observaciones.tipo_auditoria
+                      AND (
+                          (
+                              TRIM(COALESCE(entes_detalle.ente_uid, '')) != ''
+                              AND TRIM(COALESCE(historial_titulares.ente_uid, '')) = TRIM(entes_detalle.ente_uid)
+                          )
+                          OR ente = COALESCE(observaciones.ente_nombre, entes_detalle.ente_nombre)
                       )
-                      OR ente = COALESCE(observaciones.ente_nombre, entes_detalle.ente_nombre)
-                  )
-                  AND tipo_registro = 'director_administrativo'
-                ORDER BY id DESC
-                LIMIT 1
-            )
-        WHERE observaciones.ejercicio = ?
-        {filter_sql}
-        ORDER BY
-            CAST(entes_detalle.ente_numero AS REAL) ASC,
-            entes_detalle.ente_numero ASC,
-            observaciones.ente_id ASC,
-            observaciones.tipo_anexo ASC,
-            observaciones.numero_observacion ASC
-        """,
-        params,
-    ).fetchall()
+                      AND tipo_registro = 'director_administrativo'
+                    ORDER BY id DESC
+                    LIMIT 1
+                )
+            WHERE observaciones.ejercicio = ?
+            {join_filter_sql}
+            ORDER BY
+                CAST(COALESCE(observaciones.ente_numero, '0') AS REAL) ASC,
+                observaciones.ente_numero ASC,
+                observaciones.ente_id ASC,
+                observaciones.tipo_anexo ASC,
+                observaciones.numero_observacion ASC
+            """,
+            params,
+        ).fetchall()
+    else:
+        rows = db.execute(
+            f"""
+            SELECT
+                observaciones.id,
+                observaciones.ejercicio,
+                observaciones.ente_id,
+                observaciones.ente_numero,
+                observaciones.ente_nombre,
+                observaciones.tipo_auditoria,
+                observaciones.fuente_financiamiento,
+                observaciones.ramo_33,
+                observaciones.periodo_cedula,
+                observaciones.periodo_titular,
+                observaciones.oficio,
+                observaciones.fecha_notificacion,
+                observaciones.tipo_anexo,
+                observaciones.numero_observacion,
+                observaciones.estado,
+                observaciones.monto_pdp_emitido,
+                observaciones.monto_pdp_solventado,
+                observaciones.monto_pdp_pendiente,
+                observaciones.pdp_no_irregularidad,
+                observaciones.pdp_concepto_irregularidad,
+                observaciones.pdp_subconcepto_irregularidad
+            FROM observaciones
+            WHERE observaciones.ejercicio = ?
+            {filter_sql}
+            ORDER BY
+                CAST(COALESCE(observaciones.ente_numero, '0') AS REAL) ASC,
+                observaciones.ente_numero ASC,
+                observaciones.ente_id ASC,
+                observaciones.tipo_anexo ASC,
+                observaciones.numero_observacion ASC
+            """,
+            params,
+        ).fetchall()
 
     return jsonify([dict(row) for row in rows])
 
@@ -1235,6 +1354,7 @@ def observaciones_filtros():
     periodo_cedula = request.args.get("periodo_cedula", "").strip()
     titular_seleccionado = request.args.get("titular", "").strip()
     administrativo_seleccionado = request.args.get("administrativo", "").strip()
+    include_historial = request.args.get("include_historial", "").strip() == "1"
     if not ejercicio:
         return jsonify({})
 
@@ -1250,10 +1370,10 @@ def observaciones_filtros():
         "periodo_cedula": periodo_cedula,
     }
 
-    def build_observaciones_scope(exclude_key: str = ""):
+    def build_observaciones_scope(exclude_key: str = "", include_ente: bool = True):
         clauses = ["ejercicio = ?"]
         params = [ejercicio]
-        if ente_id:
+        if include_ente and ente_id:
             clauses.append(f"{normalize_ente_id_sql('ente_id')} = ?")
             params.append(ente_id)
 
@@ -1321,116 +1441,136 @@ def observaciones_filtros():
         """,
         concepto_params + concepto_params,
     ).fetchall()
-    ente_aliases = get_ente_aliases_by_uid(db, ejercicio, ente_id)
-    ente_uid = get_ente_uid_by_ejercicio_id(db, ejercicio, ente_id)
-
-    titular_params = [ejercicio]
-    titular_clause = ""
-    if ente_uid and ente_aliases:
-        placeholders = ", ".join(["?"] * len(ente_aliases))
-        titular_clause = (
-            f"AND (TRIM(COALESCE(ente_uid, '')) = ? OR TRIM(COALESCE(ente, '')) IN ({placeholders}))"
-        )
-        titular_params.extend([ente_uid, *ente_aliases])
-    elif ente_uid:
-        titular_clause = "AND TRIM(COALESCE(ente_uid, '')) = ?"
-        titular_params.append(ente_uid)
-    elif ente_aliases:
-        placeholders = ", ".join(["?"] * len(ente_aliases))
-        titular_clause = f"AND TRIM(COALESCE(ente, '')) IN ({placeholders})"
-        titular_params.extend(ente_aliases)
-
-    periodos_params = titular_params.copy()
-    periodo_titular_clause = ""
-    if titular_seleccionado:
-        periodo_titular_clause = "AND nombre = ?"
-        periodos_params.append(titular_seleccionado)
-
-    titular_tipo_clause = ""
-    titular_tipo_params = []
-    if tipo_auditoria:
-        titular_tipo_clause = "AND tipo_auditoria = ?"
-        titular_tipo_params.append(tipo_auditoria)
-
-    periodos_informe = db.execute(
+    entes_where, entes_params = build_observaciones_scope(include_ente=False)
+    entes = db.execute(
         f"""
-        SELECT DISTINCT {periodo_sql("historial_titulares")} AS periodo
-        FROM historial_titulares
-        WHERE ejercicio = ? {titular_clause} {periodo_titular_clause}
-          {titular_tipo_clause}
-          AND tipo_registro = 'titular'
-          AND fecha_inicio IS NOT NULL AND fecha_fin IS NOT NULL
-        ORDER BY fecha_inicio
+        SELECT DISTINCT
+            TRIM(COALESCE(ente_id, '')) AS ente_id,
+            TRIM(COALESCE(ente_numero, '')) AS ente_numero,
+            TRIM(COALESCE(ente_nombre, '')) AS ente_nombre
+        FROM observaciones
+        WHERE {entes_where}
+          AND TRIM(COALESCE(ente_id, '')) != ''
+        ORDER BY CAST(COALESCE(NULLIF(ente_numero, ''), '0') AS REAL), ente_numero, ente_nombre
         """,
-        periodos_params + titular_tipo_params,
+        entes_params,
     ).fetchall()
-    titulares = db.execute(
-        f"""
-        SELECT DISTINCT nombre
-        FROM historial_titulares
-        WHERE ejercicio = ? {titular_clause}
-          {titular_tipo_clause}
-          AND tipo_registro = 'titular'
-          AND nombre IS NOT NULL AND nombre != ''
-        ORDER BY nombre
-        """,
-        titular_params + titular_tipo_params,
-    ).fetchall()
+    periodos_informe = []
+    titulares = []
+    periodos_admin = []
+    administrativos = []
+    if include_historial:
+        ente_aliases = get_ente_aliases_by_uid(db, ejercicio, ente_id)
+        ente_uid = get_ente_uid_by_ejercicio_id(db, ejercicio, ente_id)
 
-    admin_params = [ejercicio]
-    admin_clause = ""
-    if ente_uid and ente_aliases:
-        placeholders = ", ".join(["?"] * len(ente_aliases))
-        admin_clause = (
-            f"AND (TRIM(COALESCE(ente_uid, '')) = ? OR TRIM(COALESCE(ente, '')) IN ({placeholders}))"
-        )
-        admin_params.extend([ente_uid, *ente_aliases])
-    elif ente_uid:
-        admin_clause = "AND TRIM(COALESCE(ente_uid, '')) = ?"
-        admin_params.append(ente_uid)
-    elif ente_aliases:
-        placeholders = ", ".join(["?"] * len(ente_aliases))
-        admin_clause = f"AND TRIM(COALESCE(ente, '')) IN ({placeholders})"
-        admin_params.extend(ente_aliases)
+        titular_params = [ejercicio]
+        titular_clause = ""
+        if ente_uid and ente_aliases:
+            placeholders = ", ".join(["?"] * len(ente_aliases))
+            titular_clause = (
+                f"AND (TRIM(COALESCE(ente_uid, '')) = ? OR TRIM(COALESCE(ente, '')) IN ({placeholders}))"
+            )
+            titular_params.extend([ente_uid, *ente_aliases])
+        elif ente_uid:
+            titular_clause = "AND TRIM(COALESCE(ente_uid, '')) = ?"
+            titular_params.append(ente_uid)
+        elif ente_aliases:
+            placeholders = ", ".join(["?"] * len(ente_aliases))
+            titular_clause = f"AND TRIM(COALESCE(ente, '')) IN ({placeholders})"
+            titular_params.extend(ente_aliases)
 
-    admin_periodos_params = admin_params.copy()
-    periodo_admin_clause = ""
-    if administrativo_seleccionado:
-        periodo_admin_clause = "AND nombre = ?"
-        admin_periodos_params.append(administrativo_seleccionado)
+        periodos_params = titular_params.copy()
+        periodo_titular_clause = ""
+        if titular_seleccionado:
+            periodo_titular_clause = "AND nombre = ?"
+            periodos_params.append(titular_seleccionado)
 
-    admin_tipo_clause = ""
-    admin_tipo_params = []
-    if tipo_auditoria:
-        admin_tipo_clause = "AND tipo_auditoria = ?"
-        admin_tipo_params.append(tipo_auditoria)
+        titular_tipo_clause = ""
+        titular_tipo_params = []
+        if tipo_auditoria:
+            titular_tipo_clause = "AND tipo_auditoria = ?"
+            titular_tipo_params.append(tipo_auditoria)
 
-    periodos_admin = db.execute(
-        f"""
-        SELECT DISTINCT {periodo_sql("historial_titulares")} AS periodo
-        FROM historial_titulares
-        WHERE ejercicio = ? {admin_clause} {periodo_admin_clause}
-          {admin_tipo_clause}
-          AND tipo_registro = 'director_administrativo'
-          AND fecha_inicio IS NOT NULL AND fecha_fin IS NOT NULL
-        ORDER BY fecha_inicio
-        """,
-        admin_periodos_params + admin_tipo_params,
-    ).fetchall()
-    administrativos = db.execute(
-        f"""
-        SELECT DISTINCT nombre
-        FROM historial_titulares
-        WHERE ejercicio = ? {admin_clause}
-          {admin_tipo_clause}
-          AND tipo_registro = 'director_administrativo'
-          AND nombre IS NOT NULL AND nombre != ''
-        ORDER BY nombre
-        """,
-        admin_params + admin_tipo_params,
-    ).fetchall()
+        periodos_informe = db.execute(
+            f"""
+            SELECT DISTINCT {periodo_sql("historial_titulares")} AS periodo
+            FROM historial_titulares
+            WHERE ejercicio = ? {titular_clause} {periodo_titular_clause}
+              {titular_tipo_clause}
+              AND tipo_registro = 'titular'
+              AND fecha_inicio IS NOT NULL AND fecha_fin IS NOT NULL
+            ORDER BY fecha_inicio
+            """,
+            periodos_params + titular_tipo_params,
+        ).fetchall()
+        titulares = db.execute(
+            f"""
+            SELECT DISTINCT nombre
+            FROM historial_titulares
+            WHERE ejercicio = ? {titular_clause}
+              {titular_tipo_clause}
+              AND tipo_registro = 'titular'
+              AND nombre IS NOT NULL AND nombre != ''
+            ORDER BY nombre
+            """,
+            titular_params + titular_tipo_params,
+        ).fetchall()
+
+        admin_params = [ejercicio]
+        admin_clause = ""
+        if ente_uid and ente_aliases:
+            placeholders = ", ".join(["?"] * len(ente_aliases))
+            admin_clause = (
+                f"AND (TRIM(COALESCE(ente_uid, '')) = ? OR TRIM(COALESCE(ente, '')) IN ({placeholders}))"
+            )
+            admin_params.extend([ente_uid, *ente_aliases])
+        elif ente_uid:
+            admin_clause = "AND TRIM(COALESCE(ente_uid, '')) = ?"
+            admin_params.append(ente_uid)
+        elif ente_aliases:
+            placeholders = ", ".join(["?"] * len(ente_aliases))
+            admin_clause = f"AND TRIM(COALESCE(ente, '')) IN ({placeholders})"
+            admin_params.extend(ente_aliases)
+
+        admin_periodos_params = admin_params.copy()
+        periodo_admin_clause = ""
+        if administrativo_seleccionado:
+            periodo_admin_clause = "AND nombre = ?"
+            admin_periodos_params.append(administrativo_seleccionado)
+
+        admin_tipo_clause = ""
+        admin_tipo_params = []
+        if tipo_auditoria:
+            admin_tipo_clause = "AND tipo_auditoria = ?"
+            admin_tipo_params.append(tipo_auditoria)
+
+        periodos_admin = db.execute(
+            f"""
+            SELECT DISTINCT {periodo_sql("historial_titulares")} AS periodo
+            FROM historial_titulares
+            WHERE ejercicio = ? {admin_clause} {periodo_admin_clause}
+              {admin_tipo_clause}
+              AND tipo_registro = 'director_administrativo'
+              AND fecha_inicio IS NOT NULL AND fecha_fin IS NOT NULL
+            ORDER BY fecha_inicio
+            """,
+            admin_periodos_params + admin_tipo_params,
+        ).fetchall()
+        administrativos = db.execute(
+            f"""
+            SELECT DISTINCT nombre
+            FROM historial_titulares
+            WHERE ejercicio = ? {admin_clause}
+              {admin_tipo_clause}
+              AND tipo_registro = 'director_administrativo'
+              AND nombre IS NOT NULL AND nombre != ''
+            ORDER BY nombre
+            """,
+            admin_params + admin_tipo_params,
+        ).fetchall()
     filtros["tipo_anexo"] = [row[0] for row in tipos]
     filtros["tipo_auditoria"] = [row[0] for row in auditorias]
+    filtros["entes"] = [dict(row) for row in entes]
     filtros["estado"] = [row[0] for row in estados]
     filtros["fuente_financiamiento"] = [row[0] for row in fuentes]
     filtros["ramo_33"] = [row[0] for row in ramos]

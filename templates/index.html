@@ -89,8 +89,14 @@
 
     <section class="panel tab-section" data-tab="observaciones">
       <div class="panel-header">
-        <h2>Resumen general</h2>
-        <p>Totales de observaciones emitidas, solventadas y pendientes.</p>
+        <h2>Resumen</h2>
+        <p>Totales de observaciones emitidas, solventadas y pendientes por tipo de anexo.</p>
+        <div class="chart-filter-field" style="max-width: 280px;">
+          <label for="summary_tipo_anexo">Tipo de anexo (resumen)</label>
+          <select id="summary_tipo_anexo" name="summary_tipo_anexo">
+            <option value="">Todos</option>
+          </select>
+        </div>
       </div>
       <div class="table-wrap table-summary">
         <table>
@@ -287,6 +293,7 @@
     const obsTableBody = document.getElementById("obsTableBody");
     const obsCount = document.getElementById("obsCount");
     const pdpSummaryBody = document.getElementById("pdpSummaryBody");
+    const summaryTipoAnexo = document.getElementById("summary_tipo_anexo");
     const obsPagination = document.getElementById("obsPagination");
     const obsPrev = document.getElementById("obsPrev");
     const obsNext = document.getElementById("obsNext");
@@ -305,6 +312,20 @@
       let obsRows = [];
       let obsPage = 1;
       const obsPageSize = 20;
+      const requestControllers = {};
+
+      const fetchJsonWithAbort = async (url, key) => {
+        if (requestControllers[key]) {
+          requestControllers[key].abort();
+        }
+        const controller = new AbortController();
+        requestControllers[key] = controller;
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok) {
+          throw new Error(`Fetch failed: ${url}`);
+        }
+        return response.json();
+      };
 
       const setObsEnabled = (enabled) => {
         [
@@ -320,6 +341,7 @@
           obsExport,
           obsPrev,
           obsNext,
+          summaryTipoAnexo,
         ].forEach((el) => {
           if (el) {
             el.disabled = !enabled;
@@ -341,7 +363,7 @@
       };
 
       const syncConceptoIrregularidadVisibility = () => {
-        const showConcepto = obsTipoAnexo && obsTipoAnexo.value === "PDP";
+        const showConcepto = getSelectedTipoAnexo() === "PDP";
         if (obsConceptoField) {
           obsConceptoField.style.display = showConcepto ? "flex" : "none";
         }
@@ -457,12 +479,16 @@
         }
         try {
           const safeRows = Array.isArray(rows) ? rows : [];
-          if (!safeRows.length) {
+          const selectedTipo = summaryTipoAnexo ? summaryTipoAnexo.value : "";
+          const filteredRows = selectedTipo
+            ? safeRows.filter((row) => String(row?.tipo_anexo || "") === selectedTipo)
+            : safeRows;
+          if (!filteredRows.length) {
             pdpSummaryBody.innerHTML = "<tr><td colspan=\"4\" class=\"muted\">Sin resultados.</td></tr>";
             updateSummaryDonut(0, 0);
             return;
           }
-          const totals = safeRows.reduce(
+          const totals = filteredRows.reduce(
             (acc, row) => {
               const estado = String(row?.estado || "").trim().toLowerCase();
               acc.emitidas += 1;
@@ -497,6 +523,7 @@
           obsTableBody.innerHTML = "<tr><td colspan=\"10\" class=\"muted\">Sin resultados.</td></tr>";
           obsCount.textContent = "0 observaciones encontradas.";
           renderPdpSummary([]);
+          renderAnexoCountFromRows([]);
           if (obsPageInfo) {
             obsPageInfo.textContent = "Página 0 de 0";
           }
@@ -547,6 +574,7 @@
         }).join("");
         obsCount.textContent = `${obsRows.length} observaciones encontradas.`;
         renderPdpSummary(obsRows);
+        renderAnexoCountFromRows(obsRows);
         if (obsPageInfo) {
           obsPageInfo.textContent = `Página ${obsPage} de ${totalPages}`;
         }
@@ -563,11 +591,10 @@
           return;
         }
         try {
-          const response = await fetch(`/entes?ejercicio=${encodeURIComponent(ejercicio)}`);
-          if (!response.ok) {
-            return;
-          }
-          const data = await response.json();
+          const data = await fetchJsonWithAbort(
+            `/entes?ejercicio=${encodeURIComponent(ejercicio)}`,
+            "entes"
+          );
           data.forEach((ente) => {
             const option = document.createElement("option");
             option.value = ente.ente_id;
@@ -575,6 +602,9 @@
             obsEnteInput.appendChild(option);
           });
         } catch (error) {
+          if (error.name === "AbortError") {
+            return;
+          }
           console.error(error);
         }
       };
@@ -610,11 +640,27 @@
         }
       };
 
+      const getSelectedTipoAnexo = () => {
+        const summaryValue = summaryTipoAnexo ? summaryTipoAnexo.value : "";
+        const obsValue = obsTipoAnexo ? obsTipoAnexo.value : "";
+        return summaryValue || obsValue || "";
+      };
+
+      const setTipoAnexoValue = (value) => {
+        const normalized = value || "";
+        if (obsTipoAnexo) {
+          obsTipoAnexo.value = normalized;
+        }
+        if (summaryTipoAnexo) {
+          summaryTipoAnexo.value = normalized;
+        }
+      };
+
       const getActiveFilters = () => ({
         ejercicio: mainEjercicio ? mainEjercicio.value : "",
         ente_id: obsEnteInput ? obsEnteInput.value.trim() : "",
         tipo_auditoria: mainTipoAuditoria ? mainTipoAuditoria.value : "",
-        tipo_anexo: obsTipoAnexo ? obsTipoAnexo.value : "",
+        tipo_anexo: getSelectedTipoAnexo(),
         estado: obsEstado ? obsEstado.value : "",
         fuente_financiamiento: obsFuente ? obsFuente.value : "",
         ramo_33: obsRamo ? obsRamo.value : "",
@@ -624,6 +670,7 @@
 
       const loadFiltros = async (ejercicio) => {
         const active = getActiveFilters();
+        resetSelect(obsEnteInput, "Todos los entes");
         resetSelect(mainTipoAuditoria, "Todas");
         resetSelect(obsTipoAnexo, "Todos");
         resetSelect(obsEstado, "Todos");
@@ -651,11 +698,21 @@
           if (active.ramo_33) params.set("ramo_33", active.ramo_33);
           if (active.concepto_irregularidad) params.set("concepto_irregularidad", active.concepto_irregularidad);
           if (active.periodo_cedula) params.set("periodo_cedula", active.periodo_cedula);
-          const response = await fetch(`/observaciones-filtros?${params.toString()}`);
-          if (!response.ok) {
-            return;
+          const data = await fetchJsonWithAbort(
+            `/observaciones-filtros?${params.toString()}`,
+            "filtros"
+          );
+          (data.entes || []).forEach((ente) => {
+            const option = document.createElement("option");
+            option.value = ente.ente_id || "";
+            option.textContent = `${ente.ente_numero || "—"} · ${ente.ente_nombre || "—"}`;
+            obsEnteInput.appendChild(option);
+          });
+          if (active.ente_id && obsEnteInput.querySelector(`option[value="${active.ente_id}"]`)) {
+            obsEnteInput.value = active.ente_id;
+          } else {
+            obsEnteInput.value = "";
           }
-          const data = await response.json();
           if (mainTipoAuditoria) {
             (data.tipo_auditoria || []).forEach((item) => {
               const option = document.createElement("option");
@@ -667,16 +724,26 @@
               active.tipo_auditoria && mainTipoAuditoria.querySelector(`option[value="${active.tipo_auditoria}"]`)
             ) ? active.tipo_auditoria : "";
           }
-          (data.tipo_anexo || []).forEach((item) => {
-            const option = document.createElement("option");
-            option.value = item;
-            option.textContent = item;
-            obsTipoAnexo.appendChild(option);
+          const tiposAnexo = data.tipo_anexo || [];
+          tiposAnexo.forEach((item) => {
+            const obsOption = document.createElement("option");
+            obsOption.value = item;
+            obsOption.textContent = item;
+            obsTipoAnexo.appendChild(obsOption);
           });
+          if (summaryTipoAnexo) {
+            summaryTipoAnexo.innerHTML = "<option value=\"\">Todos</option>";
+            tiposAnexo.forEach((item) => {
+              const summaryOption = document.createElement("option");
+              summaryOption.value = item;
+              summaryOption.textContent = item;
+              summaryTipoAnexo.appendChild(summaryOption);
+            });
+          }
           if (active.tipo_anexo && obsTipoAnexo.querySelector(`option[value="${active.tipo_anexo}"]`)) {
-            obsTipoAnexo.value = active.tipo_anexo;
+            setTipoAnexoValue(active.tipo_anexo);
           } else {
-            obsTipoAnexo.value = "";
+            setTipoAnexoValue("");
           }
           (data.estado || []).forEach((item) => {
             const option = document.createElement("option");
@@ -706,7 +773,7 @@
               return;
             }
           });
-          if (obsTipoAnexo.value === "PDP") {
+          if (getSelectedTipoAnexo() === "PDP") {
             (data.conceptos_irregularidad || []).forEach((item) => {
               const option = document.createElement("option");
               option.value = item;
@@ -720,7 +787,7 @@
             obsRamo.value = "";
           }
           if (
-            obsTipoAnexo.value === "PDP"
+            getSelectedTipoAnexo() === "PDP"
             && active.concepto_irregularidad
             && obsConceptoIrregularidad.querySelector(`option[value="${active.concepto_irregularidad}"]`)
           ) {
@@ -741,6 +808,9 @@
           }
           syncConceptoIrregularidadVisibility();
         } catch (error) {
+          if (error.name === "AbortError") {
+            return;
+          }
           console.error(error);
         }
       };
@@ -775,8 +845,9 @@
         if (enteId) {
           params.set("ente_id", enteId);
         }
-        if (obsTipoAnexo.value) {
-          params.set("tipo_anexo", obsTipoAnexo.value);
+        const selectedTipoAnexo = getSelectedTipoAnexo();
+        if (selectedTipoAnexo) {
+          params.set("tipo_anexo", selectedTipoAnexo);
         }
         if (mainTipoAuditoria && mainTipoAuditoria.value) {
           params.set("tipo_auditoria", mainTipoAuditoria.value);
@@ -790,21 +861,23 @@
         if (obsRamo.value) {
           params.set("ramo_33", obsRamo.value);
         }
-        if (obsTipoAnexo.value === "PDP" && obsConceptoIrregularidad.value) {
+        if (selectedTipoAnexo === "PDP" && obsConceptoIrregularidad.value) {
           params.set("concepto_irregularidad", obsConceptoIrregularidad.value);
         }
         if (cedulaResultados.value) {
           params.set("periodo_cedula", cedulaResultados.value);
         }
         try {
-          const response = await fetch(`/observaciones?${params.toString()}`);
-          if (!response.ok) {
-            throw new Error("Fetch failed");
-          }
-          const data = await response.json();
+          const data = await fetchJsonWithAbort(
+            `/observaciones?${params.toString()}`,
+            "observaciones"
+          );
           renderObservaciones(data);
-          await loadResponsablesPeriodo();
+          loadResponsablesPeriodo();
         } catch (error) {
+          if (error.name === "AbortError") {
+            return;
+          }
           console.error(error);
           obsTableBody.innerHTML = "<tr><td colspan=\"10\" class=\"muted\">No se pudo cargar la información.</td></tr>";
           if (obsResponsablesBody) {
@@ -837,13 +910,15 @@
         }
         params.set("periodo_cedula", cedulaResultados.value);
         try {
-          const response = await fetch(`/observaciones-responsables?${params.toString()}`);
-          if (!response.ok) {
-            throw new Error("Responsables fetch failed");
-          }
-          const data = await response.json();
+          const data = await fetchJsonWithAbort(
+            `/observaciones-responsables?${params.toString()}`,
+            "responsables"
+          );
           renderResponsablesPeriodo(data);
         } catch (error) {
+          if (error.name === "AbortError") {
+            return;
+          }
           console.error(error);
           if (obsResponsablesBody) {
             obsResponsablesBody.innerHTML = `
@@ -865,8 +940,9 @@
         if (enteId) {
           params.set("ente_id", enteId);
         }
-        if (obsTipoAnexo.value) {
-          params.set("tipo_anexo", obsTipoAnexo.value);
+        const selectedTipoAnexo = getSelectedTipoAnexo();
+        if (selectedTipoAnexo) {
+          params.set("tipo_anexo", selectedTipoAnexo);
         }
         if (mainTipoAuditoria && mainTipoAuditoria.value) {
           params.set("tipo_auditoria", mainTipoAuditoria.value);
@@ -880,7 +956,7 @@
         if (obsRamo.value) {
           params.set("ramo_33", obsRamo.value);
         }
-        if (obsTipoAnexo.value === "PDP" && obsConceptoIrregularidad.value) {
+        if (selectedTipoAnexo === "PDP" && obsConceptoIrregularidad.value) {
           params.set("concepto_irregularidad", obsConceptoIrregularidad.value);
         }
         if (cedulaResultados.value) {
@@ -889,23 +965,20 @@
         window.location.href = `/observaciones-exportar?${params.toString()}`;
       };
 
-      const renderAnexoCount = (stats, ejercicio) => {
-        const ejercicioKey = String(ejercicio || "");
-        const tiposEstados = (stats.tipos_estados || []).filter(
-          (row) => String(row.ejercicio || "") === ejercicioKey
-        );
-        if (!tiposEstados.length) {
+      const renderAnexoCountFromRows = (rows) => {
+        const safeRows = Array.isArray(rows) ? rows : [];
+        if (!safeRows.length) {
           anexoCountBody.innerHTML = "<tr><td colspan=\"4\" class=\"muted\">Sin datos para el ejercicio.</td></tr>";
           return;
         }
-        const agrupados = tiposEstados.reduce((acc, row) => {
+        const agrupados = safeRows.reduce((acc, row) => {
           const tipo = row.tipo_anexo || "Sin tipo";
           if (!acc[tipo]) {
             acc[tipo] = { emitidas: 0, pendientes: 0, solventadas: 0 };
           }
-          const estado = (row.estado || "").toLowerCase();
-          if (estado === "pendiente") acc[tipo].pendientes += row.total;
-          if (estado === "solventado") acc[tipo].solventadas += row.total;
+          const estado = String(row.estado || "").trim().toLowerCase();
+          if (estado === "pendiente") acc[tipo].pendientes += 1;
+          if (estado === "solventado") acc[tipo].solventadas += 1;
           return acc;
         }, {});
 
@@ -941,26 +1014,7 @@
       };
 
       const loadAnexoCount = async () => {
-        if (!mainEjercicio.value) {
-          return;
-        }
-        const enteFilter = obsEnteInput ? obsEnteInput.value.trim() : "";
-        const tipoAuditoria = mainTipoAuditoria ? mainTipoAuditoria.value.trim() : "";
-        const statsParams = new URLSearchParams();
-        if (enteFilter) {
-          statsParams.set("ente_id", enteFilter);
-        }
-        if (tipoAuditoria) {
-          statsParams.set("tipo_auditoria", tipoAuditoria);
-        }
-        const statsUrl = statsParams.toString()
-          ? `/observaciones-stats?${statsParams.toString()}`
-          : "/observaciones-stats";
-        const statsResponse = await fetch(statsUrl);
-        if (statsResponse.ok) {
-          const statsData = await statsResponse.json();
-          renderAnexoCount(statsData, mainEjercicio.value);
-        }
+        renderAnexoCountFromRows(obsRows);
       };
 
       const loadCatalogo = async () => {
@@ -971,14 +1025,16 @@
           return;
         }
         try {
-          const response = await fetch(`/catalogo-entes?ejercicio=${encodeURIComponent(ejercicio)}`);
-          if (!response.ok) {
-            throw new Error("Fetch failed");
-          }
-          const data = await response.json();
+          const data = await fetchJsonWithAbort(
+            `/catalogo-entes?ejercicio=${encodeURIComponent(ejercicio)}`,
+            "catalogo"
+          );
           catalogoCache = data;
           renderCatalogo(data);
         } catch (error) {
+          if (error.name === "AbortError") {
+            return;
+          }
           console.error(error);
           catalogoBody.innerHTML = "<tr><td colspan=\"2\" class=\"muted\">No se pudo cargar la información.</td></tr>";
         }
@@ -1039,18 +1095,19 @@
         if (mainTipoAuditoria) {
           mainTipoAuditoria.value = "";
         }
-        obsTipoAnexo.value = "";
+        setTipoAnexoValue("");
         obsEstado.value = "";
         obsFuente.value = "";
         obsRamo.value = "";
         obsConceptoIrregularidad.value = "";
         cedulaResultados.value = "";
         syncConceptoIrregularidadVisibility();
-        await loadObsEntes(mainEjercicio.value);
-        await loadFiltros(mainEjercicio.value);
-        await loadObservaciones();
-        await loadAnexoCount();
         await loadCatalogo();
+        await loadFiltros(mainEjercicio.value);
+        await Promise.all([
+          loadObservaciones(),
+          loadAnexoCount(),
+        ]);
       };
 
       mainEjercicio.addEventListener("change", handleEjercicioChange);
@@ -1059,28 +1116,38 @@
           mainTipoAuditoria.value = "";
         }
         await loadFiltros(mainEjercicio.value);
-        await loadObservaciones();
-        await loadAnexoCount();
+        await Promise.all([
+          loadObservaciones(),
+          loadAnexoCount(),
+        ]);
       });
       if (mainTipoAuditoria) {
         mainTipoAuditoria.addEventListener("change", async () => {
           await loadFiltros(mainEjercicio.value);
-          await loadObservaciones();
-          await loadAnexoCount();
+          await Promise.all([
+            loadObservaciones(),
+            loadAnexoCount(),
+          ]);
         });
       }
-      obsTipoAnexo.addEventListener("change", async () => {
+      const handleTipoAnexoChange = async (value) => {
+        setTipoAnexoValue(value);
         syncConceptoIrregularidadVisibility();
         await loadFiltros(mainEjercicio.value);
-        await loadObservaciones();
-        await loadAnexoCount();
+        await Promise.all([
+          loadObservaciones(),
+          loadAnexoCount(),
+        ]);
+      };
+
+      obsTipoAnexo.addEventListener("change", async () => {
+        await handleTipoAnexoChange(obsTipoAnexo.value);
       });
       obsEnteInput.addEventListener("keyup", (event) => {
         if (event.key === "Enter") {
           loadObservaciones();
         }
       });
-      obsEnteInput.addEventListener("change", loadAnexoCount);
       [
         obsEstado,
         obsFuente,
@@ -1090,12 +1157,14 @@
       ].forEach((select) => {
         select.addEventListener("change", async () => {
           await loadFiltros(mainEjercicio.value);
-          await loadObservaciones();
-          await loadAnexoCount();
+          await Promise.all([
+            loadObservaciones(),
+            loadAnexoCount(),
+          ]);
         });
       });
       obsClear.addEventListener("click", async () => {
-        obsTipoAnexo.value = "";
+        setTipoAnexoValue("");
         obsEstado.value = "";
         obsFuente.value = "";
         obsRamo.value = "";
@@ -1103,8 +1172,10 @@
         cedulaResultados.value = "";
         syncConceptoIrregularidadVisibility();
         await loadFiltros(mainEjercicio.value);
-        await loadObservaciones();
-        await loadAnexoCount();
+        await Promise.all([
+          loadObservaciones(),
+          loadAnexoCount(),
+        ]);
       });
       if (obsExport) {
         obsExport.addEventListener("click", exportObservaciones);
@@ -1120,6 +1191,11 @@
         obsNext.addEventListener("click", () => {
           obsPage += 1;
           renderObservacionesPage();
+        });
+      }
+      if (summaryTipoAnexo) {
+        summaryTipoAnexo.addEventListener("change", async () => {
+          await handleTipoAnexoChange(summaryTipoAnexo.value);
         });
       }
 
