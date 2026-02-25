@@ -42,6 +42,184 @@
 
     <section class="panel loader-card">
       <div class="panel-header">
+        <h2>Captura manual de oficio y resultados</h2>
+        <p>Registra información manual por oficio con tipo de auditoría, responsables, fuente, cantidades y montos.</p>
+      </div>
+      {% if manual_result %}
+        <div class="status {% if manual_result.ok %}status-success{% else %}status-error{% endif %}">
+          {{ manual_result.message }}
+        </div>
+      {% endif %}
+      <form class="record-form loader-manual-form" method="POST" autocomplete="off">
+        <input type="hidden" name="action" value="manual_save">
+        <div class="form-grid">
+          <div class="field">
+            <label for="manual_tipo_auditoria">Tipo de auditoría</label>
+            <select id="manual_tipo_auditoria" name="manual_tipo_auditoria" required>
+              {% for option in ["Financiera", "Obra Pública", "Cuenta Pública"] %}
+                <option value="{{ option }}" {% if form_data.manual_tipo_auditoria == option %}selected{% endif %}>{{ option }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="manual_tipo_responsable">Titulares / administrativos</label>
+            <select id="manual_tipo_responsable" name="manual_tipo_responsable" required>
+              {% for option in tipos_responsable %}
+                <option value="{{ option }}" {% if form_data.manual_tipo_responsable == option %}selected{% endif %}>{{ option }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="manual_titular_nombre">Nombre titular</label>
+            <input id="manual_titular_nombre" name="manual_titular_nombre" type="text" value="{{ form_data.manual_titular_nombre }}" placeholder="Nombre del titular">
+          </div>
+          <div class="field">
+            <label for="manual_administrativo_nombre">Nombre administrativo</label>
+            <input id="manual_administrativo_nombre" name="manual_administrativo_nombre" type="text" value="{{ form_data.manual_administrativo_nombre }}" placeholder="Nombre del administrativo">
+          </div>
+          <div class="field">
+            <label for="manual_numero_oficio">Número de oficio</label>
+            <input id="manual_numero_oficio" name="manual_numero_oficio" type="text" value="{{ form_data.manual_numero_oficio }}" required>
+          </div>
+          <div class="field">
+            <label for="manual_asunto">Asunto</label>
+            <select id="manual_asunto" name="manual_asunto" required>
+              {% for option in asuntos %}
+                <option value="{{ option }}" {% if form_data.manual_asunto == option %}selected{% endif %}>{{ option }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="manual_ejercicio">Ejercicio</label>
+            <input id="manual_ejercicio" name="manual_ejercicio" type="number" min="2000" max="2100" value="{{ form_data.manual_ejercicio }}" required>
+          </div>
+          <div class="field">
+            <label for="manual_fuente_id">Fuente (preestablecida)</label>
+            <select id="manual_fuente_id" name="manual_fuente_id" required>
+              <option value="">Selecciona una fuente</option>
+              {% for fuente in fuentes %}
+                <option value="{{ fuente.id }}" {% if form_data.manual_fuente_id == (fuente.id|string) %}selected{% endif %}>
+                  {{ fuente.nombre }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field field-full">
+            <label for="manual_periodo">Periodo</label>
+            <input id="manual_periodo" name="manual_periodo" type="text" value="{{ form_data.manual_periodo }}" placeholder="Ej. 01 de enero al 31 de diciembre" required>
+          </div>
+        </div>
+
+        <div class="loader-manual-subsection">
+          <h3>Cantidades por tipo</h3>
+          <div class="form-grid loader-manual-grid-5">
+            <div class="field">
+              <label for="manual_cantidad_sa">SA</label>
+              <input id="manual_cantidad_sa" name="manual_cantidad_sa" type="number" min="0" value="{{ form_data.manual_cantidad_sa }}" required>
+            </div>
+            <div class="field">
+              <label for="manual_cantidad_pdp">PDP</label>
+              <input id="manual_cantidad_pdp" name="manual_cantidad_pdp" type="number" min="0" value="{{ form_data.manual_cantidad_pdp }}" required>
+            </div>
+            <div class="field">
+              <label for="manual_cantidad_pras">PRAS</label>
+              <input id="manual_cantidad_pras" name="manual_cantidad_pras" type="number" min="0" value="{{ form_data.manual_cantidad_pras }}" required>
+            </div>
+            <div class="field">
+              <label for="manual_cantidad_pefcf">PEFCF</label>
+              <input id="manual_cantidad_pefcf" name="manual_cantidad_pefcf" type="number" min="0" value="{{ form_data.manual_cantidad_pefcf }}" required>
+            </div>
+            <div class="field">
+              <label for="manual_cantidad_r">R</label>
+              <input id="manual_cantidad_r" name="manual_cantidad_r" type="number" min="0" value="{{ form_data.manual_cantidad_r }}" required>
+            </div>
+          </div>
+        </div>
+
+        <div class="loader-manual-subsection">
+          <h3>Montos PDP</h3>
+          <div class="form-grid loader-manual-grid-3">
+            <div class="field">
+              <label for="manual_monto_pdp_emitido">Monto PDP emitido</label>
+              <input id="manual_monto_pdp_emitido" name="manual_monto_pdp_emitido" type="number" min="0" step="0.01" value="{{ form_data.manual_monto_pdp_emitido }}" required>
+            </div>
+            <div class="field">
+              <label for="manual_monto_pdp_solventado">Monto PDP solventado</label>
+              <input id="manual_monto_pdp_solventado" name="manual_monto_pdp_solventado" type="number" min="0" step="0.01" value="{{ form_data.manual_monto_pdp_solventado }}" required>
+            </div>
+            <div class="field">
+              <label for="manual_monto_pdp_pendiente">Monto PDP pendiente</label>
+              <input id="manual_monto_pdp_pendiente" name="manual_monto_pdp_pendiente" type="number" min="0" step="0.01" value="{{ form_data.manual_monto_pdp_pendiente }}" required>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn-primary" type="submit">Guardar captura manual</button>
+      </form>
+
+      <div class="loader-manual-history">
+        <h3>Últimas capturas manuales</h3>
+        <div class="table-wrap">
+          <table class="table-compact">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Oficio</th>
+                <th>Asunto</th>
+                <th>Ejercicio</th>
+                <th>Tipo auditoría</th>
+                <th>Responsable</th>
+                <th>Fuente</th>
+                <th>Periodo</th>
+                <th>SA</th>
+                <th>PDP</th>
+                <th>PRAS</th>
+                <th>PEFCF</th>
+                <th>R</th>
+                <th>PDP emitido</th>
+                <th>PDP solventado</th>
+                <th>PDP pendiente</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if manual_rows %}
+                {% for row in manual_rows %}
+                  <tr>
+                    <td>{{ row.created_at }}</td>
+                    <td>{{ row.numero_oficio }}</td>
+                    <td>{{ row.asunto }}</td>
+                    <td>{{ row.ejercicio }}</td>
+                    <td>{{ row.tipo_auditoria }}</td>
+                    <td>
+                      {{ row.tipo_responsable }}
+                      {% if row.titular_nombre %}<span class="inheritance">Titular: {{ row.titular_nombre }}</span>{% endif %}
+                      {% if row.administrativo_nombre %}<span class="inheritance">Administrativo: {{ row.administrativo_nombre }}</span>{% endif %}
+                    </td>
+                    <td>{{ row.fuente_nombre or "—" }}</td>
+                    <td>{{ row.periodo }}</td>
+                    <td>{{ row.cantidad_sa }}</td>
+                    <td>{{ row.cantidad_pdp }}</td>
+                    <td>{{ row.cantidad_pras }}</td>
+                    <td>{{ row.cantidad_pefcf }}</td>
+                    <td>{{ row.cantidad_r }}</td>
+                    <td>{{ "{:,.2f}".format(row.monto_pdp_emitido or 0) }}</td>
+                    <td>{{ "{:,.2f}".format(row.monto_pdp_solventado or 0) }}</td>
+                    <td>{{ "{:,.2f}".format(row.monto_pdp_pendiente or 0) }}</td>
+                  </tr>
+                {% endfor %}
+              {% else %}
+                <tr>
+                  <td colspan="16" class="muted">Aún no hay capturas manuales.</td>
+                </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel loader-card">
+      <div class="panel-header">
         <h2>1) Generar plantilla CSV</h2>
         <p>Crea una plantilla base para historial de titulares por ejercicio.</p>
       </div>
