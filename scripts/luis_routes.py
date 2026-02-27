@@ -333,7 +333,12 @@ def register_luis_routes(app, deps):
                 "page_size": 40,
                 "total_pages": 1,
                 "filtros": {},
-                "summary": {"tipos": [], "totals": {"emitidas": 0, "solventadas": 0, "pendientes": 0}},
+                "summary": {
+                    "tipos": [],
+                    "totals": {"emitidas": 0, "solventadas": 0, "pendientes": 0},
+                    "pdp_montos": {"emitido": 0, "solventado": 0, "pendiente": 0},
+                    "top_pendientes": [],
+                },
             })
 
         ente_id = normalize_ente_id(request.args.get("ente_id", ""))
@@ -479,6 +484,20 @@ def register_luis_routes(app, deps):
             """,
             scope_params,
         ).fetchone()
+        top_pendientes_rows = db.execute(
+            f"""
+            SELECT
+                TRIM(COALESCE(ente_nombre, 'Sin ente')) AS ente_nombre,
+                COUNT(*) AS pendientes
+            FROM observaciones
+            WHERE {scope_sql}
+              AND LOWER(TRIM(COALESCE(estado, ''))) = 'pendiente'
+            GROUP BY ente_id, ente_nombre
+            ORDER BY pendientes DESC, ente_nombre ASC
+            LIMIT 5
+            """,
+            scope_params,
+        ).fetchall()
 
         def query_distinct(column: str, exclude_key: str):
             where_sql, where_params = build_scope(exclude_key=exclude_key)
@@ -561,6 +580,13 @@ def register_luis_routes(app, deps):
                     "solventado": float((pdp_montos_row["solventado"] or 0) if pdp_montos_row else 0),
                     "pendiente": float((pdp_montos_row["pendiente"] or 0) if pdp_montos_row else 0),
                 },
+                "top_pendientes": [
+                    {
+                        "ente_nombre": row["ente_nombre"],
+                        "pendientes": int(row["pendientes"] or 0),
+                    }
+                    for row in top_pendientes_rows
+                ],
             },
         }
         dashboard_cache[cache_key] = (now, payload)

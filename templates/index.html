@@ -39,19 +39,19 @@
         <div class="form-grid">
           <div class="field">
             <label for="main_ejercicio">Ejercicio</label>
-            <select id="main_ejercicio" name="main_ejercicio" required>
+            <select id="main_ejercicio" name="main_ejercicio" required title="Selecciona el ejercicio base para habilitar todos los filtros.">
               <option value="" disabled selected>Selecciona</option>
             </select>
           </div>
           <div class="field">
             <label for="obs_ente_id">Ente</label>
-            <select id="obs_ente_id" name="obs_ente_id">
+            <select id="obs_ente_id" name="obs_ente_id" title="Filtra por un ente específico dentro del ejercicio.">
               <option value="">Todos los entes</option>
             </select>
           </div>
           <div class="field">
             <label for="main_tipo_auditoria">Tipo de auditoria</label>
-            <select id="main_tipo_auditoria" name="main_tipo_auditoria">
+            <select id="main_tipo_auditoria" name="main_tipo_auditoria" title="Reduce resultados al tipo de auditoría seleccionado.">
               <option value="">Todas</option>
             </select>
           </div>
@@ -61,31 +61,31 @@
         <div class="form-grid">
           <div class="field">
             <label for="cedula_resultados">Cédula de resultados</label>
-            <select id="cedula_resultados" name="cedula_resultados">
+            <select id="cedula_resultados" name="cedula_resultados" title="Acota por periodo de cédula aplicado.">
               <option value="">Todos</option>
             </select>
           </div>
           <div class="field">
             <label for="obs_fuente">Fuente de financiamiento</label>
-            <select id="obs_fuente" name="obs_fuente">
+            <select id="obs_fuente" name="obs_fuente" title="Filtra por fuente de financiamiento.">
               <option value="">Todas</option>
             </select>
           </div>
           <div class="field">
             <label for="obs_tipo_anexo">Tipo de anexo</label>
-            <select id="obs_tipo_anexo" name="obs_tipo_anexo">
+            <select id="obs_tipo_anexo" name="obs_tipo_anexo" title="Selecciona el tipo de anexo para análisis específico.">
               <option value="">Todos</option>
             </select>
           </div>
           <div class="field">
             <label for="obs_estado">Estado</label>
-            <select id="obs_estado" name="obs_estado">
+            <select id="obs_estado" name="obs_estado" title="Muestra solo observaciones por estado.">
               <option value="">Todos</option>
             </select>
           </div>
           <div class="field">
             <label for="obs_ramo">Ramo 33</label>
-            <select id="obs_ramo" name="obs_ramo">
+            <select id="obs_ramo" name="obs_ramo" title="Filtra por pertenencia a Ramo 33.">
               <option value="">Todos</option>
               <option value="Si">Si</option>
               <option value="No">No</option>
@@ -93,12 +93,11 @@
           </div>
           <div class="field" id="obs_concepto_field">
             <label for="obs_concepto_irregularidad">Concepto de irregularidad</label>
-            <select id="obs_concepto_irregularidad" name="obs_concepto_irregularidad">
+            <select id="obs_concepto_irregularidad" name="obs_concepto_irregularidad" title="Disponible cuando el tipo de anexo es PDP.">
               <option value="">Todos</option>
             </select>
           </div>
         </div>
-        <button class="btn-secondary" type="button" id="obs_clear">Limpiar filtros</button>
       </form>
       <div class="tab-bar" role="tablist">
         <button class="tab-button is-active" type="button" data-tab="observaciones">Observaciones</button>
@@ -112,6 +111,7 @@
           <div class="panel-header">
             <h2>Resumen</h2>
             <p>Conteo general de observaciones por tipo de anexo.</p>
+            <div class="query-meta" id="queryMeta" aria-live="polite">Sin consultas recientes.</div>
             <div class="chart-filter-field">
               <label for="summary_tipo_anexo">Tipo de anexo (resumen)</label>
               <select id="summary_tipo_anexo" name="summary_tipo_anexo">
@@ -168,6 +168,10 @@
             <h3>Comparativo por tipo de anexo</h3>
             <canvas id="pdpStatusBar" height="240"></canvas>
           </div>
+          <div class="chart-card summary-chart chart-card-wide">
+            <h3>Top 5 entes con más pendientes</h3>
+            <canvas id="topPendientesBar" height="240"></canvas>
+          </div>
           <div class="chart-card summary-chart" id="pdpMontoChartWrap" style="display: none;">
             <h3>Gráfico de pastel (montos PDP: pendiente vs solventado)</h3>
             <canvas id="pdpMontoDonut" height="240"></canvas>
@@ -208,7 +212,8 @@
           </div>
         </div>
         <div class="table-meta">
-          <span id="obsCount">Selecciona un ejercicio para ver resultados.</span>
+          <span id="obsCount" aria-live="polite">Selecciona un ejercicio para ver resultados.</span>
+          <input id="obs_quick_search" name="obs_quick_search" type="search" placeholder="Buscar en esta página de resultados" />
         </div>
         <div class="table-wrap">
           <table class="table-compact">
@@ -279,6 +284,21 @@
   <footer class="site-footer">
     © Órgano de Fiscalización Superior del Estado de Tlaxcala · SIFEET Estatales
   </footer>
+  <button class="floating-filters-toggle" type="button" id="activeFiltersToggle" aria-expanded="false" aria-controls="activeFiltersPanel" aria-label="Ver filtros activos">
+    <span class="floating-clear-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="1.8"/>
+        <path d="M16 16L21 21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <span>Filtros activos</span>
+  </button>
+  <div class="floating-active-filters-panel" id="activeFiltersPanel" aria-live="polite">
+    <strong>Filtros activos:</strong>
+    <div class="active-filters-chips" id="activeFiltersChips">
+      <span class="muted">Sin filtros activos.</span>
+    </div>
+  </div>
   <button class="floating-clear-btn" type="button" id="obs_clear_fab" aria-label="Limpiar filtros">
     <span class="floating-clear-icon" aria-hidden="true">
       <svg viewBox="0 0 24 24" fill="none">
@@ -301,11 +321,15 @@
     const obsConceptoField = document.getElementById("obs_concepto_field");
     const cedulaResultados = document.getElementById("cedula_resultados");
     const obsResponsablesBody = document.getElementById("obsResponsablesBody");
-    const obsClear = document.getElementById("obs_clear");
     const obsClearFab = document.getElementById("obs_clear_fab");
+    const activeFiltersToggle = document.getElementById("activeFiltersToggle");
     const obsExport = document.getElementById("obs_export");
     const obsTableBody = document.getElementById("obsTableBody");
     const obsCount = document.getElementById("obsCount");
+    const obsQuickSearch = document.getElementById("obs_quick_search");
+    const queryMeta = document.getElementById("queryMeta");
+    const activeFiltersPanel = document.getElementById("activeFiltersPanel");
+    const activeFiltersChips = document.getElementById("activeFiltersChips");
     const pdpSummaryBody = document.getElementById("pdpSummaryBody");
     const pdpMontoSummaryWrap = document.getElementById("pdpMontoSummaryWrap");
     const pdpMontoSummaryBody = document.getElementById("pdpMontoSummaryBody");
@@ -317,10 +341,13 @@
     const pdpMontoChartWrap = document.getElementById("pdpMontoChartWrap");
     const pdpCountDonutCanvas = document.getElementById("pdpCountDonut");
     const pdpStatusBarCanvas = document.getElementById("pdpStatusBar");
+    const topPendientesBarCanvas = document.getElementById("topPendientesBar");
     const pdpMontoDonutCanvas = document.getElementById("pdpMontoDonut");
     const catalogoBody = document.getElementById("catalogoBody");
     const catalogoCount = document.getElementById("catalogoCount");
     const catalogoSearch = document.getElementById("catalogo_search");
+    const summarySection = document.getElementById("summarySection");
+    const chartSection = document.getElementById("pdpChartSection");
 
     if (mainEjercicio && obsEnteInput && obsTableBody) {
       const tabButtons = document.querySelectorAll(".tab-button");
@@ -328,13 +355,19 @@
 
       let pdpCountDonutChart = null;
       let pdpStatusBarChart = null;
+      let topPendientesBarChart = null;
       let pdpMontoDonutChart = null;
       let obsRows = [];
       let obsPage = 1;
       const obsPageSize = 40;
       let obsTotalRows = 0;
       let obsTotalPages = 1;
-      let dashboardSummary = { tipos: [], totals: { emitidas: 0, solventadas: 0, pendientes: 0 }, pdp_montos: { emitido: 0, solventado: 0, pendiente: 0 } };
+      let dashboardSummary = {
+        tipos: [],
+        totals: { emitidas: 0, solventadas: 0, pendientes: 0 },
+        pdp_montos: { emitido: 0, solventado: 0, pendiente: 0 },
+        top_pendientes: [],
+      };
       const requestControllers = {};
       const responseCache = new Map();
       const cacheTtlMs = 12000;
@@ -359,6 +392,100 @@
         return payload;
       };
 
+      const escapeHtml = (value) => String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+
+      const setLoadingState = (loading) => {
+        [summarySection, chartSection, obsTableBody.closest(".table-wrap")].forEach((node) => {
+          if (!node) return;
+          node.classList.toggle("is-loading", loading);
+        });
+        if (loading) {
+          obsTableBody.innerHTML = `
+            <tr><td colspan="10"><div class="skeleton-row"></div></td></tr>
+            <tr><td colspan="10"><div class="skeleton-row"></div></td></tr>
+            <tr><td colspan="10"><div class="skeleton-row"></div></td></tr>
+          `;
+        }
+      };
+
+      const getCurrentFilters = () => ({
+        ejercicio: mainEjercicio.value || "",
+        ente_id: obsEnteInput.value || "",
+        tipo_auditoria: mainTipoAuditoria ? mainTipoAuditoria.value : "",
+        tipo_anexo: obsTipoAnexo ? obsTipoAnexo.value : "",
+        estado: obsEstado.value || "",
+        fuente_financiamiento: obsFuente.value || "",
+        ramo_33: obsRamo.value || "",
+        concepto_irregularidad: obsConceptoIrregularidad.value || "",
+        periodo_cedula: cedulaResultados.value || "",
+        quick_search: obsQuickSearch ? obsQuickSearch.value.trim() : "",
+      });
+
+      const syncUrlFromFilters = () => {
+        const filters = getCurrentFilters();
+        const params = new URLSearchParams();
+        Object.entries(filters).forEach(([key, value]) => {
+          if (value) {
+            params.set(key, value);
+          }
+        });
+        if (obsPage > 1) {
+          params.set("page", String(obsPage));
+        }
+        const url = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
+        window.history.replaceState(null, "", url);
+      };
+
+      const renderActiveFilterChips = () => {
+        if (!activeFiltersChips) return;
+        const filters = getCurrentFilters();
+        const labels = {
+          ejercicio: "Ejercicio",
+          ente_id: "Ente",
+          tipo_auditoria: "Tipo auditoría",
+          tipo_anexo: "Tipo anexo",
+          estado: "Estado",
+          fuente_financiamiento: "Fuente",
+          ramo_33: "Ramo 33",
+          concepto_irregularidad: "Concepto",
+          periodo_cedula: "Cédula",
+        };
+        const rows = Object.entries(filters).filter(([key, value]) => labels[key] && value);
+        if (!rows.length) {
+          activeFiltersChips.innerHTML = "<span class=\"muted\">Sin filtros activos.</span>";
+          return;
+        }
+        activeFiltersChips.innerHTML = rows.map(([key, value]) => `
+          <button type="button" class="filter-chip-btn" data-filter-key="${escapeHtml(key)}" title="Quitar filtro">
+            ${escapeHtml(labels[key])}: ${escapeHtml(value)} <span aria-hidden="true">×</span>
+          </button>
+        `).join("");
+      };
+
+      const applyFiltersFromUrl = () => {
+        const params = new URLSearchParams(window.location.search);
+        const get = (key) => params.get(key) || "";
+        if (get("ejercicio")) mainEjercicio.value = get("ejercicio");
+        if (get("ente_id")) obsEnteInput.value = get("ente_id");
+        if (mainTipoAuditoria && get("tipo_auditoria")) mainTipoAuditoria.value = get("tipo_auditoria");
+        if (obsTipoAnexo && get("tipo_anexo")) obsTipoAnexo.value = get("tipo_anexo");
+        if (obsEstado && get("estado")) obsEstado.value = get("estado");
+        if (obsFuente && get("fuente_financiamiento")) obsFuente.value = get("fuente_financiamiento");
+        if (obsRamo && get("ramo_33")) obsRamo.value = get("ramo_33");
+        if (obsConceptoIrregularidad && get("concepto_irregularidad")) obsConceptoIrregularidad.value = get("concepto_irregularidad");
+        if (cedulaResultados && get("periodo_cedula")) cedulaResultados.value = get("periodo_cedula");
+        if (obsQuickSearch && get("quick_search")) obsQuickSearch.value = get("quick_search");
+        const pageFromUrl = Number(params.get("page") || "1");
+        if (Number.isFinite(pageFromUrl) && pageFromUrl > 0) {
+          obsPage = pageFromUrl;
+        }
+      };
+
       const setObsEnabled = (enabled) => {
         [
           obsEnteInput,
@@ -369,11 +496,11 @@
           obsRamo,
           obsConceptoIrregularidad,
           cedulaResultados,
-          obsClear,
           obsExport,
           obsPrev,
           obsNext,
           summaryTipoAnexo,
+          obsQuickSearch,
         ].forEach((el) => {
           if (el) {
             el.disabled = !enabled;
@@ -540,6 +667,7 @@
           },
           options: {
             responsive: true,
+            animation: { duration: 320, easing: "easeOutQuart" },
             plugins: { legend: { position: "bottom" } },
           },
         });
@@ -572,6 +700,7 @@
           },
           options: {
             responsive: true,
+            animation: { duration: 320, easing: "easeOutQuart" },
             plugins: {
               legend: { position: "bottom" },
               tooltip: {
@@ -614,6 +743,7 @@
           options: {
             responsive: true,
             maintainAspectRatio: false,
+            animation: { duration: 320, easing: "easeOutQuart" },
             plugins: {
               legend: { position: "bottom" },
             },
@@ -623,6 +753,42 @@
                 ticks: { precision: 0 },
               },
             },
+          },
+        });
+      };
+
+      const updateTopPendientesBar = (rows) => {
+        if (!topPendientesBarCanvas) {
+          return;
+        }
+        const labels = rows.map((row) => row.ente_nombre || "Sin ente");
+        const values = rows.map((row) => Number(row.pendientes || 0));
+        if (topPendientesBarChart) {
+          topPendientesBarChart.data.labels = labels;
+          topPendientesBarChart.data.datasets[0].data = values;
+          topPendientesBarChart.update();
+          return;
+        }
+        topPendientesBarChart = new Chart(topPendientesBarCanvas, {
+          type: "bar",
+          data: {
+            labels,
+            datasets: [
+              {
+                label: "Pendientes",
+                data: values,
+                backgroundColor: "#b18934",
+                borderRadius: 6,
+              },
+            ],
+          },
+          options: {
+            indexAxis: "y",
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 320, easing: "easeOutQuart" },
+            plugins: { legend: { display: false } },
+            scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
           },
         });
       };
@@ -702,6 +868,7 @@
             updateSummaryCountDonut(0, 0);
             updateSummaryStatusBar([]);
             updateSummaryMontoDonut(0, 0);
+            updateTopPendientesBar([]);
             return;
           }
 
@@ -717,6 +884,7 @@
             updateSummaryCountDonut(0, 0);
             updateSummaryStatusBar([]);
             updateSummaryMontoDonut(0, 0);
+            updateTopPendientesBar([]);
             return;
           }
 
@@ -764,6 +932,9 @@
             },
             { solventadas: 0, pendientes: 0 }
           );
+          const topPendientes = Array.isArray(dashboardSummary.top_pendientes)
+            ? dashboardSummary.top_pendientes
+            : [];
           if (isPdpSelected && pdpMontoSummaryBody) {
             const pdpMontos = dashboardSummary.pdp_montos || { emitido: 0, solventado: 0, pendiente: 0 };
             pdpMontoSummaryBody.innerHTML = `
@@ -780,6 +951,7 @@
           }
           updateSummaryCountDonut(totals.solventadas, totals.pendientes);
           updateSummaryStatusBar(filas);
+          updateTopPendientesBar(topPendientes);
         } catch (error) {
           console.error("Error al renderizar resumen general:", error);
           pdpSummaryBody.innerHTML = "<tr><td colspan=\"4\" class=\"muted\">Sin resultados.</td></tr>";
@@ -789,6 +961,7 @@
           updateSummaryCountDonut(0, 0);
           updateSummaryStatusBar([]);
           updateSummaryMontoDonut(0, 0);
+          updateTopPendientesBar([]);
         }
       };
 
@@ -808,7 +981,23 @@
           return;
         }
 
-        obsTableBody.innerHTML = obsRows.map((row) => {
+        const quickSearch = (obsQuickSearch ? obsQuickSearch.value : "").trim().toLowerCase();
+        const visibleRows = !quickSearch
+          ? obsRows
+          : obsRows.filter((row) => [
+            row.ente_nombre,
+            row.tipo_anexo,
+            row.numero_observacion,
+            row.estado,
+            row.fecha_notificacion,
+            row.fuente_financiamiento,
+            row.pdp_concepto_irregularidad,
+            row.pdp_subconcepto_irregularidad,
+          ]
+            .filter(Boolean)
+            .some((value) => String(value).toLowerCase().includes(quickSearch)));
+
+        obsTableBody.innerHTML = visibleRows.map((row) => {
           const conceptoIrregularidad = row.tipo_anexo === "PDP"
             ? (row.pdp_concepto_irregularidad || row.pdp_subconcepto_irregularidad || "—")
             : "—";
@@ -833,7 +1022,9 @@
             </tr>
           `;
         }).join("");
-        obsCount.textContent = `${obsTotalRows} observaciones encontradas.`;
+        obsCount.textContent = quickSearch
+          ? `${visibleRows.length} de ${obsTotalRows} observaciones (filtro rápido).`
+          : `${obsTotalRows} observaciones encontradas.`;
         renderPdpSummary();
         if (obsPageInfo) {
           obsPageInfo.textContent = `Página ${obsPage} de ${obsTotalPages}`;
@@ -887,6 +1078,7 @@
         const ejercicio = mainEjercicio.value;
         const enteId = obsEnteInput.value.trim();
         const selectedTipoAnexo = getSelectedTipoAnexo();
+        const startTs = performance.now();
         if (summaryTipoAnexo) {
           summaryTipoAnexo.value = selectedTipoAnexo || "";
         }
@@ -903,7 +1095,12 @@
           obsRows = [];
           obsTotalRows = 0;
           obsTotalPages = 1;
-          dashboardSummary = { tipos: [], totals: { emitidas: 0, solventadas: 0, pendientes: 0 }, pdp_montos: { emitido: 0, solventado: 0, pendiente: 0 } };
+          dashboardSummary = {
+            tipos: [],
+            totals: { emitidas: 0, solventadas: 0, pendientes: 0 },
+            pdp_montos: { emitido: 0, solventado: 0, pendiente: 0 },
+            top_pendientes: [],
+          };
           obsPage = 1;
           renderPdpSummary();
           if (obsPageInfo) {
@@ -914,8 +1111,11 @@
           }
           if (obsPrev) obsPrev.disabled = true;
           if (obsNext) obsNext.disabled = true;
+          renderActiveFilterChips();
+          syncUrlFromFilters();
           return;
         }
+        setLoadingState(true);
         const params = new URLSearchParams({ ejercicio });
         if (enteId) {
           params.set("ente_id", enteId);
@@ -948,7 +1148,12 @@
             `/observaciones-dashboard?${params.toString()}`,
             "observaciones"
           );
-          dashboardSummary = data.summary || { tipos: [], totals: { emitidas: 0, solventadas: 0, pendientes: 0 }, pdp_montos: { emitido: 0, solventado: 0, pendiente: 0 } };
+          dashboardSummary = data.summary || {
+            tipos: [],
+            totals: { emitidas: 0, solventadas: 0, pendientes: 0 },
+            pdp_montos: { emitido: 0, solventado: 0, pendiente: 0 },
+            top_pendientes: [],
+          };
           updateDynamicFilterOptions(data.filtros || {});
           renderObservaciones(
             data.rows || [],
@@ -957,12 +1162,24 @@
             data.total_pages || 1,
           );
           loadResponsablesPeriodo();
+          renderActiveFilterChips();
+          syncUrlFromFilters();
+          if (queryMeta) {
+            const elapsedMs = Math.max(1, Math.round(performance.now() - startTs));
+            const now = new Date();
+            queryMeta.textContent = `Actualizado: ${now.toLocaleDateString("es-MX")} ${now.toLocaleTimeString("es-MX")} · ${elapsedMs} ms`;
+          }
         } catch (error) {
           if (error.name === "AbortError") {
             return;
           }
           console.error(error);
-          dashboardSummary = { tipos: [], totals: { emitidas: 0, solventadas: 0, pendientes: 0 }, pdp_montos: { emitido: 0, solventado: 0, pendiente: 0 } };
+          dashboardSummary = {
+            tipos: [],
+            totals: { emitidas: 0, solventadas: 0, pendientes: 0 },
+            pdp_montos: { emitido: 0, solventado: 0, pendiente: 0 },
+            top_pendientes: [],
+          };
           renderPdpSummary();
           obsTableBody.innerHTML = "<tr><td colspan=\"10\" class=\"muted\">No se pudo cargar la información.</td></tr>";
           if (obsResponsablesBody) {
@@ -972,6 +1189,8 @@
               </tr>
             `;
           }
+        } finally {
+          setLoadingState(false);
         }
       };
 
@@ -1138,6 +1357,9 @@
         obsRamo.value = "";
         obsConceptoIrregularidad.value = "";
         cedulaResultados.value = "";
+        if (obsQuickSearch) {
+          obsQuickSearch.value = "";
+        }
         syncConceptoIrregularidadVisibility();
         obsPage = 1;
         await loadCatalogo();
@@ -1200,12 +1422,14 @@
         obsRamo.value = "";
         obsConceptoIrregularidad.value = "";
         cedulaResultados.value = "";
+        if (obsQuickSearch) {
+          obsQuickSearch.value = "";
+        }
         syncConceptoIrregularidadVisibility();
         obsPage = 1;
         await loadObservaciones();
       };
 
-      obsClear.addEventListener("click", clearObservacionesFilters);
       if (obsClearFab) {
         obsClearFab.addEventListener("click", clearObservacionesFilters);
       }
@@ -1230,6 +1454,43 @@
           renderPdpSummary();
         });
       }
+      if (obsQuickSearch) {
+        obsQuickSearch.addEventListener("input", () => {
+          renderObservacionesPage();
+          renderActiveFilterChips();
+          syncUrlFromFilters();
+        });
+      }
+      if (activeFiltersChips) {
+        activeFiltersChips.addEventListener("click", async (event) => {
+          const button = event.target.closest(".filter-chip-btn");
+          if (!button) return;
+          const key = button.dataset.filterKey || "";
+          if (key === "ejercicio") return;
+          const resetters = {
+            ente_id: () => { obsEnteInput.value = ""; },
+            tipo_auditoria: () => { if (mainTipoAuditoria) mainTipoAuditoria.value = ""; },
+            tipo_anexo: () => setTipoAnexoValue(""),
+            estado: () => { obsEstado.value = ""; },
+            fuente_financiamiento: () => { obsFuente.value = ""; },
+            ramo_33: () => { obsRamo.value = ""; },
+            concepto_irregularidad: () => { obsConceptoIrregularidad.value = ""; },
+            periodo_cedula: () => { cedulaResultados.value = ""; },
+            quick_search: () => { if (obsQuickSearch) obsQuickSearch.value = ""; },
+          };
+          if (resetters[key]) {
+            resetters[key]();
+            obsPage = 1;
+            await loadObservaciones();
+          }
+        });
+      }
+      if (activeFiltersToggle && activeFiltersPanel) {
+        activeFiltersToggle.addEventListener("click", () => {
+          const isOpen = activeFiltersPanel.classList.toggle("is-open");
+          activeFiltersToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+        });
+      }
 
       catalogoSearch.addEventListener("input", updateCatalogoSearch);
 
@@ -1242,11 +1503,14 @@
         if (!ejercicios.length) {
           return;
         }
+        applyFiltersFromUrl();
         const preferred =
           ejercicios.find((item) => Number(item.total_observaciones || 0) > 0)
           || ejercicios[0];
-        if (preferred && preferred.ejercicio) {
+        if (!mainEjercicio.value && preferred && preferred.ejercicio) {
           mainEjercicio.value = preferred.ejercicio;
+        }
+        if (mainEjercicio.value) {
           await handleEjercicioChange();
         }
       })();
