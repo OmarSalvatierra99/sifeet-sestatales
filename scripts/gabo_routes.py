@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 import re
 import sys
 
@@ -264,6 +265,7 @@ def register_gabo_routes(app, deps):
         monto_pdp_solventado: float,
         monto_pdp_pendiente: float,
         pdp_amounts: list[float],
+        pdp_details: list[dict] | None = None,
         replace_scope: bool = False,
     ) -> None:
         if replace_scope:
@@ -292,8 +294,15 @@ def register_gabo_routes(app, deps):
         for tipo_anexo, total in counts.items():
             for numero_observacion in range(1, total + 1):
                 monto_emitido = None
+                pdp_concepto = None
+                pdp_subconcepto = None
                 if tipo_anexo == "PDP":
-                    monto_emitido = pdp_amounts[pdp_index] if pdp_index < len(pdp_amounts) else 0.0
+                    detalle = pdp_details[pdp_index] if pdp_details and pdp_index < len(pdp_details) else {}
+                    monto_emitido = detalle.get("monto")
+                    if monto_emitido is None:
+                        monto_emitido = pdp_amounts[pdp_index] if pdp_index < len(pdp_amounts) else 0.0
+                    pdp_concepto = (detalle.get("concepto") or "").strip() or None
+                    pdp_subconcepto = (detalle.get("subconcepto") or "").strip() or None
                     pdp_index += 1
                 db.execute(
                     """
@@ -316,9 +325,11 @@ def register_gabo_routes(app, deps):
                         monto_pdp_emitido,
                         monto_pdp_solventado,
                         monto_pdp_pendiente,
+                        pdp_concepto_irregularidad,
+                        pdp_subconcepto_irregularidad,
                         created_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         ejercicio,
@@ -339,9 +350,53 @@ def register_gabo_routes(app, deps):
                         monto_emitido,
                         monto_pdp_solventado if tipo_anexo == "PDP" else None,
                         monto_pdp_pendiente if tipo_anexo == "PDP" else None,
+                        pdp_concepto if tipo_anexo == "PDP" else None,
+                        pdp_subconcepto if tipo_anexo == "PDP" else None,
                         now,
                     ),
                 )
+
+    def parse_manual_pdp_details(raw_value: str, cantidad_pdp: int) -> list[dict]:
+        if cantidad_pdp <= 0:
+            return []
+        if not (raw_value or "").strip():
+            return [{"concepto": "", "subconcepto": "", "monto": None} for _ in range(cantidad_pdp)]
+        try:
+            payload = json.loads(raw_value)
+        except json.JSONDecodeError:
+            return [{"concepto": "", "subconcepto": "", "monto": None} for _ in range(cantidad_pdp)]
+        if not isinstance(payload, list):
+            raise ValueError("El detalle PDP tiene un formato inválido.")
+        if len(payload) > cantidad_pdp:
+            raise ValueError("El detalle PDP excede la cantidad de observaciones PDP.")
+
+        details: list[dict] = []
+        for item in payload[:cantidad_pdp]:
+            data = item if isinstance(item, dict) else {}
+            concepto = " ".join(str(data.get("concepto") or "").split())
+            subconcepto = " ".join(str(data.get("subconcepto") or "").split())
+            monto_field = data.get("monto")
+            monto_raw = "" if monto_field is None else str(monto_field).strip()
+            monto_val = None
+            if monto_raw:
+                monto_clean = monto_raw.replace("$", "").replace(",", "").strip()
+                try:
+                    monto_val = float(monto_clean)
+                except ValueError as exc:
+                    raise ValueError("Monto PDP inválido en el detalle de observaciones.") from exc
+                if monto_val < 0:
+                    raise ValueError("Los montos PDP no pueden ser negativos.")
+            details.append(
+                {
+                    "concepto": concepto,
+                    "subconcepto": subconcepto,
+                    "monto": monto_val,
+                }
+            )
+
+        while len(details) < cantidad_pdp:
+            details.append({"concepto": "", "subconcepto": "", "monto": None})
+        return details
 
     @app.get("/carga/entes")
     @gabo_required
@@ -378,6 +433,46 @@ def register_gabo_routes(app, deps):
         db = get_db()
         rows = fuentes_por_ente(db, ejercicio, ente_id, tipo_auditoria=tipo_auditoria)
         return jsonify([dict(row) for row in rows])
+
+    @app.get("/carga/pdp-catalogo")
+    @gabo_required
+    def carga_pdp_catalogo():
+        db = get_db()
+        rows = db.execute(
+            """
+            SELECT DISTINCT
+                TRIM(COALESCE(pdp_concepto_irregularidad, '')) AS concepto,
+                TRIM(COALESCE(pdp_subconcepto_irregularidad, '')) AS subconcepto
+            FROM observaciones
+            WHERE TRIM(COALESCE(ejercicio, '')) IN ('2023', '2024')
+              AND TRIM(COALESCE(tipo_anexo, '')) = 'PDP'
+              AND TRIM(COALESCE(pdp_concepto_irregularidad, '')) != ''
+            ORDER BY concepto ASC, subconcepto ASC
+            """
+        ).fetchall()
+
+        conceptos: list[str] = []
+        subconceptos_by_concept: dict[str, list[str]] = {}
+        seen_conceptos = set()
+        for row in rows:
+            concepto = (row["concepto"] or "").strip()
+            subconcepto = (row["subconcepto"] or "").strip()
+            if not concepto:
+                continue
+            if concepto not in seen_conceptos:
+                seen_conceptos.add(concepto)
+                conceptos.append(concepto)
+            if subconcepto:
+                subconceptos_by_concept.setdefault(concepto, [])
+                if subconcepto not in subconceptos_by_concept[concepto]:
+                    subconceptos_by_concept[concepto].append(subconcepto)
+
+        return jsonify(
+            {
+                "conceptos": conceptos,
+                "subconceptos_by_concepto": subconceptos_by_concept,
+            }
+        )
 
     @app.route("/carga", methods=["GET", "POST"])
     @gabo_required
@@ -433,6 +528,7 @@ def register_gabo_routes(app, deps):
             "manual_monto_pdp_solventado": "0",
             "manual_monto_pdp_pendiente": "0",
             "manual_montos_pdp": "",
+            "manual_pdp_detalle_json": "",
             "titular_ejercicio": TITULAR_EJERCICIO_FIJO,
             "titular_ente_id": "",
             "titular_tipo_auditoria": "Financiera",
@@ -481,6 +577,7 @@ def register_gabo_routes(app, deps):
                     "manual_monto_pdp_solventado": (request.form.get("manual_monto_pdp_solventado") or "").strip() or "0",
                     "manual_monto_pdp_pendiente": (request.form.get("manual_monto_pdp_pendiente") or "").strip() or "0",
                     "manual_montos_pdp": (request.form.get("manual_montos_pdp") or "").strip(),
+                    "manual_pdp_detalle_json": (request.form.get("manual_pdp_detalle_json") or "").strip(),
                     "titular_ejercicio": TITULAR_EJERCICIO_FIJO,
                     "titular_ente_id": (request.form.get("titular_ente_id") or "").strip(),
                     "titular_tipo_auditoria": (request.form.get("titular_tipo_auditoria") or "").strip() or "Financiera",
@@ -658,13 +755,14 @@ def register_gabo_routes(app, deps):
                     asunto = form_data["manual_asunto"]
                     ejercicio = form_data["manual_ejercicio"]
                     fuente_id_raw = form_data["manual_fuente_id"]
-                    fuente_nueva = " ".join(form_data["manual_fuente_nueva"].split())
+                    fuente_nueva = " ".join(form_data["manual_fuente_nueva"].split()) if fuente_id_raw == "__new__" else ""
                     periodo = form_data["manual_periodo"]
                     periodo_titular = form_data["manual_periodo_titular"]
-                    ramo_33 = (form_data["manual_ramo_33"] or "No").strip()
-                    estado = (form_data["manual_estado"] or "E").strip().upper()
+                    ramo_33 = "No"
+                    estado = "E"
                     fecha_notificacion = form_data["manual_fecha_notificacion"]
                     raw_montos_pdp = form_data["manual_montos_pdp"]
+                    raw_pdp_detalle_json = form_data["manual_pdp_detalle_json"]
                     manual_edit_id = None
                     if manual_id_raw:
                         try:
@@ -686,14 +784,12 @@ def register_gabo_routes(app, deps):
                         raise ValueError("Debes capturar el ejercicio.")
                     if ejercicio != TITULAR_EJERCICIO_FIJO:
                         raise ValueError("Solo se permite ejercicio 2025.")
-                    if not fuente_id_raw and not fuente_nueva:
-                        raise ValueError("Debes seleccionar una fuente o capturar una nueva.")
+                    if not fuente_id_raw:
+                        raise ValueError("Debes seleccionar una fuente.")
+                    if fuente_id_raw == "__new__" and not fuente_nueva:
+                        raise ValueError("Debes escribir la nueva fuente.")
                     if not periodo:
                         raise ValueError("Debes capturar el periodo.")
-                    if ramo_33 not in {"Si", "No"}:
-                        raise ValueError("RAMO XXXIII debe ser 'Si' o 'No'.")
-                    if estado not in {"E", "R"}:
-                        raise ValueError("E/R debe ser 'E' o 'R'.")
                     if not fecha_notificacion:
                         raise ValueError("Debes capturar la fecha de notificación.")
                     try:
@@ -702,7 +798,7 @@ def register_gabo_routes(app, deps):
                         raise ValueError("Ejercicio inválido.") from exc
                     fuente_id = None
                     fuente_nombre = ""
-                    if fuente_nueva:
+                    if fuente_id_raw == "__new__":
                         fuente_nombre = fuente_nueva
                         fuente_row = db.execute(
                             """
@@ -802,6 +898,13 @@ def register_gabo_routes(app, deps):
                         fuente_nombre = (fuente_nombre_row["nombre"] or "").strip()
                     elif not fuente_nombre:
                         raise ValueError("No se pudo resolver el nombre de la fuente seleccionada.")
+
+                    # Regla automática para carga Gabo:
+                    # Ramo XXXIII fijo en "No" y E/R en "R" para fuentes de remanentes.
+                    if re.match(r"^(remanentes|rea)\b", fuente_nombre.strip(), flags=re.IGNORECASE):
+                        estado = "R"
+                    else:
+                        estado = "E"
                     if asunto == "Notificación de Cédula de Resultados":
                         cantidad_sa = parse_non_negative_int(form_data["manual_cantidad_sa"], "Cantidad SA")
                         cantidad_pdp = parse_non_negative_int(form_data["manual_cantidad_pdp"], "Cantidad PDP")
@@ -818,6 +921,7 @@ def register_gabo_routes(app, deps):
                     monto_pdp_solventado = parse_non_negative_float(form_data["manual_monto_pdp_solventado"], "Monto PDP solventado")
                     monto_pdp_pendiente = parse_non_negative_float(form_data["manual_monto_pdp_pendiente"], "Monto PDP pendiente")
                     pdp_amounts = parse_pdp_amounts(raw_montos_pdp)
+                    pdp_details = parse_manual_pdp_details(raw_pdp_detalle_json, cantidad_pdp)
                     if cantidad_pdp == 0 and pdp_amounts:
                         raise ValueError("Capturaste montos PDP pero la cantidad PDP es 0.")
                     if pdp_amounts and len(pdp_amounts) != cantidad_pdp:
@@ -825,12 +929,13 @@ def register_gabo_routes(app, deps):
                             "La cantidad de montos PDP no coincide con 'Cantidad PDP'. "
                             "Captura un monto por línea."
                         )
-                    if cantidad_pdp > 1 and monto_pdp_emitido > 0 and not pdp_amounts:
-                        raise ValueError(
-                            "Para PDP con más de una observación, captura el detalle de montos por línea."
-                        )
-                    if not pdp_amounts and cantidad_pdp == 1:
-                        pdp_amounts = [monto_pdp_emitido]
+                    if not pdp_amounts and cantidad_pdp > 0:
+                        # Sin detalle por observación: concentrar el total en la primera PDP.
+                        pdp_amounts = [monto_pdp_emitido] + [0.0] * (cantidad_pdp - 1)
+                    if cantidad_pdp > 0 and pdp_details:
+                        has_detail_amount = any((item.get("monto") is not None) for item in pdp_details)
+                        if has_detail_amount:
+                            pdp_amounts = [(item.get("monto") or 0.0) for item in pdp_details]
 
                     tipos_auditoria = (
                         ["Financiera", "Obra Pública"]
@@ -1012,6 +1117,7 @@ def register_gabo_routes(app, deps):
                                     monto_pdp_solventado=monto_pdp_solventado,
                                     monto_pdp_pendiente=monto_pdp_pendiente,
                                     pdp_amounts=pdp_amounts,
+                                    pdp_details=pdp_details,
                                     replace_scope=True,
                                 )
                                 db.commit()
@@ -1111,6 +1217,7 @@ def register_gabo_routes(app, deps):
                                         monto_pdp_solventado=monto_pdp_solventado,
                                         monto_pdp_pendiente=monto_pdp_pendiente,
                                         pdp_amounts=pdp_amounts,
+                                        pdp_details=pdp_details,
                                         replace_scope=False,
                                     )
                                 db.commit()

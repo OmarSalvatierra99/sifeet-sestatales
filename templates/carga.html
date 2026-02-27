@@ -19,7 +19,7 @@
       <div class="header-badge user-badge">
         <div class="user-meta">
           <span>Usuario</span>
-          <strong>{{ user.username }}</strong>
+          <strong>{{ "Gabo" if user.username == "gabo" else ("Luis" if user.username == "luis" else user.username) }}</strong>
         </div>
         <div class="user-actions">
           <span class="user-role">Carga</span>
@@ -87,35 +87,17 @@
                   {{ fuente.nombre }}
                 </option>
               {% endfor %}
+              <option value="__new__" {% if form_data.manual_fuente_id == "__new__" %}selected{% endif %}>+ Agregar nueva fuente...</option>
             </select>
-            <p class="helper">Se muestran según el ente seleccionado; si no hay coincidencias, se usa el catálogo general.</p>
-          </div>
-          <div class="field">
-            <label for="manual_fuente_nueva">Otra fuente (opcional)</label>
-            <input id="manual_fuente_nueva" name="manual_fuente_nueva" type="text" value="{{ form_data.manual_fuente_nueva }}" placeholder="Escribe una nueva fuente">
-            <p class="helper">Si capturas aquí, se usará esta fuente y se agregará al catálogo al guardar.</p>
+            <p class="helper">Se muestran según el ente seleccionado. Si no existe, usa la opción "+ Agregar nueva fuente...".</p>
+            <div id="manual_fuente_nueva_wrap" class="field" style="{% if form_data.manual_fuente_id != '__new__' %}display:none;{% endif %}">
+              <label for="manual_fuente_nueva">Nueva fuente</label>
+              <input id="manual_fuente_nueva" name="manual_fuente_nueva" type="text" value="{{ form_data.manual_fuente_nueva }}" placeholder="Escribe la nueva fuente">
+            </div>
           </div>
           <div class="field field-full">
             <label for="manual_periodo">Periodo</label>
             <input id="manual_periodo" name="manual_periodo" type="text" value="{{ form_data.manual_periodo }}" placeholder="Ej. 01 de enero al 31 de diciembre" required>
-          </div>
-          <div class="field field-full">
-            <label for="manual_periodo_titular">Periodo titular (opcional)</label>
-            <input id="manual_periodo_titular" name="manual_periodo_titular" type="text" value="{{ form_data.manual_periodo_titular }}" placeholder="Ej. 01 de enero al 31 de diciembre">
-          </div>
-          <div class="field">
-            <label for="manual_ramo_33">RAMO XXXIII</label>
-            <select id="manual_ramo_33" name="manual_ramo_33" required>
-              <option value="No" {% if form_data.manual_ramo_33 == "No" %}selected{% endif %}>No</option>
-              <option value="Si" {% if form_data.manual_ramo_33 == "Si" %}selected{% endif %}>Si</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="manual_estado">E/R</label>
-            <select id="manual_estado" name="manual_estado" required>
-              <option value="E" {% if form_data.manual_estado == "E" %}selected{% endif %}>E</option>
-              <option value="R" {% if form_data.manual_estado == "R" %}selected{% endif %}>R</option>
-            </select>
           </div>
           <div class="field">
             <label for="manual_fecha_notificacion">Fecha de notificación</label>
@@ -123,7 +105,11 @@
           </div>
         </div>
 
-        <div class="loader-manual-subsection" id="manual-cantidades-cedula">
+        <div
+          class="loader-manual-subsection"
+          id="manual-cantidades-cedula"
+          style="{% if form_data.manual_asunto != 'Notificación de Cédula de Resultados' %}display:none;{% endif %}"
+        >
           <h3>Cantidad pot tipo de Anexo</h3>
           <div class="form-grid loader-manual-grid-5">
             <div class="field">
@@ -148,17 +134,36 @@
             </div>
           </div>
         </div>
-        <div class="field field-full">
-          <label for="manual_montos_pdp">Montos PDP por observación (opcional)</label>
-          <textarea
-            id="manual_montos_pdp"
-            name="manual_montos_pdp"
-            rows="3"
-            placeholder="Un monto por línea cuando PDP > 1.&#10;Ej.&#10;88162.61&#10;69928.65"
-          >{{ form_data.manual_montos_pdp }}</textarea>
-          <p class="helper">Si capturas montos, deben coincidir con la cantidad PDP.</p>
+        <input type="hidden" id="manual_pdp_detalle_json" name="manual_pdp_detalle_json" value="{{ form_data.manual_pdp_detalle_json|e }}">
+        <div
+          class="loader-manual-subsection"
+          id="manual-pdp-detalle"
+          style="{% if form_data.manual_asunto != 'Notificación de Cédula de Resultados' or (form_data.manual_cantidad_pdp|int) <= 0 %}display:none;{% endif %}"
+        >
+          <h3>Detalle de observaciones PDP</h3>
+          <div class="form-grid loader-manual-grid-3">
+            <div class="field">
+              <label for="manual_pdp_selector">Observación PDP</label>
+              <select id="manual_pdp_selector"></select>
+            </div>
+            <div class="field">
+              <label for="manual_pdp_monto">Monto PDP</label>
+              <input id="manual_pdp_monto" type="number" min="0" step="0.01" placeholder="0.00">
+            </div>
+            <div class="field">
+              <label for="manual_pdp_concepto">Concepto de irregularidad</label>
+              <select id="manual_pdp_concepto">
+                <option value="">Selecciona un concepto</option>
+              </select>
+            </div>
+          </div>
+          <div class="field field-full">
+            <label for="manual_pdp_subconcepto">Subconcepto de irregularidad</label>
+            <select id="manual_pdp_subconcepto">
+              <option value="">Selecciona un subconcepto</option>
+            </select>
+          </div>
         </div>
-
         <div class="loader-actions">
           <button class="btn-primary" type="submit" name="action" value="manual_save">
             {% if form_data.manual_id %}Guardar cambios{% else %}Guardar captura manual{% endif %}
@@ -336,9 +341,174 @@
     const manualEnte = document.getElementById("manual_ente_id");
     const manualTipoAuditoria = document.getElementById("manual_tipo_auditoria");
     const manualFuente = document.getElementById("manual_fuente_id");
+    const manualFuenteNuevaWrap = document.getElementById("manual_fuente_nueva_wrap");
+    const manualFuenteNuevaInput = document.getElementById("manual_fuente_nueva");
     const blockCedula = document.getElementById("manual-cantidades-cedula");
+    const manualCantidadPdp = document.getElementById("manual_cantidad_pdp");
+    const manualPdpDetalleBlock = document.getElementById("manual-pdp-detalle");
+    const manualPdpDetalleJson = document.getElementById("manual_pdp_detalle_json");
+    const manualPdpSelector = document.getElementById("manual_pdp_selector");
+    const manualPdpConcepto = document.getElementById("manual_pdp_concepto");
+    const manualPdpSubconcepto = document.getElementById("manual_pdp_subconcepto");
+    const manualPdpMonto = document.getElementById("manual_pdp_monto");
     const cedulaInputs = blockCedula ? Array.from(blockCedula.querySelectorAll("input")) : [];
     const asuntoCedula = "Notificación de Cédula de Resultados";
+    const pdpFields = [manualPdpSelector, manualPdpConcepto, manualPdpSubconcepto, manualPdpMonto];
+    let pdpDetalleIndex = 0;
+    let pdpDetalleState = [];
+    let pdpConceptCatalog = [];
+    let pdpSubconceptCatalog = {};
+
+    const escapeHtml = (value) => (
+      String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;")
+    );
+
+    const parsePdpDetalleState = () => {
+      if (!manualPdpDetalleJson || !manualPdpDetalleJson.value) {
+        return [];
+      }
+      try {
+        const parsed = JSON.parse(manualPdpDetalleJson.value);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (error) {
+        return [];
+      }
+    };
+
+    const normalizePdpDetalleState = (count, source) => {
+      const safeCount = Number.isFinite(count) && count > 0 ? count : 0;
+      const sourceArray = Array.isArray(source) ? source : [];
+      const normalized = [];
+      for (let i = 0; i < safeCount; i += 1) {
+        const item = sourceArray[i] || {};
+        normalized.push({
+          concepto: String(item.concepto || "").trim(),
+          subconcepto: String(item.subconcepto || "").trim(),
+          monto: String(item.monto === undefined || item.monto === null ? "" : item.monto).trim(),
+        });
+      }
+      return normalized;
+    };
+
+    const syncPdpDetalleJson = () => {
+      if (!manualPdpDetalleJson) {
+        return;
+      }
+      manualPdpDetalleJson.value = JSON.stringify(pdpDetalleState);
+    };
+
+    const renderConceptOptions = (selectedValue = "") => {
+      if (!manualPdpConcepto) {
+        return;
+      }
+      const options = ['<option value="">Selecciona un concepto</option>']
+        .concat(
+          pdpConceptCatalog.map((concepto) => (
+            `<option value="${escapeHtml(concepto)}">${escapeHtml(concepto)}</option>`
+          ))
+        );
+      manualPdpConcepto.innerHTML = options.join("");
+      manualPdpConcepto.value = selectedValue || "";
+      if (!manualPdpConcepto.value && selectedValue) {
+        options.splice(
+          1,
+          0,
+          `<option value="${escapeHtml(selectedValue)}">${escapeHtml(selectedValue)}</option>`
+        );
+        manualPdpConcepto.innerHTML = options.join("");
+        manualPdpConcepto.value = selectedValue;
+      }
+    };
+
+    const renderSubconceptOptions = (concepto, selectedValue = "") => {
+      if (!manualPdpSubconcepto) {
+        return;
+      }
+      const catalogItems = concepto ? (pdpSubconceptCatalog[concepto] || []) : [];
+      const options = ['<option value="">Selecciona un subconcepto</option>']
+        .concat(
+          catalogItems.map((sub) => (
+            `<option value="${escapeHtml(sub)}">${escapeHtml(sub)}</option>`
+          ))
+        );
+      manualPdpSubconcepto.innerHTML = options.join("");
+      manualPdpSubconcepto.value = selectedValue || "";
+      if (!manualPdpSubconcepto.value && selectedValue) {
+        options.splice(
+          1,
+          0,
+          `<option value="${escapeHtml(selectedValue)}">${escapeHtml(selectedValue)}</option>`
+        );
+        manualPdpSubconcepto.innerHTML = options.join("");
+        manualPdpSubconcepto.value = selectedValue;
+      }
+    };
+
+    const setPdpFieldsDisabled = (disabled) => {
+      pdpFields.forEach((field) => {
+        if (field) {
+          field.disabled = disabled;
+        }
+      });
+    };
+
+    const persistCurrentPdpDetalle = () => {
+      if (!pdpDetalleState.length) {
+        return;
+      }
+      const idx = Number(manualPdpSelector ? manualPdpSelector.value : 0) || 0;
+      if (idx < 0 || idx >= pdpDetalleState.length) {
+        return;
+      }
+      pdpDetalleState[idx] = {
+        concepto: (manualPdpConcepto ? manualPdpConcepto.value : "").trim(),
+        subconcepto: (manualPdpSubconcepto ? manualPdpSubconcepto.value : "").trim(),
+        monto: (manualPdpMonto ? manualPdpMonto.value : "").trim(),
+      };
+      syncPdpDetalleJson();
+    };
+
+    const loadSelectedPdpDetalle = () => {
+      if (!manualPdpSelector || !pdpDetalleState.length) {
+        return;
+      }
+      const idx = Number(manualPdpSelector.value) || 0;
+      const current = pdpDetalleState[idx] || { concepto: "", subconcepto: "", monto: "" };
+      renderConceptOptions(current.concepto || "");
+      renderSubconceptOptions(current.concepto || "", current.subconcepto || "");
+      if (manualPdpMonto) manualPdpMonto.value = current.monto || "";
+    };
+
+    const renderPdpDetalleMenu = () => {
+      if (!manualAsunto || !manualPdpDetalleBlock || !manualCantidadPdp || !manualPdpSelector) {
+        return;
+      }
+      const isCedula = (manualAsunto.value || "").trim() === asuntoCedula;
+      const cantidad = Math.max(0, Number.parseInt((manualCantidadPdp.value || "0").trim(), 10) || 0);
+      pdpDetalleState = normalizePdpDetalleState(cantidad, pdpDetalleState.length ? pdpDetalleState : parsePdpDetalleState());
+
+      if (!isCedula || cantidad === 0) {
+        manualPdpDetalleBlock.style.display = "none";
+        setPdpFieldsDisabled(true);
+        syncPdpDetalleJson();
+        return;
+      }
+
+      manualPdpDetalleBlock.style.display = "";
+      setPdpFieldsDisabled(false);
+      manualPdpSelector.innerHTML = pdpDetalleState
+        .map((_, idx) => `<option value="${idx}">Observación PDP ${idx + 1}</option>`)
+        .join("");
+      pdpDetalleIndex = Math.min(pdpDetalleIndex, Math.max(0, pdpDetalleState.length - 1));
+      manualPdpSelector.value = String(pdpDetalleIndex);
+      loadSelectedPdpDetalle();
+      syncPdpDetalleJson();
+    };
 
     const toggleManualCantidades = () => {
       if (!manualAsunto || !blockCedula) {
@@ -349,6 +519,7 @@
       cedulaInputs.forEach((input) => {
         input.disabled = !isCedula;
       });
+      renderPdpDetalleMenu();
     };
 
     if (manualAsunto) {
@@ -356,8 +527,65 @@
       toggleManualCantidades();
     }
 
+    if (manualPdpSelector) {
+      manualPdpSelector.addEventListener("change", () => {
+        persistCurrentPdpDetalle();
+        pdpDetalleIndex = Number(manualPdpSelector.value) || 0;
+        loadSelectedPdpDetalle();
+      });
+    }
+    if (manualPdpConcepto) {
+      manualPdpConcepto.addEventListener("change", () => {
+        renderSubconceptOptions(manualPdpConcepto.value || "", "");
+        persistCurrentPdpDetalle();
+      });
+    }
+    if (manualPdpSubconcepto) {
+      manualPdpSubconcepto.addEventListener("change", persistCurrentPdpDetalle);
+    }
+    if (manualPdpMonto) {
+      manualPdpMonto.addEventListener("input", persistCurrentPdpDetalle);
+    }
+    if (manualCantidadPdp) {
+      manualCantidadPdp.addEventListener("input", renderPdpDetalleMenu);
+      manualCantidadPdp.addEventListener("change", renderPdpDetalleMenu);
+    }
+    const loadPdpCatalog = async () => {
+      try {
+        const response = await fetch("/carga/pdp-catalogo");
+        if (!response.ok) {
+          throw new Error("No se pudo cargar el catálogo PDP");
+        }
+        const payload = await response.json();
+        pdpConceptCatalog = Array.isArray(payload.conceptos) ? payload.conceptos : [];
+        pdpSubconceptCatalog =
+          payload && typeof payload.subconceptos_by_concepto === "object" && payload.subconceptos_by_concepto
+            ? payload.subconceptos_by_concepto
+            : {};
+      } catch (error) {
+        pdpConceptCatalog = [];
+        pdpSubconceptCatalog = {};
+      } finally {
+        renderPdpDetalleMenu();
+      }
+    };
+    loadPdpCatalog();
+
     if (manualEjercicio && manualEnte && manualFuente) {
       let fuentesFetchId = 0;
+      const NEW_SOURCE_VALUE = "__new__";
+
+      const toggleNuevaFuente = () => {
+        if (!manualFuente || !manualFuenteNuevaWrap || !manualFuenteNuevaInput) {
+          return;
+        }
+        const usingNewSource = (manualFuente.value || "").trim() === NEW_SOURCE_VALUE;
+        manualFuenteNuevaWrap.style.display = usingNewSource ? "" : "none";
+        manualFuenteNuevaInput.disabled = !usingNewSource;
+        if (!usingNewSource) {
+          manualFuenteNuevaInput.value = "";
+        }
+      };
 
       const loadFuentesByEnte = async (selectedFuenteId = "") => {
         const requestId = ++fuentesFetchId;
@@ -365,8 +593,11 @@
         const enteId = (manualEnte.value || "").trim();
         const tipoAuditoria = (manualTipoAuditoria ? (manualTipoAuditoria.value || "").trim() : "");
         if (!ejercicio || !enteId) {
-          manualFuente.innerHTML = '<option value="">Selecciona un ente primero</option>';
+          manualFuente.innerHTML =
+            '<option value="">Selecciona un ente primero</option>' +
+            `<option value="${NEW_SOURCE_VALUE}">+ Agregar nueva fuente...</option>`;
           manualFuente.value = "";
+          toggleNuevaFuente();
           return;
         }
         manualFuente.innerHTML = '<option value="">Cargando fuentes...</option>';
@@ -387,22 +618,35 @@
           }
           const rows = await response.json();
           if (!Array.isArray(rows) || !rows.length) {
-            manualFuente.innerHTML = '<option value="">Sin fuentes para este ente</option>';
+            manualFuente.innerHTML =
+              '<option value="">Sin fuentes para este ente</option>' +
+              `<option value="${NEW_SOURCE_VALUE}">+ Agregar nueva fuente...</option>`;
             manualFuente.value = "";
+            toggleNuevaFuente();
             return;
           }
-          manualFuente.innerHTML = '<option value="">Selecciona una fuente</option>' + rows.map((row) => (
-            `<option value="${row.id}">${row.nombre || ""}</option>`
-          )).join("");
+          manualFuente.innerHTML =
+            '<option value="">Selecciona una fuente</option>' +
+            rows.map((row) => (
+              `<option value="${row.id}">${row.nombre || ""}</option>`
+            )).join("") +
+            `<option value="${NEW_SOURCE_VALUE}">+ Agregar nueva fuente...</option>`;
           const normalizedSelected = (selectedFuenteId || "").trim();
-          if (normalizedSelected && rows.some((row) => String(row.id) === normalizedSelected)) {
+          if (
+            normalizedSelected &&
+            (rows.some((row) => String(row.id) === normalizedSelected) || normalizedSelected === NEW_SOURCE_VALUE)
+          ) {
             manualFuente.value = normalizedSelected;
           } else {
             manualFuente.value = "";
           }
+          toggleNuevaFuente();
         } catch (error) {
-          manualFuente.innerHTML = '<option value="">No se pudieron cargar fuentes</option>';
+          manualFuente.innerHTML =
+            '<option value="">No se pudieron cargar fuentes</option>' +
+            `<option value="${NEW_SOURCE_VALUE}">+ Agregar nueva fuente...</option>`;
           manualFuente.value = "";
+          toggleNuevaFuente();
         }
       };
 
@@ -417,8 +661,10 @@
           loadFuentesByEnte("");
         });
       }
+      manualFuente.addEventListener("change", toggleNuevaFuente);
 
       loadFuentesByEnte(manualFuente.value || "");
+      toggleNuevaFuente();
     }
   </script>
 </body>

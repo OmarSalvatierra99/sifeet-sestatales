@@ -19,7 +19,7 @@
       <div class="header-badge user-badge">
         <div class="user-meta">
           <span>Usuario</span>
-          <strong>{{ user.username }}</strong>
+          <strong>{{ "Gabo" if user.username == "gabo" else ("Luis" if user.username == "luis" else user.username) }}</strong>
         </div>
         <div class="user-actions">
           <span class="user-role">{{ "Captura" if can_edit else "Consulta" }}</span>
