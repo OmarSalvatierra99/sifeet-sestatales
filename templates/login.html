@@ -8,49 +8,87 @@
   <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
 </head>
 <body class="login-page">
-  <header class="site-header">
-    <div class="header-inner">
-      <img src="{{ url_for('static', filename='img/ofs_logo.png') }}" alt="Logo institucional" class="ofs-logo">
-      <div class="header-text">
-        <p class="eyebrow">Órgano de Fiscalización Superior del Estado de Tlaxcala</p>
-        <h1>SIFEET Estatales</h1>
-        <p class="subtitle">Acceso al sistema</p>
+  {% set selected_username = request.form.get('username', '') %}
+  {% set selected_display = 'Luis' if selected_username == 'luis' else ('Gabo' if selected_username == 'gabo' else 'usuario') %}
+  <main class="login-shell" aria-labelledby="login-title">
+    <section class="login-auth-panel" aria-label="Formulario de acceso">
+      <div class="login-logo-wrap" aria-hidden="true">
+        <img src="{{ url_for('static', filename='img/ofs_logo.png') }}" alt="Logo institucional" class="ofs-logo">
       </div>
-    </div>
-  </header>
 
-  <main class="page-content login-content">
-    <section class="panel form-panel login-panel">
-      <div class="panel-header">
-        <h2>Inicio de sesión</h2>
-        <p>Acceso seguro para consulta y captura institucional.</p>
+      <div class="panel-header login-header">
+        <p class="eyebrow">Órgano de Fiscalización Superior del Estado de Tlaxcala</p>
+        <h1 id="login-title">SIFEET Estatales</h1>
+        <p>Seleccione su usuario para continuar.</p>
       </div>
 
       {% if error %}
         <div class="status status-error">{{ error }}</div>
       {% endif %}
 
-      <div class="login-grid">
-        <form class="record-form login-form" method="POST" autocomplete="off">
-          <input type="hidden" name="next" value="{{ next_url }}">
-          <div class="form-grid">
+      <aside class="login-access-card" aria-label="Usuarios autorizados">
+        <h3>Usuarios autorizados</h3>
+        <div class="login-access-list">
+          <button class="login-access-user{% if selected_username == 'luis' %} is-selected{% endif %}" type="button" data-username="luis" data-display="Luis">
+            <span class="login-access-initials" aria-hidden="true">LU</span>
+            <span class="login-access-meta">
+              <strong>Luis</strong>
+            </span>
+          </button>
+          <button class="login-access-user{% if selected_username == 'gabo' %} is-selected{% endif %}" type="button" data-username="gabo" data-display="Gabo">
+            <span class="login-access-initials" aria-hidden="true">GA</span>
+            <span class="login-access-meta">
+              <strong>Gabo</strong>
+            </span>
+          </button>
+        </div>
+      </aside>
+
+      <form class="record-form login-form" method="POST" autocomplete="off">
+        <input id="username" name="username" type="hidden" value="{{ selected_username }}" required />
+        <input type="hidden" name="next" value="{{ next_url }}">
+
+        <div id="loginPasswordPanel" class="login-password-panel{% if selected_username %} is-visible{% endif %}" aria-live="polite">
+          <h3 class="login-password-title">Contraseña de <span id="selectedUserName">{{ selected_display }}</span></h3>
           <div class="field">
-            <label for="username">Usuario</label>
-            <input id="username" name="username" type="text" placeholder="Ej. luis o gabo" required />
-          </div>
-            <div class="field">
-              <label for="password">Contraseña</label>
-              <input id="password" name="password" type="password" required />
-            </div>
+            <label for="password">Contraseña</label>
+            <input id="password" name="password" type="password" required />
           </div>
           <button class="btn-primary" type="submit">Entrar</button>
-        </form>
-      </div>
+        </div>
+      </form>
     </section>
   </main>
 
-  <footer class="site-footer">
+  <footer class="site-footer login-footer">
     © Órgano de Fiscalización Superior del Estado de Tlaxcala · SIFEET Estatales
   </footer>
+
+  <script>
+    var usernameField = document.getElementById('username');
+    var passwordField = document.getElementById('password');
+    var passwordPanel = document.getElementById('loginPasswordPanel');
+    var selectedUserName = document.getElementById('selectedUserName');
+
+    document.querySelectorAll('.login-access-user').forEach(function (button) {
+      button.addEventListener('click', function () {
+        if (!usernameField || !passwordPanel || !selectedUserName) return;
+
+        document.querySelectorAll('.login-access-user').forEach(function (item) {
+          item.classList.remove('is-selected');
+        });
+
+        button.classList.add('is-selected');
+        usernameField.value = button.dataset.username || '';
+        selectedUserName.textContent = button.dataset.display || 'usuario';
+        passwordPanel.classList.add('is-visible');
+
+        if (passwordField) {
+          passwordField.value = '';
+          passwordField.focus();
+        }
+      });
+    });
+  </script>
 </body>
 </html>

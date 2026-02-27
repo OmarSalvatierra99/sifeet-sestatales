@@ -1053,48 +1053,177 @@ tbody tr:hover td {
   height: 1rem;
 }
 
-.login-page .site-header {
-  position: static;
-}
-
 .login-page {
   min-height: 100vh;
+  background: #f1f4f1;
 }
 
-.login-content {
-  grid-template-columns: 1fr;
-  align-items: start;
+.login-shell {
   flex: 1;
-}
-
-.login-panel {
-  max-width: 640px;
+  max-width: 520px;
   width: 100%;
   margin: 0 auto;
+  padding: clamp(1rem, 4vw, 2.2rem) var(--space-4);
+  display: flex;
+  align-items: center;
 }
 
-.login-grid {
-  margin-top: 1.5rem;
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 1.5rem;
-  align-items: stretch;
+.login-auth-panel {
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid #d7e0d9;
+  background: #ffffff;
+  padding: 1.25rem;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+
+.login-logo-wrap {
+  width: 92px;
+  height: 92px;
+  margin: 0 auto 1rem;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid #e3e9e4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+}
+
+.login-logo-wrap .ofs-logo {
+  width: 64px;
+  height: auto;
+}
+
+.login-header {
+  text-align: center;
+}
+
+.login-header .eyebrow {
+  font-size: 0.66rem;
+  letter-spacing: 0.1rem;
+}
+
+.login-header h1 {
+  font-size: clamp(1.4rem, 4.2vw, 1.8rem);
+  margin-top: 0.2rem;
+}
+
+.login-header p {
+  margin-top: 0.35rem;
+  font-size: 0.9rem;
 }
 
 .login-form {
-  background: #f7f9f7;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 1.8rem;
-  box-shadow: var(--shadow-md);
+  margin-top: 0.85rem;
 }
 
 .login-form .btn-primary {
   width: 100%;
+  margin-top: 0.6rem;
+  min-height: 44px;
 }
 
-.login-page .site-footer {
-  margin-top: auto;
+.login-password-panel {
+  display: none;
+  border: 1px solid #dfe7e1;
+  border-radius: 12px;
+  background: #fafcfb;
+  padding: 0.9rem;
+}
+
+.login-password-panel.is-visible {
+  display: block;
+}
+
+.login-password-title {
+  font-size: 0.92rem;
+  color: var(--color-accent);
+  margin-bottom: 0.6rem;
+}
+
+.login-access-card {
+  margin-top: 0.95rem;
+  border: 1px solid #dfe7e1;
+  border-radius: 12px;
+  background: #fafcfb;
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.login-access-card h3 {
+  color: var(--color-accent);
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+
+.login-access-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.login-access-user {
+  border: 1px solid #d8e1da;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0.55rem 0.64rem;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--transition-base), background-color var(--transition-base);
+}
+
+.login-access-user:hover {
+  border-color: var(--color-accent);
+  background: #f5f9f6;
+}
+
+.login-access-user.is-selected {
+  border-color: var(--color-accent);
+  background: #edf5ef;
+  box-shadow: none;
+}
+
+.login-access-user:focus-visible {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(31, 59, 44, 0.14);
+}
+
+.login-access-initials {
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04rem;
+  color: #ffffff;
+  background: var(--color-accent);
+}
+
+.login-access-meta strong {
+  display: block;
+  color: var(--color-accent);
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+
+.login-note {
+  display: none;
+}
+
+.login-footer {
+  background: transparent;
+  border-top: none;
+  padding: 0.4rem 1rem 1rem;
 }
 
 .loader-page .site-header {
@@ -1276,6 +1405,10 @@ tbody tr:hover td {
   .filters-form .form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .login-shell {
+    max-width: 520px;
+  }
 }
 
 @media (max-width: 740px) {
@@ -1391,5 +1524,23 @@ tbody tr:hover td {
   .loader-checkbox-field {
     justify-content: flex-start;
     align-self: auto;
+  }
+
+  .login-shell {
+    padding: 1rem;
+  }
+
+  .login-auth-panel {
+    border-radius: 14px;
+    padding: 1rem;
+  }
+
+  .login-logo-wrap {
+    width: 82px;
+    height: 82px;
+  }
+
+  .login-logo-wrap .ofs-logo {
+    width: 56px;
   }
 }
