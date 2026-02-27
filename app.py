@@ -644,6 +644,8 @@ def init_db() -> None:
             """
             CREATE TABLE IF NOT EXISTS cargas_manuales (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ente_id TEXT NOT NULL,
+                ente_nombre TEXT NOT NULL,
                 tipo_auditoria TEXT NOT NULL,
                 tipo_responsable TEXT NOT NULL,
                 titular_nombre TEXT,
@@ -666,6 +668,24 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS cargas_titulares (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ejercicio TEXT NOT NULL,
+                ente_id TEXT NOT NULL,
+                ente_nombre TEXT NOT NULL,
+                tipo_auditoria TEXT NOT NULL,
+                periodo_informe TEXT NOT NULL,
+                titular TEXT NOT NULL,
+                periodo_administrativo TEXT NOT NULL,
+                administrativo TEXT NOT NULL,
+                cedula_resultados TEXT NOT NULL,
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
         existing_columns = {
             row[1]
             for row in conn.execute("PRAGMA table_info(registros)").fetchall()
@@ -683,6 +703,28 @@ def init_db() -> None:
             )
         if "ente_uid" not in historial_columns:
             conn.execute("ALTER TABLE historial_titulares ADD COLUMN ente_uid TEXT")
+        cargas_manuales_columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(cargas_manuales)").fetchall()
+        }
+        if "ente_id" not in cargas_manuales_columns:
+            conn.execute("ALTER TABLE cargas_manuales ADD COLUMN ente_id TEXT")
+            conn.execute(
+                """
+                UPDATE cargas_manuales
+                SET ente_id = ''
+                WHERE ente_id IS NULL
+                """
+            )
+        if "ente_nombre" not in cargas_manuales_columns:
+            conn.execute("ALTER TABLE cargas_manuales ADD COLUMN ente_nombre TEXT")
+            conn.execute(
+                """
+                UPDATE cargas_manuales
+                SET ente_nombre = ''
+                WHERE ente_nombre IS NULL
+                """
+            )
         if "tipo_anexo_origen" not in existing_columns:
             conn.execute(
                 "ALTER TABLE registros ADD COLUMN tipo_anexo_origen TEXT"
@@ -894,6 +936,12 @@ def init_db() -> None:
             """
             CREATE INDEX IF NOT EXISTS idx_cargas_manuales_usuario_fecha
             ON cargas_manuales (created_by, id DESC)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_cargas_titulares_usuario_fecha
+            ON cargas_titulares (created_by, id DESC)
             """
         )
         conn.commit()

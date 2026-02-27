@@ -30,56 +30,41 @@
   </header>
 
   <main class="page-content loader-content">
-    <section class="panel loader-intro">
-      <div class="panel-header">
-        <h2>Flujo de carga</h2>
-        <p>Este perfil solo permite cargar y validar información. No incluye consulta de observaciones ni reportes.</p>
-      </div>
-      <div class="loader-tip">
-        Recomendación: primero valida con <strong>Dry-run</strong> y después ejecuta la importación real.
-      </div>
-    </section>
-
     <section class="panel loader-card">
       <div class="panel-header">
         <h2>Captura manual de oficio y resultados</h2>
-        <p>Registra información manual por oficio con tipo de auditoría, responsables, fuente, cantidades y montos.</p>
       </div>
       {% if manual_result %}
-        <div class="status {% if manual_result.ok %}status-success{% else %}status-error{% endif %}">
+        <div class="status {% if manual_result.level == 'info' %}status-info{% elif manual_result.ok %}status-success{% else %}status-error{% endif %}">
           {{ manual_result.message }}
         </div>
       {% endif %}
       <form class="record-form loader-manual-form" method="POST" autocomplete="off">
-        <input type="hidden" name="action" value="manual_save">
+        <input type="hidden" name="manual_id" value="{{ form_data.manual_id }}">
         <div class="form-grid">
+          <div class="field">
+            <label for="manual_ejercicio">Ejercicio</label>
+            <select id="manual_ejercicio" name="manual_ejercicio" required>
+              <option value="2025" {% if form_data.manual_ejercicio == "2025" %}selected{% endif %}>2025</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="manual_ente_id">Ente</label>
+            <select id="manual_ente_id" name="manual_ente_id" required>
+              <option value="">Selecciona un ente</option>
+              {% for ente in manual_entes %}
+                <option value="{{ ente.ente_id }}" {% if form_data.manual_ente_id == ente.ente_id %}selected{% endif %}>
+                  {{ ente.ente_numero }} - {{ ente.ente_nombre }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
           <div class="field">
             <label for="manual_tipo_auditoria">Tipo de auditoría</label>
             <select id="manual_tipo_auditoria" name="manual_tipo_auditoria" required>
-              {% for option in ["Financiera", "Obra Pública", "Cuenta Pública"] %}
-                <option value="{{ option }}" {% if form_data.manual_tipo_auditoria == option %}selected{% endif %}>{{ option }}</option>
-              {% endfor %}
+              <option value="Financiera" {% if form_data.manual_tipo_auditoria == "Financiera" %}selected{% endif %}>Financiero</option>
+              <option value="Financiera y Obra Pública" {% if form_data.manual_tipo_auditoria == "Financiera y Obra Pública" %}selected{% endif %}>Financiero y Obra Pública</option>
             </select>
-          </div>
-          <div class="field">
-            <label for="manual_tipo_responsable">Titulares / administrativos</label>
-            <select id="manual_tipo_responsable" name="manual_tipo_responsable" required>
-              {% for option in tipos_responsable %}
-                <option value="{{ option }}" {% if form_data.manual_tipo_responsable == option %}selected{% endif %}>{{ option }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="field">
-            <label for="manual_titular_nombre">Nombre titular</label>
-            <input id="manual_titular_nombre" name="manual_titular_nombre" type="text" value="{{ form_data.manual_titular_nombre }}" placeholder="Nombre del titular">
-          </div>
-          <div class="field">
-            <label for="manual_administrativo_nombre">Nombre administrativo</label>
-            <input id="manual_administrativo_nombre" name="manual_administrativo_nombre" type="text" value="{{ form_data.manual_administrativo_nombre }}" placeholder="Nombre del administrativo">
-          </div>
-          <div class="field">
-            <label for="manual_numero_oficio">Número de oficio</label>
-            <input id="manual_numero_oficio" name="manual_numero_oficio" type="text" value="{{ form_data.manual_numero_oficio }}" required>
           </div>
           <div class="field">
             <label for="manual_asunto">Asunto</label>
@@ -90,28 +75,56 @@
             </select>
           </div>
           <div class="field">
-            <label for="manual_ejercicio">Ejercicio</label>
-            <input id="manual_ejercicio" name="manual_ejercicio" type="number" min="2000" max="2100" value="{{ form_data.manual_ejercicio }}" required>
+            <label for="manual_numero_oficio">Número de oficio</label>
+            <input id="manual_numero_oficio" name="manual_numero_oficio" type="text" value="{{ form_data.manual_numero_oficio }}" required>
           </div>
           <div class="field">
-            <label for="manual_fuente_id">Fuente (preestablecida)</label>
-            <select id="manual_fuente_id" name="manual_fuente_id" required>
-              <option value="">Selecciona una fuente</option>
-              {% for fuente in fuentes %}
+            <label for="manual_fuente_id">Fuente de Financiamiento</label>
+            <select id="manual_fuente_id" name="manual_fuente_id">
+              <option value="">{% if manual_fuentes %}Selecciona una fuente{% else %}Selecciona un ente primero{% endif %}</option>
+              {% for fuente in manual_fuentes %}
                 <option value="{{ fuente.id }}" {% if form_data.manual_fuente_id == (fuente.id|string) %}selected{% endif %}>
                   {{ fuente.nombre }}
                 </option>
               {% endfor %}
             </select>
+            <p class="helper">Se muestran según el ente seleccionado; si no hay coincidencias, se usa el catálogo general.</p>
+          </div>
+          <div class="field">
+            <label for="manual_fuente_nueva">Otra fuente (opcional)</label>
+            <input id="manual_fuente_nueva" name="manual_fuente_nueva" type="text" value="{{ form_data.manual_fuente_nueva }}" placeholder="Escribe una nueva fuente">
+            <p class="helper">Si capturas aquí, se usará esta fuente y se agregará al catálogo al guardar.</p>
           </div>
           <div class="field field-full">
             <label for="manual_periodo">Periodo</label>
             <input id="manual_periodo" name="manual_periodo" type="text" value="{{ form_data.manual_periodo }}" placeholder="Ej. 01 de enero al 31 de diciembre" required>
           </div>
+          <div class="field field-full">
+            <label for="manual_periodo_titular">Periodo titular (opcional)</label>
+            <input id="manual_periodo_titular" name="manual_periodo_titular" type="text" value="{{ form_data.manual_periodo_titular }}" placeholder="Ej. 01 de enero al 31 de diciembre">
+          </div>
+          <div class="field">
+            <label for="manual_ramo_33">RAMO XXXIII</label>
+            <select id="manual_ramo_33" name="manual_ramo_33" required>
+              <option value="No" {% if form_data.manual_ramo_33 == "No" %}selected{% endif %}>No</option>
+              <option value="Si" {% if form_data.manual_ramo_33 == "Si" %}selected{% endif %}>Si</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="manual_estado">E/R</label>
+            <select id="manual_estado" name="manual_estado" required>
+              <option value="E" {% if form_data.manual_estado == "E" %}selected{% endif %}>E</option>
+              <option value="R" {% if form_data.manual_estado == "R" %}selected{% endif %}>R</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="manual_fecha_notificacion">Fecha de notificación</label>
+            <input id="manual_fecha_notificacion" name="manual_fecha_notificacion" type="text" value="{{ form_data.manual_fecha_notificacion }}" placeholder="Ej. 12-feb-24" required>
+          </div>
         </div>
 
-        <div class="loader-manual-subsection">
-          <h3>Cantidades por tipo</h3>
+        <div class="loader-manual-subsection" id="manual-cantidades-cedula">
+          <h3>Cantidad pot tipo de Anexo</h3>
           <div class="form-grid loader-manual-grid-5">
             <div class="field">
               <label for="manual_cantidad_sa">SA</label>
@@ -135,166 +148,99 @@
             </div>
           </div>
         </div>
-
-        <div class="loader-manual-subsection">
-          <h3>Montos PDP</h3>
-          <div class="form-grid loader-manual-grid-3">
-            <div class="field">
-              <label for="manual_monto_pdp_emitido">Monto PDP emitido</label>
-              <input id="manual_monto_pdp_emitido" name="manual_monto_pdp_emitido" type="number" min="0" step="0.01" value="{{ form_data.manual_monto_pdp_emitido }}" required>
-            </div>
-            <div class="field">
-              <label for="manual_monto_pdp_solventado">Monto PDP solventado</label>
-              <input id="manual_monto_pdp_solventado" name="manual_monto_pdp_solventado" type="number" min="0" step="0.01" value="{{ form_data.manual_monto_pdp_solventado }}" required>
-            </div>
-            <div class="field">
-              <label for="manual_monto_pdp_pendiente">Monto PDP pendiente</label>
-              <input id="manual_monto_pdp_pendiente" name="manual_monto_pdp_pendiente" type="number" min="0" step="0.01" value="{{ form_data.manual_monto_pdp_pendiente }}" required>
-            </div>
-          </div>
+        <div class="field field-full">
+          <label for="manual_montos_pdp">Montos PDP por observación (opcional)</label>
+          <textarea
+            id="manual_montos_pdp"
+            name="manual_montos_pdp"
+            rows="3"
+            placeholder="Un monto por línea cuando PDP > 1.&#10;Ej.&#10;88162.61&#10;69928.65"
+          >{{ form_data.manual_montos_pdp }}</textarea>
+          <p class="helper">Si capturas montos, deben coincidir con la cantidad PDP.</p>
         </div>
 
-        <button class="btn-primary" type="submit">Guardar captura manual</button>
-      </form>
-
-      <div class="loader-manual-history">
-        <h3>Últimas capturas manuales</h3>
-        <div class="table-wrap">
-          <table class="table-compact">
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Oficio</th>
-                <th>Asunto</th>
-                <th>Ejercicio</th>
-                <th>Tipo auditoría</th>
-                <th>Responsable</th>
-                <th>Fuente</th>
-                <th>Periodo</th>
-                <th>SA</th>
-                <th>PDP</th>
-                <th>PRAS</th>
-                <th>PEFCF</th>
-                <th>R</th>
-                <th>PDP emitido</th>
-                <th>PDP solventado</th>
-                <th>PDP pendiente</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% if manual_rows %}
-                {% for row in manual_rows %}
-                  <tr>
-                    <td>{{ row.created_at }}</td>
-                    <td>{{ row.numero_oficio }}</td>
-                    <td>{{ row.asunto }}</td>
-                    <td>{{ row.ejercicio }}</td>
-                    <td>{{ row.tipo_auditoria }}</td>
-                    <td>
-                      {{ row.tipo_responsable }}
-                      {% if row.titular_nombre %}<span class="inheritance">Titular: {{ row.titular_nombre }}</span>{% endif %}
-                      {% if row.administrativo_nombre %}<span class="inheritance">Administrativo: {{ row.administrativo_nombre }}</span>{% endif %}
-                    </td>
-                    <td>{{ row.fuente_nombre or "—" }}</td>
-                    <td>{{ row.periodo }}</td>
-                    <td>{{ row.cantidad_sa }}</td>
-                    <td>{{ row.cantidad_pdp }}</td>
-                    <td>{{ row.cantidad_pras }}</td>
-                    <td>{{ row.cantidad_pefcf }}</td>
-                    <td>{{ row.cantidad_r }}</td>
-                    <td>{{ "{:,.2f}".format(row.monto_pdp_emitido or 0) }}</td>
-                    <td>{{ "{:,.2f}".format(row.monto_pdp_solventado or 0) }}</td>
-                    <td>{{ "{:,.2f}".format(row.monto_pdp_pendiente or 0) }}</td>
-                  </tr>
-                {% endfor %}
-              {% else %}
-                <tr>
-                  <td colspan="16" class="muted">Aún no hay capturas manuales.</td>
-                </tr>
-              {% endif %}
-            </tbody>
-          </table>
+        <div class="loader-actions">
+          <button class="btn-primary" type="submit" name="action" value="manual_save">
+            {% if form_data.manual_id %}Guardar cambios{% else %}Guardar captura manual{% endif %}
+          </button>
         </div>
-      </div>
-    </section>
-
-    <section class="panel loader-card">
-      <div class="panel-header">
-        <h2>1) Generar plantilla CSV</h2>
-        <p>Crea una plantilla base para historial de titulares por ejercicio.</p>
-      </div>
-      <form class="record-form" method="POST" autocomplete="off">
-        <input type="hidden" name="action" value="template_generate">
-        <div class="form-grid">
-          <div class="field">
-            <label for="template_ejercicio">Ejercicio</label>
-            <input id="template_ejercicio" name="template_ejercicio" type="number" min="2000" max="2100" value="{{ form_data.template_ejercicio }}" required>
-          </div>
-          <div class="field">
-            <label for="template_tipo_auditoria">Tipo auditoría</label>
-            <input id="template_tipo_auditoria" name="template_tipo_auditoria" type="text" value="{{ form_data.template_tipo_auditoria }}">
-          </div>
-          <div class="field field-full">
-            <label for="template_out">Ruta salida</label>
-            <input id="template_out" name="template_out" type="text" value="{{ form_data.template_out }}" placeholder="bases/historial_titulares_template.csv" required>
-          </div>
-        </div>
-        <button class="btn-primary" type="submit">Generar plantilla</button>
+        {% if form_data.manual_id %}
+          <p class="helper">Modo edición activo (ID {{ form_data.manual_id }}).</p>
+        {% endif %}
       </form>
     </section>
 
     <section class="panel loader-card">
       <div class="panel-header">
-        <h2>2) Importación CSV</h2>
-        <p>Valida primero y luego carga datos desde un CSV.</p>
+        <h2>Carga de titulares</h2>
       </div>
-      <form class="record-form" method="POST" autocomplete="off">
+      {% if titular_result %}
+        <div class="status {% if titular_result.level == 'info' %}status-info{% elif titular_result.ok %}status-success{% else %}status-error{% endif %}">
+          {{ titular_result.message }}
+        </div>
+      {% endif %}
+      <form class="record-form loader-manual-form" method="POST" autocomplete="off">
         <div class="form-grid">
-          <div class="field field-full">
-            <label for="csv_path">Ruta CSV</label>
-            <input id="csv_path" name="csv_path" type="text" value="{{ form_data.csv_path }}" placeholder="bases/historial_titulares_template.csv" required>
+          <div class="field">
+            <label for="titular_ejercicio">Ejercicio</label>
+            <select id="titular_ejercicio" name="titular_ejercicio" required>
+              {% for ejercicio in titular_ejercicios %}
+                <option value="{{ ejercicio }}" {% if form_data.titular_ejercicio == ejercicio %}selected{% endif %}>
+                  {{ ejercicio }}
+                </option>
+              {% endfor %}
+            </select>
+            <p class="helper">Ejercicio fijo para captura de titulares: 2025.</p>
           </div>
           <div class="field">
-            <label for="csv_ejercicio">Ejercicio (opcional)</label>
-            <input id="csv_ejercicio" name="csv_ejercicio" type="number" min="2000" max="2100" value="{{ form_data.csv_ejercicio }}">
+            <label for="titular_ente_id">Ente (ejercicio seleccionado)</label>
+            <select id="titular_ente_id" name="titular_ente_id" data-selected="{{ form_data.titular_ente_id }}" required>
+              <option value="">Selecciona un ente</option>
+              {% for ente in titular_entes %}
+                <option value="{{ ente.ente_id }}" {% if form_data.titular_ente_id == ente.ente_id %}selected{% endif %}>
+                  {{ ente.ente_numero }} - {{ ente.ente_nombre }}
+                </option>
+              {% endfor %}
+            </select>
           </div>
-          <div class="field loader-checkbox-field">
-            <label class="loader-checkbox">
-              <input name="csv_replace" type="checkbox" {% if form_data.csv_replace == '1' %}checked{% endif %}>
-              Reemplazar historial existente del ejercicio
-            </label>
+          <div class="field">
+            <label for="titular_tipo_auditoria">Tipo de auditoría</label>
+            <select id="titular_tipo_auditoria" name="titular_tipo_auditoria" required>
+              {% for option in ["Financiera", "Obra Pública"] %}
+                <option value="{{ option }}" {% if form_data.titular_tipo_auditoria == option %}selected{% endif %}>{{ option }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="titular_periodo_informe">Periodo informe</label>
+            <input id="titular_periodo_informe" name="titular_periodo_informe" type="text" value="{{ form_data.titular_periodo_informe }}" placeholder="Ej. 01 de enero al 31 de diciembre" required>
+          </div>
+          <div class="field">
+            <label for="titular_nombre">Titular</label>
+            <input id="titular_nombre" name="titular_nombre" type="text" value="{{ form_data.titular_nombre }}" required>
+          </div>
+          <div class="field">
+            <label for="titular_periodo_administrativo">Periodo del administrativo</label>
+            <input id="titular_periodo_administrativo" name="titular_periodo_administrativo" type="text" value="{{ form_data.titular_periodo_administrativo }}" placeholder="Ej. 01 de enero al 31 de diciembre" required>
+          </div>
+          <div class="field">
+            <label for="titular_administrativo">Administrativo</label>
+            <input id="titular_administrativo" name="titular_administrativo" type="text" value="{{ form_data.titular_administrativo }}" required>
+          </div>
+          <div class="field field-full">
+            <label for="titular_cedula_resultados">Cédula de resultados (particiones)</label>
+            <textarea
+              id="titular_cedula_resultados"
+              name="titular_cedula_resultados"
+              rows="3"
+              placeholder="Ej. 01 de enero al 31 de diciembre&#10;01 de enero al 30 de junio"
+              required
+            >{{ form_data.titular_cedula_resultados }}</textarea>
+            <p class="helper">Acepta múltiples periodos separados por salto de línea, `;` o `|`.</p>
           </div>
         </div>
         <div class="loader-actions">
-          <button class="btn-secondary" type="submit" name="action" value="csv_validate">Validar CSV (Dry-run)</button>
-          <button class="btn-primary" type="submit" name="action" value="csv_import">Importar CSV</button>
-        </div>
-      </form>
-    </section>
-
-    <section class="panel loader-card">
-      <div class="panel-header">
-        <h2>3) Importación JSON</h2>
-        <p>Valida primero y después importa archivos JSON de periodos.</p>
-      </div>
-      <form class="record-form" method="POST" autocomplete="off">
-        <div class="form-grid">
-          <div class="field field-full">
-            <label for="json_path">Ruta JSON</label>
-            <input id="json_path" name="json_path" type="text" value="{{ form_data.json_path }}" placeholder="bases/entrada.json" required>
-          </div>
-          <div class="field">
-            <label for="json_ejercicio">Ejercicio por defecto (opcional)</label>
-            <input id="json_ejercicio" name="json_ejercicio" type="number" min="2000" max="2100" value="{{ form_data.json_ejercicio }}">
-          </div>
-          <div class="field">
-            <label for="json_tipo_auditoria">Tipo auditoría por defecto</label>
-            <input id="json_tipo_auditoria" name="json_tipo_auditoria" type="text" value="{{ form_data.json_tipo_auditoria }}">
-          </div>
-        </div>
-        <div class="loader-actions">
-          <button class="btn-secondary" type="submit" name="action" value="json_validate">Validar JSON (Dry-run)</button>
-          <button class="btn-primary" type="submit" name="action" value="json_import">Importar JSON</button>
+          <button class="btn-primary" type="submit" name="action" value="titular_save">Guardar</button>
         </div>
       </form>
     </section>
@@ -334,5 +280,146 @@
   <footer class="site-footer">
     © Órgano de Fiscalización Superior del Estado de Tlaxcala · SIFEET Estatales
   </footer>
+  <script>
+    const titularEjercicio = document.getElementById("titular_ejercicio");
+    const titularEnte = document.getElementById("titular_ente_id");
+    if (titularEjercicio && titularEnte) {
+      let currentFetchId = 0;
+
+      const loadEntesByEjercicio = async (selectedEnteId = "") => {
+        const requestId = ++currentFetchId;
+        const ejercicio = (titularEjercicio.value || "").trim();
+        titularEnte.innerHTML = '<option value=\"\">Cargando entes...</option>';
+        if (!ejercicio) {
+          titularEnte.innerHTML = '<option value=\"\">Selecciona un ente</option>';
+          titularEnte.value = "";
+          return;
+        }
+        try {
+          const response = await fetch(`/carga/entes?ejercicio=${encodeURIComponent(ejercicio)}`);
+          if (!response.ok) {
+            throw new Error("No se pudo cargar entes");
+          }
+          if (requestId !== currentFetchId) {
+            return;
+          }
+          const rows = await response.json();
+          if (!Array.isArray(rows) || !rows.length) {
+            titularEnte.innerHTML = '<option value=\"\">Sin entes para ese ejercicio</option>';
+            titularEnte.value = "";
+            return;
+          }
+          titularEnte.innerHTML = '<option value=\"\">Selecciona un ente</option>' + rows.map((row) => (
+            `<option value="${row.ente_id}">${row.ente_numero || ""} - ${row.ente_nombre || ""}</option>`
+          )).join("");
+          const normalizedSelection = (selectedEnteId || "").trim();
+          if (normalizedSelection && rows.some((row) => (row.ente_id || "").trim() === normalizedSelection)) {
+            titularEnte.value = normalizedSelection;
+          } else {
+            titularEnte.value = "";
+          }
+        } catch (error) {
+          titularEnte.innerHTML = '<option value=\"\">No se pudieron cargar entes</option>';
+          titularEnte.value = "";
+        }
+      };
+
+      titularEjercicio.addEventListener("change", () => {
+        loadEntesByEjercicio("");
+      });
+
+      loadEntesByEjercicio(titularEnte.dataset.selected || titularEnte.value || "");
+    }
+
+    const manualAsunto = document.getElementById("manual_asunto");
+    const manualEjercicio = document.getElementById("manual_ejercicio");
+    const manualEnte = document.getElementById("manual_ente_id");
+    const manualTipoAuditoria = document.getElementById("manual_tipo_auditoria");
+    const manualFuente = document.getElementById("manual_fuente_id");
+    const blockCedula = document.getElementById("manual-cantidades-cedula");
+    const cedulaInputs = blockCedula ? Array.from(blockCedula.querySelectorAll("input")) : [];
+    const asuntoCedula = "Notificación de Cédula de Resultados";
+
+    const toggleManualCantidades = () => {
+      if (!manualAsunto || !blockCedula) {
+        return;
+      }
+      const isCedula = (manualAsunto.value || "").trim() === asuntoCedula;
+      blockCedula.style.display = isCedula ? "" : "none";
+      cedulaInputs.forEach((input) => {
+        input.disabled = !isCedula;
+      });
+    };
+
+    if (manualAsunto) {
+      manualAsunto.addEventListener("change", toggleManualCantidades);
+      toggleManualCantidades();
+    }
+
+    if (manualEjercicio && manualEnte && manualFuente) {
+      let fuentesFetchId = 0;
+
+      const loadFuentesByEnte = async (selectedFuenteId = "") => {
+        const requestId = ++fuentesFetchId;
+        const ejercicio = (manualEjercicio.value || "").trim();
+        const enteId = (manualEnte.value || "").trim();
+        const tipoAuditoria = (manualTipoAuditoria ? (manualTipoAuditoria.value || "").trim() : "");
+        if (!ejercicio || !enteId) {
+          manualFuente.innerHTML = '<option value="">Selecciona un ente primero</option>';
+          manualFuente.value = "";
+          return;
+        }
+        manualFuente.innerHTML = '<option value="">Cargando fuentes...</option>';
+        try {
+          const params = new URLSearchParams({
+            ejercicio,
+            ente_id: enteId,
+          });
+          if (tipoAuditoria) {
+            params.set("tipo_auditoria", tipoAuditoria);
+          }
+          const response = await fetch(`/carga/fuentes-ente?${params.toString()}`);
+          if (!response.ok) {
+            throw new Error("No se pudieron cargar fuentes");
+          }
+          if (requestId !== fuentesFetchId) {
+            return;
+          }
+          const rows = await response.json();
+          if (!Array.isArray(rows) || !rows.length) {
+            manualFuente.innerHTML = '<option value="">Sin fuentes para este ente</option>';
+            manualFuente.value = "";
+            return;
+          }
+          manualFuente.innerHTML = '<option value="">Selecciona una fuente</option>' + rows.map((row) => (
+            `<option value="${row.id}">${row.nombre || ""}</option>`
+          )).join("");
+          const normalizedSelected = (selectedFuenteId || "").trim();
+          if (normalizedSelected && rows.some((row) => String(row.id) === normalizedSelected)) {
+            manualFuente.value = normalizedSelected;
+          } else {
+            manualFuente.value = "";
+          }
+        } catch (error) {
+          manualFuente.innerHTML = '<option value="">No se pudieron cargar fuentes</option>';
+          manualFuente.value = "";
+        }
+      };
+
+      manualEnte.addEventListener("change", () => {
+        loadFuentesByEnte("");
+      });
+      manualEjercicio.addEventListener("change", () => {
+        loadFuentesByEnte("");
+      });
+      if (manualTipoAuditoria) {
+        manualTipoAuditoria.addEventListener("change", () => {
+          loadFuentesByEnte("");
+        });
+      }
+
+      loadFuentesByEnte(manualFuente.value || "");
+    }
+  </script>
 </body>
 </html>
