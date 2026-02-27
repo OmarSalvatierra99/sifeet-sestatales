@@ -1,5 +1,6 @@
 from datetime import datetime
 from io import BytesIO
+import time
 
 from flask import jsonify, redirect, render_template, request, send_file, url_for
 from openpyxl import Workbook
@@ -8,6 +9,8 @@ from openpyxl.styles import Font
 
 def register_luis_routes(app, deps):
     globals().update(deps)
+    dashboard_cache: dict[str, tuple[float, dict]] = {}
+    dashboard_cache_ttl_seconds = 45
     @app.route("/entes", methods=["GET", "POST"])
     @luis_required
     def entes():
@@ -316,6 +319,256 @@ def register_luis_routes(app, deps):
     
         ordered = sorted(resumen.values(), key=lambda item: item["ejercicio"], reverse=True)
         return jsonify(ordered)
+
+
+    @app.get("/observaciones-dashboard")
+    @luis_required
+    def observaciones_dashboard():
+        ejercicio = request.args.get("ejercicio", "").strip()
+        if not ejercicio:
+            return jsonify({
+                "rows": [],
+                "total_rows": 0,
+                "page": 1,
+                "page_size": 40,
+                "total_pages": 1,
+                "filtros": {},
+                "summary": {"tipos": [], "totals": {"emitidas": 0, "solventadas": 0, "pendientes": 0}},
+            })
+
+        ente_id = normalize_ente_id(request.args.get("ente_id", ""))
+        tipo_anexo = request.args.get("tipo_anexo", "").strip()
+        tipo_auditoria = normalize_tipo_auditoria(request.args.get("tipo_auditoria", ""))
+        estado = request.args.get("estado", "").strip()
+        fuente = request.args.get("fuente_financiamiento", "").strip()
+        ramo_33 = request.args.get("ramo_33", "").strip()
+        concepto_irregularidad = request.args.get("concepto_irregularidad", "").strip()
+        periodo_cedula = request.args.get("periodo_cedula", "").strip()
+
+        try:
+            page = max(1, int(request.args.get("page", "1")))
+        except ValueError:
+            page = 1
+        try:
+            page_size = int(request.args.get("page_size", "40"))
+        except ValueError:
+            page_size = 40
+        page_size = max(10, min(200, page_size))
+
+        cache_key = request.query_string.decode("utf-8")
+        now = time.time()
+        cached = dashboard_cache.get(cache_key)
+        if cached and now - cached[0] < dashboard_cache_ttl_seconds:
+            return jsonify(cached[1])
+
+        db = get_db()
+        selected = {
+            "tipo_auditoria": tipo_auditoria,
+            "tipo_anexo": tipo_anexo,
+            "estado": estado,
+            "fuente_financiamiento": fuente,
+            "ramo_33": ramo_33,
+            "concepto_irregularidad": concepto_irregularidad,
+            "periodo_cedula": periodo_cedula,
+        }
+
+        def build_scope(*, exclude_key: str = "", include_ente: bool = True):
+            clauses = ["ejercicio = ?"]
+            params = [ejercicio]
+            if include_ente and ente_id:
+                clauses.append(f"{normalize_ente_id_sql('ente_id')} = ?")
+                params.append(ente_id)
+            for key, value in selected.items():
+                if key == exclude_key or not value:
+                    continue
+                if key == "tipo_auditoria":
+                    clauses.append("tipo_auditoria = ?")
+                    params.append(value)
+                elif key == "tipo_anexo":
+                    clauses.append("tipo_anexo = ?")
+                    params.append(value)
+                elif key == "estado":
+                    clauses.append("estado = ?")
+                    params.append(value)
+                elif key == "fuente_financiamiento":
+                    clauses.append("fuente_financiamiento = ?")
+                    params.append(value)
+                elif key == "ramo_33":
+                    clauses.append("ramo_33 = ?")
+                    params.append(value)
+                elif key == "periodo_cedula":
+                    clauses.append("periodo_cedula = ?")
+                    params.append(value)
+                elif key == "concepto_irregularidad":
+                    clauses.append(
+                        "(pdp_concepto_irregularidad = ? OR pdp_subconcepto_irregularidad = ?)"
+                    )
+                    params.extend([value, value])
+            return " AND ".join(clauses), params
+
+        scope_sql, scope_params = build_scope()
+        total_rows = db.execute(
+            f"SELECT COUNT(*) FROM observaciones WHERE {scope_sql}",
+            scope_params,
+        ).fetchone()[0]
+        total_pages = max(1, (total_rows + page_size - 1) // page_size)
+        page = min(page, total_pages)
+        offset = (page - 1) * page_size
+
+        rows = db.execute(
+            f"""
+            SELECT
+                id,
+                ejercicio,
+                ente_id,
+                ente_numero,
+                ente_nombre,
+                tipo_auditoria,
+                fuente_financiamiento,
+                ramo_33,
+                periodo_cedula,
+                periodo_titular,
+                oficio,
+                fecha_notificacion,
+                tipo_anexo,
+                numero_observacion,
+                estado,
+                monto_pdp_emitido,
+                monto_pdp_solventado,
+                monto_pdp_pendiente,
+                pdp_no_irregularidad,
+                pdp_concepto_irregularidad,
+                pdp_subconcepto_irregularidad
+            FROM observaciones
+            WHERE {scope_sql}
+            ORDER BY
+                COALESCE(ente_numero_sort, 0) ASC,
+                ente_numero ASC,
+                ente_id ASC,
+                tipo_anexo ASC,
+                numero_observacion ASC
+            LIMIT ? OFFSET ?
+            """,
+            [*scope_params, page_size, offset],
+        ).fetchall()
+
+        summary_rows = db.execute(
+            f"""
+            SELECT
+                tipo_anexo,
+                COUNT(*) AS emitidas,
+                SUM(CASE WHEN LOWER(TRIM(COALESCE(estado, ''))) = 'solventado' THEN 1 ELSE 0 END) AS solventadas,
+                SUM(CASE WHEN LOWER(TRIM(COALESCE(estado, ''))) = 'pendiente' THEN 1 ELSE 0 END) AS pendientes
+            FROM observaciones
+            WHERE {scope_sql}
+              AND TRIM(COALESCE(tipo_anexo, '')) != ''
+            GROUP BY tipo_anexo
+            ORDER BY tipo_anexo
+            """,
+            scope_params,
+        ).fetchall()
+        pdp_montos_row = db.execute(
+            f"""
+            SELECT
+                SUM(COALESCE(monto_pdp_emitido, 0)) AS emitido,
+                SUM(COALESCE(monto_pdp_solventado, 0)) AS solventado,
+                SUM(COALESCE(monto_pdp_pendiente, 0)) AS pendiente
+            FROM observaciones
+            WHERE {scope_sql}
+              AND tipo_anexo = 'PDP'
+            """,
+            scope_params,
+        ).fetchone()
+
+        def query_distinct(column: str, exclude_key: str):
+            where_sql, where_params = build_scope(exclude_key=exclude_key)
+            return db.execute(
+                f"""
+                SELECT DISTINCT {column} AS value
+                FROM observaciones
+                WHERE {where_sql}
+                  AND {column} IS NOT NULL AND TRIM({column}) != ''
+                ORDER BY value
+                """,
+                where_params,
+            ).fetchall()
+
+        entes_where, entes_params = build_scope(include_ente=False)
+        entes = db.execute(
+            f"""
+            SELECT DISTINCT
+                TRIM(COALESCE(ente_id, '')) AS ente_id,
+                TRIM(COALESCE(ente_numero, '')) AS ente_numero,
+                TRIM(COALESCE(ente_nombre, '')) AS ente_nombre
+            FROM observaciones
+            WHERE {entes_where}
+              AND TRIM(COALESCE(ente_id, '')) != ''
+            ORDER BY COALESCE(ente_numero_sort, 0), ente_numero, ente_nombre
+            """,
+            entes_params,
+        ).fetchall()
+
+        concepto_where, concepto_params = build_scope(exclude_key="concepto_irregularidad")
+        conceptos = db.execute(
+            f"""
+            SELECT DISTINCT concepto
+            FROM (
+                SELECT pdp_concepto_irregularidad AS concepto
+                FROM observaciones
+                WHERE {concepto_where}
+                  AND pdp_concepto_irregularidad IS NOT NULL AND TRIM(pdp_concepto_irregularidad) != ''
+                UNION
+                SELECT pdp_subconcepto_irregularidad AS concepto
+                FROM observaciones
+                WHERE {concepto_where}
+                  AND pdp_subconcepto_irregularidad IS NOT NULL AND TRIM(pdp_subconcepto_irregularidad) != ''
+            )
+            ORDER BY concepto
+            """,
+            concepto_params + concepto_params,
+        ).fetchall()
+
+        filtros = {
+            "tipo_anexo": [row[0] for row in query_distinct("tipo_anexo", "tipo_anexo")],
+            "tipo_auditoria": [row[0] for row in query_distinct("tipo_auditoria", "tipo_auditoria")],
+            "estado": [row[0] for row in query_distinct("estado", "estado")],
+            "fuente_financiamiento": [row[0] for row in query_distinct("fuente_financiamiento", "fuente_financiamiento")],
+            "ramo_33": [row[0] for row in query_distinct("ramo_33", "ramo_33")],
+            "cedulas": [row[0] for row in query_distinct("periodo_cedula", "periodo_cedula")],
+            "conceptos_irregularidad": [row[0] for row in conceptos],
+            "entes": [dict(row) for row in entes],
+        }
+
+        tipos_summary = [dict(row) for row in summary_rows]
+        totals = {"emitidas": 0, "solventadas": 0, "pendientes": 0}
+        for row in tipos_summary:
+            totals["emitidas"] += int(row.get("emitidas") or 0)
+            totals["solventadas"] += int(row.get("solventadas") or 0)
+            totals["pendientes"] += int(row.get("pendientes") or 0)
+
+        payload = {
+            "rows": [dict(row) for row in rows],
+            "total_rows": total_rows,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "filtros": filtros,
+            "summary": {
+                "tipos": tipos_summary,
+                "totals": totals,
+                "pdp_montos": {
+                    "emitido": float((pdp_montos_row["emitido"] or 0) if pdp_montos_row else 0),
+                    "solventado": float((pdp_montos_row["solventado"] or 0) if pdp_montos_row else 0),
+                    "pendiente": float((pdp_montos_row["pendiente"] or 0) if pdp_montos_row else 0),
+                },
+            },
+        }
+        dashboard_cache[cache_key] = (now, payload)
+        if len(dashboard_cache) > 250:
+            # Prevent unbounded growth in long-running processes.
+            oldest_key = min(dashboard_cache.items(), key=lambda item: item[1][0])[0]
+            dashboard_cache.pop(oldest_key, None)
+        return jsonify(payload)
     
     
     @app.get("/observaciones")
@@ -468,7 +721,7 @@ def register_luis_routes(app, deps):
                 WHERE observaciones.ejercicio = ?
                 {join_filter_sql}
                 ORDER BY
-                    CAST(COALESCE(observaciones.ente_numero, '0') AS REAL) ASC,
+                    COALESCE(observaciones.ente_numero_sort, 0) ASC,
                     observaciones.ente_numero ASC,
                     observaciones.ente_id ASC,
                     observaciones.tipo_anexo ASC,
@@ -505,7 +758,7 @@ def register_luis_routes(app, deps):
                 WHERE observaciones.ejercicio = ?
                 {filter_sql}
                 ORDER BY
-                    CAST(COALESCE(observaciones.ente_numero, '0') AS REAL) ASC,
+                    COALESCE(observaciones.ente_numero_sort, 0) ASC,
                     observaciones.ente_numero ASC,
                     observaciones.ente_id ASC,
                     observaciones.tipo_anexo ASC,
@@ -628,7 +881,7 @@ def register_luis_routes(app, deps):
             FROM observaciones
             WHERE {entes_where}
               AND TRIM(COALESCE(ente_id, '')) != ''
-            ORDER BY CAST(COALESCE(NULLIF(ente_numero, ''), '0') AS REAL), ente_numero, ente_nombre
+            ORDER BY COALESCE(ente_numero_sort, 0), ente_numero, ente_nombre
             """,
             entes_params,
         ).fetchall()

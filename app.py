@@ -202,6 +202,19 @@ def parse_non_negative_float(value: str, label: str) -> float:
     return parsed
 
 
+def parse_ente_numero_sort(value: str) -> float:
+    raw = (value or "").strip()
+    if not raw:
+        return 0.0
+    match = re.search(r"-?\d+(?:\.\d+)?", raw.replace(",", ""))
+    if not match:
+        return 0.0
+    try:
+        return float(match.group(0))
+    except ValueError:
+        return 0.0
+
+
 def get_ente_aliases_by_uid(
     conn: sqlite3.Connection,
     ejercicio: str,
@@ -618,6 +631,7 @@ def init_db() -> None:
                 ejercicio TEXT NOT NULL,
                 ente_id TEXT NOT NULL,
                 ente_numero TEXT,
+                ente_numero_sort REAL DEFAULT 0,
                 ente_nombre TEXT NOT NULL,
                 tipo_auditoria TEXT NOT NULL,
                 fuente_financiamiento TEXT NOT NULL,
@@ -793,6 +807,15 @@ def init_db() -> None:
         }
         if "ente_numero" not in observaciones_columns:
             conn.execute("ALTER TABLE observaciones ADD COLUMN ente_numero TEXT")
+        if "ente_numero_sort" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN ente_numero_sort REAL DEFAULT 0")
+        conn.execute(
+            """
+            UPDATE observaciones
+            SET ente_numero_sort = COALESCE(CAST(NULLIF(TRIM(ente_numero), '') AS REAL), 0)
+            WHERE ente_numero_sort IS NULL OR ente_numero_sort = 0
+            """
+        )
         if "ente_nombre" not in observaciones_columns:
             conn.execute("ALTER TABLE observaciones ADD COLUMN ente_nombre TEXT")
             conn.execute(
@@ -888,6 +911,34 @@ def init_db() -> None:
             """
             CREATE INDEX IF NOT EXISTS idx_obs_ejercicio_filtros
             ON observaciones (ejercicio, fuente_financiamiento, ramo_33, periodo_cedula)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_obs_ejercicio_full_scope
+            ON observaciones (
+                ejercicio,
+                ente_id,
+                tipo_auditoria,
+                tipo_anexo,
+                estado,
+                fuente_financiamiento,
+                ramo_33,
+                periodo_cedula
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_obs_ejercicio_sort
+            ON observaciones (
+                ejercicio,
+                ente_numero_sort,
+                ente_numero,
+                ente_id,
+                tipo_anexo,
+                numero_observacion
+            )
             """
         )
         conn.execute(
@@ -1048,6 +1099,7 @@ ROUTE_DEPS = {
     "get_ente_uid_by_ejercicio_id": get_ente_uid_by_ejercicio_id,
     "parse_non_negative_int": parse_non_negative_int,
     "parse_non_negative_float": parse_non_negative_float,
+    "parse_ente_numero_sort": parse_ente_numero_sort,
     "resolve_ente_uid": resolve_ente_uid,
     "resolve_project_path": resolve_project_path,
     "run_loader_command": run_loader_command,

@@ -301,6 +301,7 @@ def register_gabo_routes(app, deps):
                         ejercicio,
                         ente_id,
                         ente_numero,
+                        ente_numero_sort,
                         ente_nombre,
                         tipo_auditoria,
                         fuente_financiamiento,
@@ -317,12 +318,13 @@ def register_gabo_routes(app, deps):
                         monto_pdp_pendiente,
                         created_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         ejercicio,
                         ente_id,
                         ente_numero,
+                        parse_ente_numero_sort(ente_numero),
                         ente_nombre,
                         tipo_auditoria,
                         fuente_nombre,
