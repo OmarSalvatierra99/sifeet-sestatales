@@ -177,7 +177,7 @@
           style="{% if form_data.manual_asunto != 'Se emiten resultados de solventación del periodo' %}display:none;{% endif %}"
         >
           <h3>Observaciones cargadas</h3>
-          <p class="helper" id="manual_observaciones_info">Selecciona ejercicio, ente y fuente para consultar.</p>
+          <p class="helper" id="manual_observaciones_info">Selecciona ejercicio y ente para consultar.</p>
           <div class="table-wrap">
             <table class="table-compact">
               <thead>
@@ -584,19 +584,78 @@
         manualObservacionesBody.innerHTML = '<tr><td colspan="6" class="muted">Sin observaciones cargadas para este filtro.</td></tr>';
         return;
       }
+      const normalizeEstadoForUi = (value) => {
+        const key = String(value || "").trim().toLowerCase();
+        if (key === "e" || key === "emitido") return "Emitido";
+        if (key === "p" || key === "pendiente") return "Pendiente";
+        if (key === "s" || key === "solventado") return "Solventado";
+        return "Emitido";
+      };
       manualObservacionesBody.innerHTML = rows.map((row) => {
-        const monto = row.monto_pdp_emitido == null ? "" : Number(row.monto_pdp_emitido).toFixed(2);
+        const estadoActual = normalizeEstadoForUi(row.estado);
+        const monto = row.monto_pdp_emitido == null ? "0" : String(row.monto_pdp_emitido);
+        const observacionId = Number(row.id || 0);
         return (
-          `<tr>` +
+          `<tr data-observacion-id="${observacionId}">` +
           `<td>${row.tipo_anexo || ""}</td>` +
           `<td>${row.numero_observacion || ""}</td>` +
-          `<td>${row.estado || ""}</td>` +
+          `<td>` +
+          `<select class="obs-estado-input">` +
+          `<option value="Emitido"${estadoActual === "Emitido" ? " selected" : ""}>Emitido</option>` +
+          `<option value="Pendiente"${estadoActual === "Pendiente" ? " selected" : ""}>Pendiente</option>` +
+          `<option value="Solventado"${estadoActual === "Solventado" ? " selected" : ""}>Solventado</option>` +
+          `</select>` +
+          `</td>` +
           `<td>${row.pdp_concepto_irregularidad || ""}</td>` +
           `<td>${row.pdp_subconcepto_irregularidad || ""}</td>` +
-          `<td>${monto}</td>` +
+          `<td>` +
+          `<div style="display:flex; gap:6px; align-items:center;">` +
+          `<input class="obs-monto-input" type="number" step="0.01" min="0" value="${escapeHtml(monto)}" style="width:120px;">` +
+          `<button type="button" class="btn-secondary obs-save-btn">Guardar</button>` +
+          `</div>` +
+          `</td>` +
           `</tr>`
         );
       }).join("");
+    };
+
+    const saveObservacionRow = async (button) => {
+      const row = button.closest("tr");
+      if (!row) {
+        return;
+      }
+      const observacionId = Number(row.dataset.observacionId || 0);
+      const estadoInput = row.querySelector(".obs-estado-input");
+      const montoInput = row.querySelector(".obs-monto-input");
+      if (!observacionId || !estadoInput || !montoInput) {
+        return;
+      }
+      const estado = (estadoInput.value || "").trim();
+      const monto = (montoInput.value || "").trim();
+      button.disabled = true;
+      manualObservacionesInfo.textContent = "Guardando cambios...";
+      try {
+        const response = await fetch(`/carga/observaciones-cargadas/${encodeURIComponent(observacionId)}/actualizar`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            estado,
+            monto_pdp_emitido: monto,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "No se pudo guardar.");
+        }
+        manualObservacionesInfo.textContent = `Observación ${observacionId} actualizada.`;
+        await fetchObservacionesCargadas();
+      } catch (error) {
+        manualObservacionesInfo.textContent = error.message || "No se pudieron guardar los cambios.";
+      } finally {
+        button.disabled = false;
+      }
     };
 
     const fetchObservacionesCargadas = async () => {
@@ -609,8 +668,8 @@
       const fuente = resolveManualFuenteNombre();
       const periodo = (manualPeriodo ? manualPeriodo.value : "").trim();
       const oficio = (manualNumeroOficio ? manualNumeroOficio.value : "").trim();
-      if (!ejercicio || !enteId || !tipoAuditoria || !fuente) {
-        manualObservacionesInfo.textContent = "Selecciona ejercicio, ente y fuente para consultar.";
+      if (!ejercicio || !enteId || !tipoAuditoria) {
+        manualObservacionesInfo.textContent = "Selecciona ejercicio y ente para consultar.";
         manualObservacionesBody.innerHTML = '<tr><td colspan="6" class="muted">Sin consulta.</td></tr>';
         return;
       }
@@ -619,8 +678,10 @@
         ejercicio,
         ente_id: enteId,
         tipo_auditoria: tipoAuditoria,
-        fuente,
       });
+      if (fuente) {
+        params.set("fuente", fuente);
+      }
       if (periodo) {
         params.set("periodo", periodo);
       }
@@ -853,6 +914,18 @@
       }
       if (manualNumeroOficio) {
         manualNumeroOficio.addEventListener("input", fetchObservacionesCargadas);
+      }
+      if (manualObservacionesBody) {
+        manualObservacionesBody.addEventListener("click", (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) {
+            return;
+          }
+          if (!target.classList.contains("obs-save-btn")) {
+            return;
+          }
+          saveObservacionRow(target);
+        });
       }
 
       loadFuentesByEnte(manualFuente.value || "");

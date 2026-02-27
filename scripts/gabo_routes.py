@@ -56,6 +56,7 @@ def parse_cedula_periodos(
 def register_gabo_routes(app, deps):
     globals().update(deps)
     TITULAR_EJERCICIO_FIJO = "2025"
+    OBSERVACION_ESTADOS_VALIDOS = {"Emitido", "Pendiente", "Solventado"}
 
     def _tipo_auditoria_options(tipo_auditoria: str) -> list[str]:
         clean = " ".join((tipo_auditoria or "").split())
@@ -64,6 +65,17 @@ def register_gabo_routes(app, deps):
         if clean in {"Financiera", "Obra Pública"}:
             return [clean]
         return []
+
+    def _normalize_observacion_estado(value: str) -> str:
+        raw = " ".join((value or "").split())
+        key = raw.lower()
+        if key in {"e", "emitido"}:
+            return "Emitido"
+        if key in {"p", "pendiente"}:
+            return "Pendiente"
+        if key in {"s", "solventado"}:
+            return "Solventado"
+        return raw
 
     def fuentes_por_ente(
         db,
@@ -495,7 +507,12 @@ def register_gabo_routes(app, deps):
             return jsonify([])
 
         db = get_db()
-        params: list[str] = [ejercicio, ente_id, tipo_auditoria]
+        params: list[str] = [ejercicio, ente_id]
+        tipo_options = _tipo_auditoria_options(tipo_auditoria)
+        if not tipo_options:
+            tipo_options = [tipo_auditoria]
+        tipo_placeholders = ", ".join(["?"] * len(tipo_options))
+        params.extend(tipo_options)
         where_extra: list[str] = []
         if fuente:
             where_extra.append("LOWER(TRIM(COALESCE(fuente_financiamiento, ''))) = LOWER(TRIM(COALESCE(?, '')))")
@@ -514,6 +531,7 @@ def register_gabo_routes(app, deps):
         rows = db.execute(
             f"""
             SELECT
+                id,
                 TRIM(COALESCE(tipo_anexo, '')) AS tipo_anexo,
                 numero_observacion,
                 TRIM(COALESCE(estado, '')) AS estado,
@@ -523,7 +541,7 @@ def register_gabo_routes(app, deps):
             FROM observaciones
             WHERE TRIM(COALESCE(ejercicio, '')) = ?
               AND {normalize_ente_id_sql('ente_id')} = ?
-              AND TRIM(COALESCE(tipo_auditoria, '')) = ?
+              AND TRIM(COALESCE(tipo_auditoria, '')) IN ({tipo_placeholders})
               {where_sql}
             ORDER BY
               CASE TRIM(COALESCE(tipo_anexo, ''))
@@ -539,7 +557,60 @@ def register_gabo_routes(app, deps):
             """,
             params,
         ).fetchall()
-        return jsonify([dict(row) for row in rows])
+        payload = []
+        for row in rows:
+            item = dict(row)
+            item["estado"] = _normalize_observacion_estado(item.get("estado", ""))
+            payload.append(item)
+        return jsonify(payload)
+
+    @app.post("/carga/observaciones-cargadas/<int:observacion_id>/actualizar")
+    @gabo_required
+    def carga_observacion_actualizar(observacion_id: int):
+        payload = request.get_json(silent=True) or {}
+        estado = _normalize_observacion_estado(payload.get("estado", ""))
+        monto_raw = payload.get("monto_pdp_emitido", "")
+
+        if estado not in OBSERVACION_ESTADOS_VALIDOS:
+            return jsonify({"ok": False, "error": "Estado inválido."}), 400
+
+        try:
+            monto = parse_non_negative_float(str(monto_raw), "Monto PDP emitido")
+        except ValueError:
+            return jsonify({"ok": False, "error": "Monto PDP inválido."}), 400
+
+        db = get_db()
+        current = db.execute(
+            """
+            SELECT id
+            FROM observaciones
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (observacion_id,),
+        ).fetchone()
+        if not current:
+            return jsonify({"ok": False, "error": "Observación no encontrada."}), 404
+
+        db.execute(
+            """
+            UPDATE observaciones
+            SET estado = ?,
+                monto_pdp_emitido = ?,
+                monto = ?
+            WHERE id = ?
+            """,
+            (estado, monto, monto, observacion_id),
+        )
+        db.commit()
+        return jsonify(
+            {
+                "ok": True,
+                "id": observacion_id,
+                "estado": estado,
+                "monto_pdp_emitido": monto,
+            }
+        )
 
     @app.route("/carga", methods=["GET", "POST"])
     @gabo_required
