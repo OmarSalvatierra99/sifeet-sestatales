@@ -193,7 +193,7 @@
           <h3>Titulares y administrativos del periodo</h3>
           <div class="table-wrap">
             <table class="table-compact">
-              <thead>
+              <thead id="obsResponsablesHead">
                 <tr>
                   <th>Ente</th>
                   <th>Tipo auditoría</th>
@@ -567,30 +567,27 @@
         if (!obsResponsablesBody) {
           return;
         }
-        if (!cedulaResultados.value) {
-          obsResponsablesBody.innerHTML = `
-            <tr>
-              <td colspan="6" class="muted">Selecciona una cédula de resultados para consultar responsables.</td>
-            </tr>
-          `;
-          return;
-        }
-        const unique = new Map();
-        rows.forEach((row) => {
-          const key = [row.ente_id || "", row.ente_nombre || "", row.tipo_auditoria || ""].join("|");
-          if (!unique.has(key)) {
-            unique.set(key, row);
+        const obsResponsablesHead = document.getElementById("obsResponsablesHead");
+        const baseColumns = [
+          { key: "ente", label: "Ente", render: (row) => row.ente_nombre || "—" },
+          { key: "tipo_auditoria", label: "Tipo auditoría", render: (row) => row.tipo_auditoria || "—" },
+          { key: "titular", label: "Titular", render: (row) => formatNombreList(row.titulares) },
+          { key: "periodo_titular", label: "Periodo titular", render: (row) => formatPeriodoList(row.titulares) },
+          { key: "administrativo", label: "Administrativo", render: (row) => formatNombreList(row.administrativos) },
+          { key: "periodo_administrativo", label: "Periodo administrativo", render: (row) => formatPeriodoList(row.administrativos) },
+        ];
+        const renderMessage = (message, visibleColumns = baseColumns) => {
+          if (obsResponsablesHead) {
+            obsResponsablesHead.innerHTML = `
+              <tr>${visibleColumns.map((column) => `<th>${column.label}</th>`).join("")}</tr>
+            `;
           }
-        });
-        const responsables = Array.from(unique.values());
-        if (!responsables.length) {
           obsResponsablesBody.innerHTML = `
             <tr>
-              <td colspan="6" class="muted">Sin responsables para la cédula seleccionada.</td>
+              <td colspan="${visibleColumns.length}" class="muted">${message}</td>
             </tr>
           `;
-          return;
-        }
+        };
         const formatNombreList = (items) => {
           if (!items || !items.length) {
             return "—";
@@ -603,16 +600,45 @@
           }
           return items.map((item) => item.periodo || "—").join("<br>");
         };
-        obsResponsablesBody.innerHTML = responsables.map((row) => `
-          <tr>
-            <td>${row.ente_nombre || "—"}</td>
-            <td>${row.tipo_auditoria || "—"}</td>
-            <td>${formatNombreList(row.titulares)}</td>
-            <td>${formatPeriodoList(row.titulares)}</td>
-            <td>${formatNombreList(row.administrativos)}</td>
-            <td>${formatPeriodoList(row.administrativos)}</td>
-          </tr>
-        `).join("");
+        if (!cedulaResultados.value) {
+          renderMessage("Selecciona una cédula de resultados para consultar responsables.");
+          return;
+        }
+        const unique = new Map();
+        rows.forEach((row) => {
+          const key = [row.ente_id || "", row.ente_nombre || "", row.tipo_auditoria || ""].join("|");
+          if (!unique.has(key)) {
+            unique.set(key, row);
+          }
+        });
+        const responsables = Array.from(unique.values());
+        if (!responsables.length) {
+          renderMessage("Sin responsables para la cédula seleccionada.");
+          return;
+        }
+        const hasTitulares = responsables.some((row) => Array.isArray(row.titulares) && row.titulares.length);
+        const hasAdministrativos = responsables.some((row) => Array.isArray(row.administrativos) && row.administrativos.length);
+        const visibleColumns = baseColumns.filter((column) => {
+          if (column.key === "titular" || column.key === "periodo_titular") {
+            return hasTitulares;
+          }
+          if (column.key === "administrativo" || column.key === "periodo_administrativo") {
+            return hasAdministrativos;
+          }
+          return true;
+        });
+        if (obsResponsablesHead) {
+          obsResponsablesHead.innerHTML = `
+            <tr>${visibleColumns.map((column) => `<th>${column.label}</th>`).join("")}</tr>
+          `;
+        }
+        obsResponsablesBody.innerHTML = responsables
+          .map((row) => `
+            <tr>
+              ${visibleColumns.map((column) => `<td>${column.render(row)}</td>`).join("")}
+            </tr>
+          `)
+          .join("");
       };
 
       const formatMonto = (value) => {

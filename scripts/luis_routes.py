@@ -1170,7 +1170,11 @@ def register_luis_routes(app, deps):
                     continue
                 payload = {
                     "nombre": item["nombre"],
-                    "periodo": item["periodo"],
+                    "periodo": (
+                        row["periodo_cedula"]
+                        if item["tipo_registro"] == "director_administrativo"
+                        else item["periodo"]
+                    ),
                 }
                 key = (payload["nombre"], payload["periodo"])
                 if item["tipo_registro"] == "titular":
