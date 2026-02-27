@@ -308,6 +308,7 @@ def register_gabo_routes(app, deps):
                     """
                     INSERT INTO observaciones (
                         ejercicio,
+                        auditoria,
                         ente_id,
                         ente_numero,
                         ente_numero_sort,
@@ -315,13 +316,16 @@ def register_gabo_routes(app, deps):
                         tipo_auditoria,
                         fuente_financiamiento,
                         ramo_33,
+                        periodo,
                         periodo_cedula,
                         periodo_titular,
                         oficio,
                         fecha_notificacion,
                         tipo_anexo,
                         numero_observacion,
+                        estatus,
                         estado,
+                        monto,
                         monto_pdp_emitido,
                         monto_pdp_solventado,
                         monto_pdp_pendiente,
@@ -329,10 +333,11 @@ def register_gabo_routes(app, deps):
                         pdp_subconcepto_irregularidad,
                         created_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         ejercicio,
+                        tipo_auditoria,
                         ente_id,
                         ente_numero,
                         parse_ente_numero_sort(ente_numero),
@@ -341,12 +346,15 @@ def register_gabo_routes(app, deps):
                         fuente_nombre,
                         ramo_33,
                         periodo_cedula,
+                        periodo_cedula,
                         periodo_titular or periodo_cedula,
                         oficio,
                         fecha_notificacion,
                         tipo_anexo,
                         numero_observacion,
                         estado,
+                        estado,
+                        monto_emitido,
                         monto_emitido,
                         monto_pdp_solventado if tipo_anexo == "PDP" else None,
                         monto_pdp_pendiente if tipo_anexo == "PDP" else None,
@@ -402,7 +410,7 @@ def register_gabo_routes(app, deps):
     @gabo_required
     def carga_entes_por_ejercicio():
         ejercicio = (request.args.get("ejercicio") or "").strip()
-        if not ejercicio or ejercicio != TITULAR_EJERCICIO_FIJO:
+        if not ejercicio:
             return jsonify([])
 
         db = get_db()
@@ -427,7 +435,7 @@ def register_gabo_routes(app, deps):
         ejercicio = (request.args.get("ejercicio") or "").strip()
         ente_id = normalize_ente_id(request.args.get("ente_id", ""))
         tipo_auditoria = (request.args.get("tipo_auditoria") or "").strip()
-        if not ejercicio or ejercicio != TITULAR_EJERCICIO_FIJO or not ente_id:
+        if not ejercicio or not ente_id:
             return jsonify([])
 
         db = get_db()
@@ -474,11 +482,82 @@ def register_gabo_routes(app, deps):
             }
         )
 
+    @app.get("/carga/observaciones-cargadas")
+    @gabo_required
+    def carga_observaciones_cargadas():
+        ejercicio = (request.args.get("ejercicio") or "").strip()
+        ente_id = normalize_ente_id(request.args.get("ente_id", ""))
+        tipo_auditoria = (request.args.get("tipo_auditoria") or "").strip()
+        fuente = " ".join((request.args.get("fuente") or "").split())
+        periodo = " ".join((request.args.get("periodo") or "").split())
+        oficio = " ".join((request.args.get("oficio") or "").split())
+        if not ejercicio or not ente_id or not tipo_auditoria:
+            return jsonify([])
+
+        db = get_db()
+        params: list[str] = [ejercicio, ente_id, tipo_auditoria]
+        where_extra: list[str] = []
+        if fuente:
+            where_extra.append("LOWER(TRIM(COALESCE(fuente_financiamiento, ''))) = LOWER(TRIM(COALESCE(?, '')))")
+            params.append(fuente)
+        if periodo:
+            where_extra.append("LOWER(TRIM(COALESCE(periodo_cedula, ''))) = LOWER(TRIM(COALESCE(?, '')))")
+            params.append(periodo)
+        if oficio:
+            where_extra.append("LOWER(TRIM(COALESCE(oficio, ''))) = LOWER(TRIM(COALESCE(?, '')))")
+            params.append(oficio)
+
+        where_sql = ""
+        if where_extra:
+            where_sql = " AND " + " AND ".join(where_extra)
+
+        rows = db.execute(
+            f"""
+            SELECT
+                TRIM(COALESCE(tipo_anexo, '')) AS tipo_anexo,
+                numero_observacion,
+                TRIM(COALESCE(estado, '')) AS estado,
+                monto_pdp_emitido,
+                TRIM(COALESCE(pdp_concepto_irregularidad, '')) AS pdp_concepto_irregularidad,
+                TRIM(COALESCE(pdp_subconcepto_irregularidad, '')) AS pdp_subconcepto_irregularidad
+            FROM observaciones
+            WHERE TRIM(COALESCE(ejercicio, '')) = ?
+              AND {normalize_ente_id_sql('ente_id')} = ?
+              AND TRIM(COALESCE(tipo_auditoria, '')) = ?
+              {where_sql}
+            ORDER BY
+              CASE TRIM(COALESCE(tipo_anexo, ''))
+                WHEN 'SA' THEN 1
+                WHEN 'PDP' THEN 2
+                WHEN 'PRAS' THEN 3
+                WHEN 'PEFCF' THEN 4
+                WHEN 'R' THEN 5
+                ELSE 9
+              END,
+              COALESCE(numero_observacion, 0)
+            LIMIT 1200
+            """,
+            params,
+        ).fetchall()
+        return jsonify([dict(row) for row in rows])
+
     @app.route("/carga", methods=["GET", "POST"])
     @gabo_required
     def carga():
         user = get_current_user()
         db = get_db()
+        manual_ejercicios_rows = db.execute(
+            """
+            SELECT DISTINCT TRIM(COALESCE(ejercicio, '')) AS ejercicio
+            FROM entes_detalle
+            WHERE TRIM(COALESCE(ejercicio, '')) != ''
+            ORDER BY CAST(TRIM(COALESCE(ejercicio, '')) AS INTEGER) DESC, ejercicio DESC
+            """
+        ).fetchall()
+        manual_ejercicios = [row["ejercicio"] for row in manual_ejercicios_rows]
+        if not manual_ejercicios:
+            manual_ejercicios = [TITULAR_EJERCICIO_FIJO]
+        manual_ejercicio_default = manual_ejercicios[0] if manual_ejercicios else TITULAR_EJERCICIO_FIJO
         fuentes_rows = db.execute(
             """
             SELECT id, nombre
@@ -511,7 +590,7 @@ def register_gabo_routes(app, deps):
             "manual_administrativo_nombre": "",
             "manual_numero_oficio": "",
             "manual_asunto": "Notificación de Cédula de Resultados",
-            "manual_ejercicio": TITULAR_EJERCICIO_FIJO,
+            "manual_ejercicio": manual_ejercicio_default,
             "manual_fuente_id": "",
             "manual_fuente_nueva": "",
             "manual_periodo": "",
@@ -560,7 +639,7 @@ def register_gabo_routes(app, deps):
                     "manual_administrativo_nombre": (request.form.get("manual_administrativo_nombre") or "").strip(),
                     "manual_numero_oficio": (request.form.get("manual_numero_oficio") or "").strip(),
                     "manual_asunto": (request.form.get("manual_asunto") or "").strip() or "Notificación de Cédula de Resultados",
-                    "manual_ejercicio": (request.form.get("manual_ejercicio") or "").strip() or TITULAR_EJERCICIO_FIJO,
+                    "manual_ejercicio": (request.form.get("manual_ejercicio") or "").strip() or manual_ejercicio_default,
                     "manual_fuente_id": (request.form.get("manual_fuente_id") or "").strip(),
                     "manual_fuente_nueva": (request.form.get("manual_fuente_nueva") or "").strip(),
                     "manual_periodo": (request.form.get("manual_periodo") or "").strip(),
@@ -782,8 +861,8 @@ def register_gabo_routes(app, deps):
                         raise ValueError("Debes seleccionar un asunto válido.")
                     if not ejercicio:
                         raise ValueError("Debes capturar el ejercicio.")
-                    if ejercicio != TITULAR_EJERCICIO_FIJO:
-                        raise ValueError("Solo se permite ejercicio 2025.")
+                    if ejercicio not in manual_ejercicios:
+                        raise ValueError("El ejercicio seleccionado no está disponible.")
                     if not fuente_id_raw:
                         raise ValueError("Debes seleccionar una fuente.")
                     if fuente_id_raw == "__new__" and not fuente_nueva:
@@ -1168,7 +1247,7 @@ def register_gabo_routes(app, deps):
                                             created_by,
                                             created_at
                                         )
-                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                         """,
                                         (
                                             manual_ente_id,
@@ -1353,11 +1432,23 @@ def register_gabo_routes(app, deps):
         ).fetchall()
         fuentes = [dict(row) for row in fuentes_rows]
         manual_ente_id_norm = normalize_ente_id(form_data["manual_ente_id"])
-        manual_fuentes_rows = []
+        manual_entes_rows = db.execute(
+            """
+            SELECT
+                TRIM(COALESCE(ente_id, '')) AS ente_id,
+                TRIM(COALESCE(ente_numero, '')) AS ente_numero,
+                TRIM(COALESCE(ente_nombre, '')) AS ente_nombre
+            FROM entes_detalle
+            WHERE TRIM(COALESCE(ejercicio, '')) = ?
+              AND TRIM(COALESCE(ente_id, '')) != ''
+            ORDER BY CAST(COALESCE(NULLIF(ente_numero, ''), '0') AS REAL), ente_numero, ente_nombre
+            """,
+            (form_data["manual_ejercicio"],),
+        ).fetchall()
         if manual_ente_id_norm:
             manual_fuentes = fuentes_por_ente(
                 db,
-                TITULAR_EJERCICIO_FIJO,
+                form_data["manual_ejercicio"],
                 manual_ente_id_norm,
                 tipo_auditoria=form_data["manual_tipo_auditoria"],
             )
@@ -1373,9 +1464,10 @@ def register_gabo_routes(app, deps):
             form_data=form_data,
             fuentes=fuentes,
             manual_fuentes=manual_fuentes,
+            manual_ejercicios=manual_ejercicios,
             titular_ejercicios=titular_ejercicios,
             titular_entes=[dict(row) for row in titular_entes_rows],
-            manual_entes=[dict(row) for row in titular_entes_rows],
+            manual_entes=[dict(row) for row in manual_entes_rows],
             asuntos=[
                 "Notificación de Cédula de Resultados",
                 "Se emiten resultados de solventación del periodo",
