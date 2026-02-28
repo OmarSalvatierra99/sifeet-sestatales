@@ -1236,7 +1236,46 @@ tbody tr:hover td {
 }
 
 .loader-intro {
-  border-left: 4px solid var(--color-gold);
+  border-left: 4px solid var(--color-accent);
+}
+
+.loader-flow-grid {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.loader-flow-item {
+  border: 1px solid var(--color-border);
+  background: #f9fbf9;
+  border-radius: 12px;
+  padding: 0.8rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.loader-flow-item span {
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.loader-flow-item strong {
+  color: var(--color-accent);
+  font-size: 0.93rem;
+}
+
+.loader-flow-item p {
+  color: var(--color-muted);
+  font-size: 0.82rem;
 }
 
 .loader-tip {
@@ -1255,6 +1294,55 @@ tbody tr:hover td {
 
 .loader-manual-form {
   margin-top: 1rem;
+}
+
+.loader-stepper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.loader-step-chip {
+  border: 1px solid var(--color-border);
+  background: #f8faf8;
+  color: var(--color-muted);
+  border-radius: 999px;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.loader-step-chip.is-active {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.loader-step-section {
+  display: none;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: #fcfdfc;
+  padding: 1rem;
+}
+
+.loader-step-section.is-active {
+  display: block;
+}
+
+.loader-step-head {
+  margin-bottom: 0.85rem;
+}
+
+.loader-step-head h3 {
+  color: var(--color-accent);
+  font-size: 1rem;
+}
+
+.loader-step-head p {
+  color: var(--color-muted);
+  font-size: 0.84rem;
 }
 
 .loader-manual-subsection {
@@ -1311,6 +1399,206 @@ tbody tr:hover td {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
+}
+
+.loader-step-nav {
+  margin-top: 0.75rem;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.loader-inline-action {
+  justify-content: flex-end;
+}
+
+.loader-inline-action .btn-secondary {
+  width: 100%;
+}
+
+.loader-obs-metrics {
+  margin-top: 0.55rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.loader-obs-chip {
+  border: 1px solid var(--color-border);
+  background: #fff;
+  border-radius: 999px;
+  padding: 0.24rem 0.62rem;
+  color: var(--color-muted);
+  font-size: 0.78rem;
+}
+
+.loader-obs-chip strong {
+  color: var(--color-accent);
+}
+
+.loader-obs-toolbar {
+  margin: 0.7rem 0;
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: 0.55rem;
+}
+
+.loader-obs-table-wrap {
+  max-height: 430px;
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  box-shadow: 0 10px 24px rgba(20, 31, 24, 0.06);
+  background: #ffffff;
+}
+
+.loader-obs-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #ecf5ef;
+  color: #1d5038;
+  font-weight: 700;
+}
+
+.loader-obs-table td {
+  border-bottom: 1px solid #edf2ee;
+}
+
+.loader-obs-table .obs-row.is-emitido td {
+  background: #f4faf7;
+}
+
+.loader-obs-table .obs-row.is-pendiente td {
+  background: #fff7e6;
+}
+
+.loader-obs-table .obs-row.is-solventado td {
+  background: #ebf7ef;
+}
+
+.obs-status-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid transparent;
+}
+
+.obs-status-pill.is-emitido {
+  color: #2a5f43;
+  background: #eaf5ee;
+  border-color: #c9e2d2;
+}
+
+.obs-status-pill.is-pendiente {
+  color: #7f4d00;
+  background: #fff2d7;
+  border-color: #f0cc88;
+}
+
+.obs-status-pill.is-solventado {
+  color: #0f5c2e;
+  background: #def2e5;
+  border-color: #a9d8b7;
+}
+
+.obs-save-btn {
+  white-space: nowrap;
+  border-radius: 8px;
+}
+
+.loader-obs-table .obs-monto-emitido-input,
+.loader-obs-table .obs-monto-solventado-input,
+.loader-obs-table .obs-monto-pendiente-input {
+  width: 120px;
+  min-height: 2.1rem;
+  padding: 0.35rem 0.45rem;
+}
+
+.loader-obs-table .obs-monto-pendiente-input[readonly] {
+  background: #f4f7f5;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.loader-obs-table .obs-monto-pendiente-input.is-negative[readonly] {
+  background: #fff2f2;
+  color: #b3261e;
+}
+
+.loader-obs-table td:last-child {
+  white-space: nowrap;
+}
+
+.loader-preview-metrics {
+  margin: 0.55rem 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.loader-preview-table-wrap {
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.loader-preview-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #eef4fb;
+  color: #1f3a5a;
+  font-weight: 700;
+}
+
+.loader-preview-table td {
+  border-bottom: 1px solid #edf2ee;
+}
+
+.loader-solv-table-wrap {
+  margin-top: 0.4rem;
+}
+
+.loader-solv-table th,
+.loader-solv-table td {
+  vertical-align: middle;
+}
+
+.loader-solv-table td strong {
+  color: var(--color-accent);
+}
+
+.loader-solv-table input[readonly] {
+  background: #f4f7f5;
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+.loader-solv-table input.is-negative[readonly] {
+  background: #fff2f2;
+  color: #b3261e;
+}
+
+.obs-estado-input.is-emitido {
+  border-color: #bcd2c1;
+  background: #f7fbf8;
+}
+
+.obs-estado-input.is-pendiente {
+  border-color: #e7c27a;
+  background: #fff8eb;
+}
+
+.obs-estado-input.is-solventado {
+  border-color: #8dc39a;
+  background: #eef8f0;
 }
 
 .loader-result {
@@ -1406,6 +1694,10 @@ tbody tr:hover td {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .loader-flow-grid {
+    grid-template-columns: 1fr;
+  }
+
   .login-shell {
     max-width: 520px;
   }
@@ -1498,6 +1790,18 @@ tbody tr:hover td {
   .loader-manual-grid-5,
   .loader-manual-grid-3 {
     grid-template-columns: 1fr;
+  }
+
+  .loader-obs-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .loader-step-nav {
+    justify-content: stretch;
+  }
+
+  .loader-step-nav .btn-secondary {
+    width: 100%;
   }
 
   .floating-clear-btn {

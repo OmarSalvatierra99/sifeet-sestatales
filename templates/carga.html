@@ -30,6 +30,29 @@
   </header>
 
   <main class="page-content loader-content">
+    <section class="panel loader-intro">
+      <div class="panel-header">
+        <h2>Captura en tres pasos: contexto, detalle técnico y revisión final para reducir errores al guardar.</h2>
+      </div>
+      <div class="loader-flow-grid">
+        <article class="loader-flow-item">
+          <span>01</span>
+          <strong>Contexto del oficio</strong>
+          <p>Ejercicio, ente, tipo de auditoría, asunto y fuente.</p>
+        </article>
+        <article class="loader-flow-item">
+          <span>02</span>
+          <strong>Detalle por observación</strong>
+          <p>Cantidades por anexo y captura PDP por observación.</p>
+        </article>
+        <article class="loader-flow-item">
+          <span>03</span>
+          <strong>Revisión y guardado</strong>
+          <p>Consulta observaciones cargadas, valida y guarda.</p>
+        </article>
+      </div>
+    </section>
+
     <section class="panel loader-card">
       <div class="panel-header">
         <h2>Captura manual de oficio y resultados</h2>
@@ -39,165 +62,285 @@
           {{ manual_result.message }}
         </div>
       {% endif %}
-      <form class="record-form loader-manual-form" method="POST" autocomplete="off">
+      <form class="record-form loader-manual-form" method="POST" autocomplete="off" id="manualCaptureForm">
         <input type="hidden" name="manual_id" value="{{ form_data.manual_id }}">
-        <div class="form-grid">
-          <div class="field">
-            <label for="manual_ejercicio">Ejercicio</label>
-            <select id="manual_ejercicio" name="manual_ejercicio" required>
-              {% for ejercicio in manual_ejercicios %}
-                <option value="{{ ejercicio }}" {% if form_data.manual_ejercicio == ejercicio %}selected{% endif %}>{{ ejercicio }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="field">
-            <label for="manual_ente_id">Ente</label>
-            <select id="manual_ente_id" name="manual_ente_id" required>
-              <option value="">Selecciona un ente</option>
-              {% for ente in manual_entes %}
-                <option value="{{ ente.ente_id }}" {% if form_data.manual_ente_id == ente.ente_id %}selected{% endif %}>
-                  {{ ente.ente_numero }} - {{ ente.ente_nombre }}
-                </option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="field">
-            <label for="manual_tipo_auditoria">Tipo de auditoría</label>
-            <select id="manual_tipo_auditoria" name="manual_tipo_auditoria" required>
-              <option value="Financiera" {% if form_data.manual_tipo_auditoria == "Financiera" %}selected{% endif %}>Financiero</option>
-              <option value="Financiera y Obra Pública" {% if form_data.manual_tipo_auditoria == "Financiera y Obra Pública" %}selected{% endif %}>Financiero y Obra Pública</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="manual_asunto">Asunto</label>
-            <select id="manual_asunto" name="manual_asunto" required>
-              {% for option in asuntos %}
-                <option value="{{ option }}" {% if form_data.manual_asunto == option %}selected{% endif %}>{{ option }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="field">
-            <label for="manual_numero_oficio">Número de oficio</label>
-            <input id="manual_numero_oficio" name="manual_numero_oficio" type="text" value="{{ form_data.manual_numero_oficio }}" required>
-          </div>
-          <div class="field">
-            <label for="manual_fuente_id">Fuente de Financiamiento</label>
-            <select id="manual_fuente_id" name="manual_fuente_id">
-              <option value="">{% if manual_fuentes %}Selecciona una fuente{% else %}Selecciona un ente primero{% endif %}</option>
-              {% for fuente in manual_fuentes %}
-                <option value="{{ fuente.id }}" {% if form_data.manual_fuente_id == (fuente.id|string) %}selected{% endif %}>
-                  {{ fuente.nombre }}
-                </option>
-              {% endfor %}
-              <option value="__new__" {% if form_data.manual_fuente_id == "__new__" %}selected{% endif %}>+ Agregar nueva fuente...</option>
-            </select>
-            <p class="helper">Se muestran según el ente seleccionado. Si no existe, usa la opción "+ Agregar nueva fuente...".</p>
-            <div id="manual_fuente_nueva_wrap" class="field" style="{% if form_data.manual_fuente_id != '__new__' %}display:none;{% endif %}">
-              <label for="manual_fuente_nueva">Nueva fuente</label>
-              <input id="manual_fuente_nueva" name="manual_fuente_nueva" type="text" value="{{ form_data.manual_fuente_nueva }}" placeholder="Escribe la nueva fuente">
-            </div>
-          </div>
-          <div class="field field-full">
-            <label for="manual_periodo">Periodo</label>
-            <input id="manual_periodo" name="manual_periodo" type="text" value="{{ form_data.manual_periodo }}" placeholder="Ej. 01 de enero al 31 de diciembre" required>
-          </div>
-          <div class="field">
-            <label for="manual_fecha_notificacion">Fecha de notificación</label>
-            <input id="manual_fecha_notificacion" name="manual_fecha_notificacion" type="text" value="{{ form_data.manual_fecha_notificacion }}" placeholder="Ej. 12-feb-24" required>
-          </div>
+        <div class="loader-stepper" id="manualStepper">
+          <button type="button" class="loader-step-chip is-active" data-step-target="1">1. Contexto</button>
+          <button type="button" class="loader-step-chip" data-step-target="2">2. Detalle</button>
+          <button type="button" class="loader-step-chip" data-step-target="3">3. Revisión</button>
         </div>
 
-        <div
-          class="loader-manual-subsection"
-          id="manual-cantidades-cedula"
-          style="{% if form_data.manual_asunto != 'Notificación de Cédula de Resultados' %}display:none;{% endif %}"
-        >
-          <h3>Cantidad pot tipo de Anexo</h3>
-          <div class="form-grid loader-manual-grid-5">
+        <section class="loader-step-section is-active" data-step="1">
+          <div class="loader-step-head">
+            <h3>Contexto del oficio</h3>
+            <p>Define los campos base antes de capturar observaciones.</p>
+          </div>
+          <div class="form-grid">
             <div class="field">
-              <label for="manual_cantidad_sa">SA</label>
-              <input id="manual_cantidad_sa" name="manual_cantidad_sa" type="number" min="0" value="{{ form_data.manual_cantidad_sa }}" required>
+              <label for="manual_ejercicio">Ejercicio</label>
+              <select id="manual_ejercicio" name="manual_ejercicio" required>
+                {% for ejercicio in manual_ejercicios %}
+                  <option value="{{ ejercicio }}" {% if form_data.manual_ejercicio == ejercicio %}selected{% endif %}>{{ ejercicio }}</option>
+                {% endfor %}
+              </select>
             </div>
             <div class="field">
-              <label for="manual_cantidad_pdp">PDP</label>
-              <input id="manual_cantidad_pdp" name="manual_cantidad_pdp" type="number" min="0" value="{{ form_data.manual_cantidad_pdp }}" required>
+              <label for="manual_ente_id">Ente</label>
+              <select id="manual_ente_id" name="manual_ente_id" required>
+                <option value="">Selecciona un ente</option>
+                {% for ente in manual_entes %}
+                  <option value="{{ ente.ente_id }}" {% if form_data.manual_ente_id == ente.ente_id %}selected{% endif %}>
+                    {{ ente.ente_numero }} - {{ ente.ente_nombre }}
+                  </option>
+                {% endfor %}
+              </select>
             </div>
             <div class="field">
-              <label for="manual_cantidad_pras">PRAS</label>
-              <input id="manual_cantidad_pras" name="manual_cantidad_pras" type="number" min="0" value="{{ form_data.manual_cantidad_pras }}" required>
+              <label for="manual_tipo_auditoria">Tipo de auditoría</label>
+              <select id="manual_tipo_auditoria" name="manual_tipo_auditoria" required>
+                <option value="Financiera" {% if form_data.manual_tipo_auditoria == "Financiera" %}selected{% endif %}>Financiero</option>
+                <option value="Financiera y Obra Pública" {% if form_data.manual_tipo_auditoria == "Financiera y Obra Pública" %}selected{% endif %}>Financiero y Obra Pública</option>
+              </select>
             </div>
             <div class="field">
-              <label for="manual_cantidad_pefcf">PEFCF</label>
-              <input id="manual_cantidad_pefcf" name="manual_cantidad_pefcf" type="number" min="0" value="{{ form_data.manual_cantidad_pefcf }}" required>
+              <label for="manual_asunto">Asunto</label>
+              <select id="manual_asunto" name="manual_asunto" required>
+                {% for option in asuntos %}
+                  <option value="{{ option }}" {% if form_data.manual_asunto == option %}selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+              </select>
             </div>
             <div class="field">
-              <label for="manual_cantidad_r">R</label>
-              <input id="manual_cantidad_r" name="manual_cantidad_r" type="number" min="0" value="{{ form_data.manual_cantidad_r }}" required>
+              <label for="manual_numero_oficio">Número de oficio</label>
+              <input id="manual_numero_oficio" name="manual_numero_oficio" type="text" value="{{ form_data.manual_numero_oficio }}" required>
+            </div>
+            <div class="field">
+              <label for="manual_fuente_id">Fuente de Financiamiento</label>
+              <select id="manual_fuente_id" name="manual_fuente_id">
+                <option value="">{% if manual_fuentes %}Selecciona una fuente{% else %}Selecciona un ente primero{% endif %}</option>
+                {% for fuente in manual_fuentes %}
+                  <option value="{{ fuente.id }}" {% if form_data.manual_fuente_id == (fuente.id|string) %}selected{% endif %}>
+                    {{ fuente.nombre }}
+                  </option>
+                {% endfor %}
+                <option value="__new__" {% if form_data.manual_fuente_id == "__new__" %}selected{% endif %}>+ Agregar nueva fuente...</option>
+              </select>
+              <p class="helper">Se muestran según el ente seleccionado. Si no existe, usa la opción "+ Agregar nueva fuente...".</p>
+              <div id="manual_fuente_nueva_wrap" class="field" style="{% if form_data.manual_fuente_id != '__new__' %}display:none;{% endif %}">
+                <label for="manual_fuente_nueva">Nueva fuente</label>
+                <input id="manual_fuente_nueva" name="manual_fuente_nueva" type="text" value="{{ form_data.manual_fuente_nueva }}" placeholder="Escribe la nueva fuente">
+              </div>
+            </div>
+            <div class="field field-full">
+              <label for="manual_periodo">Periodo</label>
+              <input id="manual_periodo" name="manual_periodo" type="text" value="{{ form_data.manual_periodo }}" placeholder="Ej. 01 de enero al 31 de diciembre" required>
+            </div>
+            <div class="field">
+              <label for="manual_fecha_notificacion">Fecha de notificación</label>
+              <input id="manual_fecha_notificacion" name="manual_fecha_notificacion" type="text" value="{{ form_data.manual_fecha_notificacion }}" placeholder="Ej. 12-feb-24" required>
+            </div>
+            <div class="field loader-inline-action">
+              <label>&nbsp;</label>
+              <button type="button" class="btn-secondary" id="manualSetTodayBtn">Usar fecha de hoy</button>
             </div>
           </div>
-        </div>
-        <input type="hidden" id="manual_pdp_detalle_json" name="manual_pdp_detalle_json" value="{{ form_data.manual_pdp_detalle_json|e }}">
-        <div
-          class="loader-manual-subsection"
-          id="manual-pdp-detalle"
-          style="{% if form_data.manual_asunto != 'Notificación de Cédula de Resultados' or (form_data.manual_cantidad_pdp|int) <= 0 %}display:none;{% endif %}"
-        >
-          <h3>Detalle de observaciones PDP</h3>
-          <div class="form-grid loader-manual-grid-3">
-            <div class="field">
-              <label for="manual_pdp_selector">Observación PDP</label>
-              <select id="manual_pdp_selector"></select>
+          <div class="loader-step-nav">
+            <button type="button" class="btn-secondary" data-step-nav="next">Continuar a detalle</button>
+          </div>
+        </section>
+
+        <section class="loader-step-section" data-step="2">
+          <div class="loader-step-head">
+            <h3>Detalle de observaciones</h3>
+            <p>Captura cantidades por anexo y complementa información PDP por observación.</p>
+          </div>
+          <div
+            class="loader-manual-subsection"
+            id="manual-cantidades-cedula"
+            style="{% if form_data.manual_asunto != 'Notificación de Cédula de Resultados' %}display:none;{% endif %}"
+          >
+            <h3>Cantidad por tipo de anexo</h3>
+            <div class="form-grid loader-manual-grid-5">
+              <div class="field">
+                <label for="manual_cantidad_sa">SA</label>
+                <input id="manual_cantidad_sa" name="manual_cantidad_sa" type="number" min="0" value="{{ form_data.manual_cantidad_sa }}" required>
+              </div>
+              <div class="field">
+                <label for="manual_cantidad_pdp">PDP</label>
+                <input id="manual_cantidad_pdp" name="manual_cantidad_pdp" type="number" min="0" value="{{ form_data.manual_cantidad_pdp }}" required>
+              </div>
+              <div class="field">
+                <label for="manual_cantidad_pras">PRAS</label>
+                <input id="manual_cantidad_pras" name="manual_cantidad_pras" type="number" min="0" value="{{ form_data.manual_cantidad_pras }}" required>
+              </div>
+              <div class="field">
+                <label for="manual_cantidad_pefcf">PEFCF</label>
+                <input id="manual_cantidad_pefcf" name="manual_cantidad_pefcf" type="number" min="0" value="{{ form_data.manual_cantidad_pefcf }}" required>
+              </div>
+              <div class="field">
+                <label for="manual_cantidad_r">R</label>
+                <input id="manual_cantidad_r" name="manual_cantidad_r" type="number" min="0" value="{{ form_data.manual_cantidad_r }}" required>
+              </div>
             </div>
-            <div class="field">
-              <label for="manual_pdp_monto">Monto PDP</label>
-              <input id="manual_pdp_monto" type="number" min="0" step="0.01" placeholder="0.00">
+          </div>
+          <input type="hidden" id="manual_solventacion_detalle_json" name="manual_solventacion_detalle_json" value="{{ form_data.manual_solventacion_detalle_json|e }}">
+          <div
+            class="loader-manual-subsection"
+            id="manual-solventacion-detalle"
+            style="{% if form_data.manual_asunto != 'Se emiten resultados de solventación del periodo' %}display:none;{% endif %}"
+          >
+            <h3>Detalle de observaciones de solventación</h3>
+            <p class="helper">Captura por tipo. Si cantidad es 0, los montos se consideran en 0. Pendiente = emitido - solventado.</p>
+            <div class="table-wrap loader-solv-table-wrap">
+              <table class="table-compact loader-solv-table">
+                <thead>
+                  <tr>
+                    <th>Tipo</th>
+                    <th>Cantidad</th>
+                    <th>Monto emitido</th>
+                    <th>Monto solventado</th>
+                    <th>Monto pendiente</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for tipo in ["PDP", "PEFCF", "PRAS", "R", "SA"] %}
+                    <tr data-solv-row="{{ tipo }}">
+                      <td><strong>{{ tipo }}</strong></td>
+                      <td><input type="number" min="0" step="1" class="solv-cantidad-input" data-solv-field="cantidad"></td>
+                      <td><input type="number" min="0" step="0.01" class="solv-emitido-input" data-solv-field="emitido" placeholder="0.00"></td>
+                      <td><input type="number" min="0" step="0.01" class="solv-solventado-input" data-solv-field="solventado" placeholder="0.00"></td>
+                      <td><input type="number" class="solv-pendiente-input" data-solv-field="pendiente" value="0.00" readonly></td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
             </div>
-            <div class="field">
-              <label for="manual_pdp_concepto">Concepto de irregularidad</label>
-              <select id="manual_pdp_concepto">
-                <option value="">Selecciona un concepto</option>
+            <p class="helper" id="manual_solventacion_error"></p>
+          </div>
+          <input type="hidden" id="manual_pdp_detalle_json" name="manual_pdp_detalle_json" value="{{ form_data.manual_pdp_detalle_json|e }}">
+          <div
+            class="loader-manual-subsection"
+            id="manual-pdp-detalle"
+            style="{% if form_data.manual_asunto != 'Notificación de Cédula de Resultados' or (form_data.manual_cantidad_pdp|int) <= 0 %}display:none;{% endif %}"
+          >
+            <h3>Detalle de observaciones PDP</h3>
+            <div class="form-grid loader-manual-grid-3">
+              <div class="field">
+                <label for="manual_pdp_selector">Observación PDP</label>
+                <select id="manual_pdp_selector"></select>
+              </div>
+              <div class="field">
+                <label for="manual_pdp_monto">Monto PDP</label>
+                <input id="manual_pdp_monto" type="number" min="0" step="0.01" placeholder="0.00">
+              </div>
+              <div class="field">
+                <label for="manual_pdp_concepto">Concepto de irregularidad</label>
+                <select id="manual_pdp_concepto">
+                  <option value="">Selecciona un concepto</option>
+                </select>
+              </div>
+            </div>
+            <div class="field field-full">
+              <label for="manual_pdp_subconcepto">Subconcepto de irregularidad</label>
+              <select id="manual_pdp_subconcepto">
+                <option value="">Selecciona un subconcepto</option>
               </select>
             </div>
           </div>
-          <div class="field field-full">
-            <label for="manual_pdp_subconcepto">Subconcepto de irregularidad</label>
-            <select id="manual_pdp_subconcepto">
-              <option value="">Selecciona un subconcepto</option>
-            </select>
+          <div class="loader-step-nav">
+            <button type="button" class="btn-secondary" data-step-nav="prev">Volver</button>
+            <button type="button" class="btn-secondary" data-step-nav="next">Continuar a revisión</button>
           </div>
-        </div>
-        <div class="loader-actions">
-          <button class="btn-primary" type="submit" name="action" value="manual_save">
-            {% if form_data.manual_id %}Guardar cambios{% else %}Guardar captura manual{% endif %}
-          </button>
-        </div>
-        <div
-          class="loader-manual-subsection"
-          id="manual-observaciones-cargadas"
-          style="{% if form_data.manual_asunto != 'Se emiten resultados de solventación del periodo' %}display:none;{% endif %}"
-        >
-          <h3>Observaciones cargadas</h3>
-          <p class="helper" id="manual_observaciones_info">Selecciona ejercicio y ente para consultar.</p>
-          <div class="table-wrap">
-            <table class="table-compact">
-              <thead>
-                <tr>
-                  <th>Anexo</th>
-                  <th>No. Obs</th>
-                  <th>Estado</th>
-                  <th>Concepto PDP</th>
-                  <th>Subconcepto PDP</th>
-                  <th>Monto PDP</th>
-                </tr>
-              </thead>
-              <tbody id="manualObservacionesBody">
-                <tr>
-                  <td colspan="6" class="muted">Sin consulta.</td>
-                </tr>
-              </tbody>
-            </table>
+        </section>
+
+        <section class="loader-step-section" data-step="3">
+          <div class="loader-step-head">
+            <h3>Revisión y guardado</h3>
+            <p>Vista previa en tiempo real y consulta de observaciones cargadas antes de confirmar.</p>
           </div>
-        </div>
+          <div class="loader-manual-subsection">
+            <h3>Vista previa de captura (tiempo real)</h3>
+            <p class="helper">Tabla de solo lectura con el resultado de lo capturado en detalle.</p>
+            <div class="loader-preview-metrics">
+              <span class="loader-obs-chip">Observaciones: <strong id="previewMetricTotal">0</strong></span>
+              <span class="loader-obs-chip">Emitido: <strong id="previewMetricEmitido">$0.00</strong></span>
+              <span class="loader-obs-chip">Solventado: <strong id="previewMetricSolventado">$0.00</strong></span>
+              <span class="loader-obs-chip">Pendiente: <strong id="previewMetricPendiente">$0.00</strong></span>
+            </div>
+            <div class="table-wrap loader-preview-table-wrap">
+              <table class="table-compact loader-preview-table">
+                <thead>
+                  <tr>
+                    <th>Anexo</th>
+                    <th>No. Obs</th>
+                    <th>Estado</th>
+                    <th>Concepto PDP</th>
+                    <th>Subconcepto PDP</th>
+                    <th>Emitido</th>
+                    <th>Solventado</th>
+                    <th>Pendiente</th>
+                  </tr>
+                </thead>
+                <tbody id="manualPreviewBody">
+                  <tr>
+                    <td colspan="8" class="muted">Sin datos capturados.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div
+            class="loader-manual-subsection"
+            id="manual-observaciones-cargadas"
+            style="{% if form_data.manual_asunto != 'Se emiten resultados de solventación del periodo' %}display:none;{% endif %}"
+          >
+            <h3>Observaciones cargadas</h3>
+            <p class="helper" id="manual_observaciones_info">Selecciona ejercicio y ente para consultar.</p>
+            <div class="loader-obs-metrics">
+              <span class="loader-obs-chip">Total: <strong id="obsMetricTotal">0</strong></span>
+              <span class="loader-obs-chip">Pendiente: <strong id="obsMetricPendiente">0</strong></span>
+              <span class="loader-obs-chip">Solventado: <strong id="obsMetricSolventado">0</strong></span>
+            </div>
+            <div class="loader-obs-toolbar">
+              <input id="manual_observaciones_search" type="text" placeholder="Buscar por anexo, concepto o subconcepto">
+              <select id="manual_observaciones_estado_filter">
+                <option value="">Todos los estados</option>
+                <option value="Emitido">Emitido</option>
+                <option value="Pendiente">Pendiente</option>
+                <option value="Solventado">Solventado</option>
+              </select>
+            </div>
+            <div class="table-wrap loader-obs-table-wrap">
+              <table class="table-compact loader-obs-table">
+                <thead>
+                  <tr>
+                    <th>Anexo</th>
+                    <th>No. Obs</th>
+                    <th>Estado</th>
+                    <th>Concepto PDP</th>
+                    <th>Subconcepto PDP</th>
+                    <th>Emitido PDP</th>
+                    <th>Solventado PDP</th>
+                    <th>Pendiente PDP</th>
+                    <th>Acción</th>
+                  </tr>
+                </thead>
+                <tbody id="manualObservacionesBody">
+                  <tr>
+                    <td colspan="9" class="muted">Sin consulta.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="loader-actions">
+            <button class="btn-secondary" type="submit" name="action" value="manual_check">Validar duplicados</button>
+            <button class="btn-primary" type="submit" name="action" value="manual_save">
+              {% if form_data.manual_id %}Guardar cambios{% else %}Guardar captura manual{% endif %}
+            </button>
+            <button type="button" class="btn-secondary" data-step-nav="prev">Volver</button>
+          </div>
+        </section>
         {% if form_data.manual_id %}
           <p class="helper">Modo edición activo (ID {{ form_data.manual_id }}).</p>
         {% endif %}
@@ -377,6 +520,11 @@
     const manualObservacionesWrap = document.getElementById("manual-observaciones-cargadas");
     const manualObservacionesBody = document.getElementById("manualObservacionesBody");
     const manualObservacionesInfo = document.getElementById("manual_observaciones_info");
+    const manualPreviewBody = document.getElementById("manualPreviewBody");
+    const previewMetricTotal = document.getElementById("previewMetricTotal");
+    const previewMetricEmitido = document.getElementById("previewMetricEmitido");
+    const previewMetricSolventado = document.getElementById("previewMetricSolventado");
+    const previewMetricPendiente = document.getElementById("previewMetricPendiente");
     const blockCedula = document.getElementById("manual-cantidades-cedula");
     const manualCantidadPdp = document.getElementById("manual_cantidad_pdp");
     const manualPdpDetalleBlock = document.getElementById("manual-pdp-detalle");
@@ -385,7 +533,27 @@
     const manualPdpConcepto = document.getElementById("manual_pdp_concepto");
     const manualPdpSubconcepto = document.getElementById("manual_pdp_subconcepto");
     const manualPdpMonto = document.getElementById("manual_pdp_monto");
+    const manualSolventacionDetalleBlock = document.getElementById("manual-solventacion-detalle");
+    const manualSolventacionDetalleJson = document.getElementById("manual_solventacion_detalle_json");
+    const manualSolventacionError = document.getElementById("manual_solventacion_error");
+    const manualSetTodayBtn = document.getElementById("manualSetTodayBtn");
+    const manualCaptureForm = document.getElementById("manualCaptureForm");
+    const manualStepper = document.getElementById("manualStepper");
+    const stepChips = manualStepper ? Array.from(manualStepper.querySelectorAll("[data-step-target]")) : [];
+    const stepSections = Array.from(document.querySelectorAll(".loader-step-section[data-step]"));
+    const stepNavButtons = Array.from(document.querySelectorAll("[data-step-nav]"));
+    const manualObsSearch = document.getElementById("manual_observaciones_search");
+    const manualObsEstadoFilter = document.getElementById("manual_observaciones_estado_filter");
+    const obsMetricTotal = document.getElementById("obsMetricTotal");
+    const obsMetricPendiente = document.getElementById("obsMetricPendiente");
+    const obsMetricSolventado = document.getElementById("obsMetricSolventado");
     const cedulaInputs = blockCedula ? Array.from(blockCedula.querySelectorAll("input")) : [];
+    const solventacionRows = manualSolventacionDetalleBlock
+      ? Array.from(manualSolventacionDetalleBlock.querySelectorAll("[data-solv-row]"))
+      : [];
+    const solventacionInputs = manualSolventacionDetalleBlock
+      ? Array.from(manualSolventacionDetalleBlock.querySelectorAll("input[data-solv-field]"))
+      : [];
     const asuntoCedula = "Notificación de Cédula de Resultados";
     const asuntoSolventacion = "Se emiten resultados de solventación del periodo";
     const pdpFields = [manualPdpSelector, manualPdpConcepto, manualPdpSubconcepto, manualPdpMonto];
@@ -393,6 +561,9 @@
     let pdpDetalleState = [];
     let pdpConceptCatalog = [];
     let pdpSubconceptCatalog = {};
+    let currentManualStep = 1;
+    let observacionesAllRows = [];
+    const solventacionTipos = ["PDP", "PEFCF", "PRAS", "R", "SA"];
 
     const escapeHtml = (value) => (
       String(value || "")
@@ -402,6 +573,38 @@
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;")
     );
+
+    const formatMoney = (value) => {
+      const amount = Number(value) || 0;
+      return amount.toLocaleString("es-MX", { style: "currency", currency: "MXN", minimumFractionDigits: 2 });
+    };
+
+    const normalizeEstadoForUi = (value) => {
+      const key = String(value || "").trim().toLowerCase();
+      if (key === "e" || key === "emitido") return "Emitido";
+      if (key === "p" || key === "pendiente") return "Pendiente";
+      if (key === "s" || key === "solventado") return "Solventado";
+      return "Emitido";
+    };
+
+    const estadoClassName = (estado) => {
+      if (estado === "Pendiente") return "is-pendiente";
+      if (estado === "Solventado") return "is-solventado";
+      return "is-emitido";
+    };
+
+    const setManualStep = (nextStep) => {
+      const step = Math.min(3, Math.max(1, Number(nextStep) || 1));
+      currentManualStep = step;
+      stepSections.forEach((section) => {
+        const sectionStep = Number(section.dataset.step || 0);
+        section.classList.toggle("is-active", sectionStep === step);
+      });
+      stepChips.forEach((chip) => {
+        const chipStep = Number(chip.dataset.stepTarget || 0);
+        chip.classList.toggle("is-active", chipStep === step);
+      });
+    };
 
     const parsePdpDetalleState = () => {
       if (!manualPdpDetalleJson || !manualPdpDetalleJson.value) {
@@ -492,6 +695,283 @@
       });
     };
 
+    const normalizeTipoAnexo = (value) => {
+      const key = String(value || "").trim().toUpperCase();
+      if (key === "PEFCT") return "PEFCF";
+      return key;
+    };
+
+    const parseSolventacionDetalleState = () => {
+      const base = {};
+      solventacionTipos.forEach((tipo) => {
+        base[tipo] = { cantidad: 0, emitido: "", solventado: "", pendiente: 0 };
+      });
+      if (!manualSolventacionDetalleJson || !manualSolventacionDetalleJson.value) {
+        return base;
+      }
+      try {
+        const payload = JSON.parse(manualSolventacionDetalleJson.value);
+        if (payload && typeof payload === "object") {
+          Object.entries(payload).forEach(([rawTipo, rawData]) => {
+            const tipo = normalizeTipoAnexo(rawTipo);
+            if (!Object.prototype.hasOwnProperty.call(base, tipo)) {
+              return;
+            }
+            const data = rawData && typeof rawData === "object" ? rawData : {};
+            const cantidad = Math.max(0, Number.parseInt(String(data.cantidad ?? "0"), 10) || 0);
+            const emitido = String(data.emitido ?? "").trim();
+            const solventado = String(data.solventado ?? "").trim();
+            const emitidoNum = emitido ? Number.parseFloat(emitido.replace(/,/g, "")) : 0;
+            const solventadoNum = solventado ? Number.parseFloat(solventado.replace(/,/g, "")) : 0;
+            const pendiente = Number.isFinite(emitidoNum) && Number.isFinite(solventadoNum)
+              ? emitidoNum - solventadoNum
+              : 0;
+            base[tipo] = { cantidad, emitido, solventado, pendiente };
+          });
+        }
+      } catch (error) {
+        return base;
+      }
+      return base;
+    };
+
+    const writeSolventacionDetalleJson = (payload) => {
+      if (!manualSolventacionDetalleJson) {
+        return;
+      }
+      manualSolventacionDetalleJson.value = JSON.stringify(payload);
+    };
+
+    const updateSolventacionDetalleState = () => {
+      if (!solventacionRows.length) {
+        return {};
+      }
+      const payload = {};
+      solventacionRows.forEach((row) => {
+        const tipo = normalizeTipoAnexo(row.dataset.solvRow || "");
+        const cantidadInput = row.querySelector("[data-solv-field='cantidad']");
+        const emitidoInput = row.querySelector("[data-solv-field='emitido']");
+        const solventadoInput = row.querySelector("[data-solv-field='solventado']");
+        const pendienteInput = row.querySelector("[data-solv-field='pendiente']");
+        if (!cantidadInput || !emitidoInput || !solventadoInput || !pendienteInput || !tipo) {
+          return;
+        }
+        const cantidad = Math.max(0, Number.parseInt((cantidadInput.value || "0").trim(), 10) || 0);
+        const emitidoRaw = (emitidoInput.value || "").trim();
+        const solventadoRaw = (solventadoInput.value || "").trim();
+        const emitido = emitidoRaw ? Number.parseFloat(emitidoRaw.replace(/,/g, "")) : 0;
+        const solventado = solventadoRaw ? Number.parseFloat(solventadoRaw.replace(/,/g, "")) : 0;
+        let pendiente = 0;
+        if (Number.isFinite(emitido) && Number.isFinite(solventado)) {
+          pendiente = emitido - solventado;
+        }
+        if (cantidad > 0) {
+          emitidoInput.disabled = false;
+          solventadoInput.disabled = false;
+          emitidoInput.required = true;
+          solventadoInput.required = true;
+          pendienteInput.value = Number.isFinite(pendiente) ? pendiente.toFixed(2) : "0.00";
+        } else {
+          emitidoInput.disabled = true;
+          solventadoInput.disabled = true;
+          emitidoInput.required = false;
+          solventadoInput.required = false;
+          emitidoInput.value = "";
+          solventadoInput.value = "";
+          pendienteInput.value = "0.00";
+          pendiente = 0;
+        }
+        pendienteInput.classList.toggle("is-negative", Number.isFinite(pendiente) && pendiente < 0);
+        payload[tipo] = {
+          cantidad,
+          emitido: cantidad > 0 ? emitidoRaw : "0",
+          solventado: cantidad > 0 ? solventadoRaw : "0",
+          pendiente: Number.isFinite(pendiente) ? pendiente : 0,
+        };
+      });
+      writeSolventacionDetalleJson(payload);
+      renderPreviewTable();
+      return payload;
+    };
+
+    const hydrateSolventacionDetalle = () => {
+      if (!solventacionRows.length) {
+        return;
+      }
+      const state = parseSolventacionDetalleState();
+      solventacionRows.forEach((row) => {
+        const tipo = normalizeTipoAnexo(row.dataset.solvRow || "");
+        const data = state[tipo] || { cantidad: 0, emitido: "", solventado: "", pendiente: 0 };
+        const cantidadInput = row.querySelector("[data-solv-field='cantidad']");
+        const emitidoInput = row.querySelector("[data-solv-field='emitido']");
+        const solventadoInput = row.querySelector("[data-solv-field='solventado']");
+        const pendienteInput = row.querySelector("[data-solv-field='pendiente']");
+        if (!cantidadInput || !emitidoInput || !solventadoInput || !pendienteInput) {
+          return;
+        }
+        cantidadInput.value = String(Math.max(0, Number.parseInt(String(data.cantidad || 0), 10) || 0));
+        emitidoInput.value = String(data.emitido || "");
+        solventadoInput.value = String(data.solventado || "");
+        pendienteInput.value = Number.isFinite(Number(data.pendiente))
+          ? Number(data.pendiente).toFixed(2)
+          : "0.00";
+      });
+      updateSolventacionDetalleState();
+    };
+
+    const validateSolventacionDetalle = () => {
+      const payload = updateSolventacionDetalleState();
+      if (!manualAsunto || (manualAsunto.value || "").trim() !== asuntoSolventacion) {
+        return true;
+      }
+      for (const tipo of solventacionTipos) {
+        const item = payload[tipo] || { cantidad: 0, emitido: "0", solventado: "0" };
+        const cantidad = Math.max(0, Number.parseInt(String(item.cantidad || 0), 10) || 0);
+        if (cantidad <= 0) {
+          continue;
+        }
+        const emitidoRaw = String(item.emitido ?? "").trim();
+        const solventadoRaw = String(item.solventado ?? "").trim();
+        if (!emitidoRaw || !solventadoRaw) {
+          if (manualSolventacionError) {
+            manualSolventacionError.textContent = `Captura monto emitido y solventado para ${tipo}.`;
+          }
+          return false;
+        }
+        const emitido = Number.parseFloat(emitidoRaw.replace(/,/g, ""));
+        const solventado = Number.parseFloat(solventadoRaw.replace(/,/g, ""));
+        if (!Number.isFinite(emitido) || emitido < 0 || !Number.isFinite(solventado) || solventado < 0) {
+          if (manualSolventacionError) {
+            manualSolventacionError.textContent = `Montos inválidos para ${tipo}.`;
+          }
+          return false;
+        }
+        if (solventado > emitido) {
+          if (manualSolventacionError) {
+            manualSolventacionError.textContent = `En ${tipo}, solventado no puede ser mayor a emitido.`;
+          }
+          return false;
+        }
+      }
+      if (manualSolventacionError) {
+        manualSolventacionError.textContent = "";
+      }
+      return true;
+    };
+
+    const readCantidadValue = (id) => {
+      const el = document.getElementById(id);
+      if (!el) return 0;
+      return Math.max(0, Number.parseInt((el.value || "0").trim(), 10) || 0);
+    };
+
+    const buildPreviewRowsFromCedula = () => {
+      const counts = {
+        SA: readCantidadValue("manual_cantidad_sa"),
+        PDP: readCantidadValue("manual_cantidad_pdp"),
+        PRAS: readCantidadValue("manual_cantidad_pras"),
+        PEFCF: readCantidadValue("manual_cantidad_pefcf"),
+        R: readCantidadValue("manual_cantidad_r"),
+      };
+      const rows = [];
+      const pdpState = Array.isArray(pdpDetalleState) ? pdpDetalleState : [];
+      let pdpIndex = 0;
+      ["SA", "PDP", "PRAS", "PEFCF", "R"].forEach((tipo) => {
+        const total = counts[tipo] || 0;
+        for (let numero = 1; numero <= total; numero += 1) {
+          let concepto = "";
+          let subconcepto = "";
+          let emitido = 0;
+          if (tipo === "PDP") {
+            const detail = pdpState[pdpIndex] || {};
+            concepto = String(detail.concepto || "").trim();
+            subconcepto = String(detail.subconcepto || "").trim();
+            emitido = Number.parseFloat(String(detail.monto || "0").replace(/,/g, "")) || 0;
+            pdpIndex += 1;
+          }
+          rows.push({
+            tipo_anexo: tipo,
+            numero_observacion: numero,
+            estado: "Emitido",
+            concepto,
+            subconcepto,
+            emitido,
+            solventado: 0,
+            pendiente: emitido,
+          });
+        }
+      });
+      return rows;
+    };
+
+    const buildPreviewRowsFromSolventacion = () => {
+      const detail = parseSolventacionDetalleState();
+      const rows = [];
+      ["SA", "PDP", "PRAS", "PEFCF", "R"].forEach((tipo) => {
+        const item = detail[tipo] || { cantidad: 0, emitido: 0, solventado: 0, pendiente: 0 };
+        const cantidad = Math.max(0, Number.parseInt(String(item.cantidad || 0), 10) || 0);
+        const emitidoTotal = Number.parseFloat(String(item.emitido || "0").replace(/,/g, "")) || 0;
+        const solventadoTotal = Number.parseFloat(String(item.solventado || "0").replace(/,/g, "")) || 0;
+        const pendienteTotal = emitidoTotal - solventadoTotal;
+        for (let numero = 1; numero <= cantidad; numero += 1) {
+          rows.push({
+            tipo_anexo: tipo,
+            numero_observacion: numero,
+            estado: pendienteTotal <= 0 ? "Solventado" : "Pendiente",
+            concepto: "",
+            subconcepto: "",
+            emitido: numero === 1 ? emitidoTotal : 0,
+            solventado: numero === 1 ? solventadoTotal : 0,
+            pendiente: numero === 1 ? pendienteTotal : 0,
+          });
+        }
+      });
+      return rows;
+    };
+
+    const renderPreviewTable = () => {
+      if (!manualPreviewBody || !manualAsunto) {
+        return;
+      }
+      const asunto = (manualAsunto.value || "").trim();
+      const rows = asunto === asuntoSolventacion
+        ? buildPreviewRowsFromSolventacion()
+        : buildPreviewRowsFromCedula();
+
+      const totals = rows.reduce((acc, row) => {
+        acc.emitido += Number(row.emitido || 0);
+        acc.solventado += Number(row.solventado || 0);
+        acc.pendiente += Number(row.pendiente || 0);
+        return acc;
+      }, { emitido: 0, solventado: 0, pendiente: 0 });
+
+      if (previewMetricTotal) previewMetricTotal.textContent = String(rows.length);
+      if (previewMetricEmitido) previewMetricEmitido.textContent = formatMoney(totals.emitido);
+      if (previewMetricSolventado) previewMetricSolventado.textContent = formatMoney(totals.solventado);
+      if (previewMetricPendiente) previewMetricPendiente.textContent = formatMoney(totals.pendiente);
+
+      if (!rows.length) {
+        manualPreviewBody.innerHTML = '<tr><td colspan="8" class="muted">Sin datos capturados.</td></tr>';
+        return;
+      }
+      manualPreviewBody.innerHTML = rows.map((row) => {
+        const estado = normalizeEstadoForUi(row.estado);
+        const estadoClass = estadoClassName(estado);
+        return (
+          `<tr class="obs-row ${estadoClass}">` +
+          `<td>${escapeHtml(row.tipo_anexo)}</td>` +
+          `<td>${escapeHtml(row.numero_observacion)}</td>` +
+          `<td><span class="obs-status-pill ${estadoClass}">${escapeHtml(estado)}</span></td>` +
+          `<td>${escapeHtml(row.concepto || "")}</td>` +
+          `<td>${escapeHtml(row.subconcepto || "")}</td>` +
+          `<td>${formatMoney(row.emitido)}</td>` +
+          `<td>${formatMoney(row.solventado)}</td>` +
+          `<td>${formatMoney(row.pendiente)}</td>` +
+          `</tr>`
+        );
+      }).join("");
+    };
+
     const persistCurrentPdpDetalle = () => {
       if (!pdpDetalleState.length) {
         return;
@@ -543,6 +1023,7 @@
       manualPdpSelector.value = String(pdpDetalleIndex);
       loadSelectedPdpDetalle();
       syncPdpDetalleJson();
+      renderPreviewTable();
     };
 
     const toggleManualCantidades = () => {
@@ -550,12 +1031,28 @@
         return;
       }
       const isCedula = (manualAsunto.value || "").trim() === asuntoCedula;
+      const isSolventacion = (manualAsunto.value || "").trim() === asuntoSolventacion;
       blockCedula.style.display = isCedula ? "" : "none";
       cedulaInputs.forEach((input) => {
         input.disabled = !isCedula;
       });
+      if (manualSolventacionDetalleBlock) {
+        manualSolventacionDetalleBlock.style.display = isSolventacion ? "" : "none";
+      }
+      solventacionInputs.forEach((input) => {
+        input.disabled = !isSolventacion;
+      });
+      if (isSolventacion) {
+        hydrateSolventacionDetalle();
+      } else {
+        writeSolventacionDetalleJson({});
+        if (manualSolventacionError) {
+          manualSolventacionError.textContent = "";
+        }
+      }
       renderPdpDetalleMenu();
       toggleObservacionesCargadas();
+      renderPreviewTable();
     };
 
     const resolveManualFuenteNombre = () => {
@@ -576,31 +1073,40 @@
       return selected ? (selected.textContent || "").split(/\s+/).filter(Boolean).join(" ") : "";
     };
 
+    const updateObservacionesMetrics = (rows) => {
+      const safeRows = Array.isArray(rows) ? rows : [];
+      const pendientes = safeRows.filter((row) => normalizeEstadoForUi(row.estado) === "Pendiente").length;
+      const solventadas = safeRows.filter((row) => normalizeEstadoForUi(row.estado) === "Solventado").length;
+      if (obsMetricTotal) obsMetricTotal.textContent = String(safeRows.length);
+      if (obsMetricPendiente) obsMetricPendiente.textContent = String(pendientes);
+      if (obsMetricSolventado) obsMetricSolventado.textContent = String(solventadas);
+    };
+
     const renderObservacionesRows = (rows) => {
       if (!manualObservacionesBody) {
         return;
       }
       if (!Array.isArray(rows) || !rows.length) {
-        manualObservacionesBody.innerHTML = '<tr><td colspan="6" class="muted">Sin observaciones cargadas para este filtro.</td></tr>';
+        manualObservacionesBody.innerHTML = '<tr><td colspan="9" class="muted">Sin observaciones cargadas para este filtro.</td></tr>';
         return;
       }
-      const normalizeEstadoForUi = (value) => {
-        const key = String(value || "").trim().toLowerCase();
-        if (key === "e" || key === "emitido") return "Emitido";
-        if (key === "p" || key === "pendiente") return "Pendiente";
-        if (key === "s" || key === "solventado") return "Solventado";
-        return "Emitido";
-      };
       manualObservacionesBody.innerHTML = rows.map((row) => {
         const estadoActual = normalizeEstadoForUi(row.estado);
-        const monto = row.monto_pdp_emitido == null ? "0" : String(row.monto_pdp_emitido);
+        const estadoClass = estadoClassName(estadoActual);
+        const esPdp = String(row.tipo_anexo || "").trim().toUpperCase() === "PDP";
+        const montoEmitido = row.monto_pdp_emitido == null ? "0" : String(row.monto_pdp_emitido);
+        const montoSolventado = row.monto_pdp_solventado == null ? "0" : String(row.monto_pdp_solventado);
+        const emitidoNum = Number.parseFloat(String(montoEmitido).replace(/,/g, "")) || 0;
+        const solventadoNum = Number.parseFloat(String(montoSolventado).replace(/,/g, "")) || 0;
+        const pendienteNum = emitidoNum - solventadoNum;
         const observacionId = Number(row.id || 0);
+        const pendienteClass = pendienteNum < 0 ? "is-negative" : "";
         return (
-          `<tr data-observacion-id="${observacionId}">` +
+          `<tr data-observacion-id="${observacionId}" class="obs-row ${estadoClass}">` +
           `<td>${row.tipo_anexo || ""}</td>` +
           `<td>${row.numero_observacion || ""}</td>` +
           `<td>` +
-          `<select class="obs-estado-input">` +
+          `<select class="obs-estado-input ${estadoClass}">` +
           `<option value="Emitido"${estadoActual === "Emitido" ? " selected" : ""}>Emitido</option>` +
           `<option value="Pendiente"${estadoActual === "Pendiente" ? " selected" : ""}>Pendiente</option>` +
           `<option value="Solventado"${estadoActual === "Solventado" ? " selected" : ""}>Solventado</option>` +
@@ -609,14 +1115,52 @@
           `<td>${row.pdp_concepto_irregularidad || ""}</td>` +
           `<td>${row.pdp_subconcepto_irregularidad || ""}</td>` +
           `<td>` +
-          `<div style="display:flex; gap:6px; align-items:center;">` +
-          `<input class="obs-monto-input" type="number" step="0.01" min="0" value="${escapeHtml(monto)}" style="width:120px;">` +
+          (esPdp
+            ? `<input class="obs-monto-emitido-input" type="number" step="0.01" min="0" value="${escapeHtml(montoEmitido)}">`
+            : `<span class="muted">—</span>`) +
+          `</td>` +
+          `<td>` +
+          (esPdp
+            ? `<input class="obs-monto-solventado-input" type="number" step="0.01" min="0" value="${escapeHtml(montoSolventado)}">`
+            : `<span class="muted">—</span>`) +
+          `</td>` +
+          `<td>` +
+          (esPdp
+            ? `<input class="obs-monto-pendiente-input ${pendienteClass}" type="number" value="${pendienteNum.toFixed(2)}" readonly>`
+            : `<span class="muted">—</span>`) +
+          `</td>` +
+          `<td>` +
           `<button type="button" class="btn-secondary obs-save-btn">Guardar</button>` +
-          `</div>` +
           `</td>` +
           `</tr>`
         );
       }).join("");
+    };
+
+    const applyObservacionesFilters = () => {
+      const search = (manualObsSearch ? manualObsSearch.value : "").trim().toLowerCase();
+      const estadoFiltro = (manualObsEstadoFilter ? manualObsEstadoFilter.value : "").trim();
+      const filteredRows = (Array.isArray(observacionesAllRows) ? observacionesAllRows : []).filter((row) => {
+        const estadoActual = normalizeEstadoForUi(row.estado);
+        if (estadoFiltro && estadoActual !== estadoFiltro) {
+          return false;
+        }
+        if (!search) {
+          return true;
+        }
+        const haystack = [
+          row.tipo_anexo,
+          row.numero_observacion,
+          row.pdp_concepto_irregularidad,
+          row.pdp_subconcepto_irregularidad,
+          estadoActual,
+        ]
+          .map((item) => String(item || "").toLowerCase())
+          .join(" ");
+        return haystack.includes(search);
+      });
+      updateObservacionesMetrics(filteredRows);
+      renderObservacionesRows(filteredRows);
     };
 
     const saveObservacionRow = async (button) => {
@@ -626,12 +1170,21 @@
       }
       const observacionId = Number(row.dataset.observacionId || 0);
       const estadoInput = row.querySelector(".obs-estado-input");
-      const montoInput = row.querySelector(".obs-monto-input");
-      if (!observacionId || !estadoInput || !montoInput) {
+      const anexoCell = row.children && row.children[0] ? String(row.children[0].textContent || "").trim().toUpperCase() : "";
+      const isPdp = anexoCell === "PDP";
+      const montoEmitidoInput = row.querySelector(".obs-monto-emitido-input");
+      const montoSolventadoInput = row.querySelector(".obs-monto-solventado-input");
+      if (!observacionId || !estadoInput) {
         return;
       }
       const estado = (estadoInput.value || "").trim();
-      const monto = (montoInput.value || "").trim();
+      const payload = { estado };
+      if (isPdp) {
+        const montoEmitido = (montoEmitidoInput ? montoEmitidoInput.value : "").trim();
+        const montoSolventado = (montoSolventadoInput ? montoSolventadoInput.value : "").trim();
+        payload.monto_pdp_emitido = montoEmitido;
+        payload.monto_pdp_solventado = montoSolventado;
+      }
       button.disabled = true;
       manualObservacionesInfo.textContent = "Guardando cambios...";
       try {
@@ -640,10 +1193,7 @@
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            estado,
-            monto_pdp_emitido: monto,
-          }),
+          body: JSON.stringify(payload),
         });
         const data = await response.json();
         if (!response.ok || !data.ok) {
@@ -670,7 +1220,8 @@
       const oficio = (manualNumeroOficio ? manualNumeroOficio.value : "").trim();
       if (!ejercicio || !enteId || !tipoAuditoria) {
         manualObservacionesInfo.textContent = "Selecciona ejercicio y ente para consultar.";
-        manualObservacionesBody.innerHTML = '<tr><td colspan="6" class="muted">Sin consulta.</td></tr>';
+        observacionesAllRows = [];
+        applyObservacionesFilters();
         return;
       }
       manualObservacionesInfo.textContent = "Consultando observaciones...";
@@ -694,11 +1245,14 @@
           throw new Error("No se pudo consultar observaciones");
         }
         const rows = await response.json();
-        manualObservacionesInfo.textContent = `Resultados: ${Array.isArray(rows) ? rows.length : 0} observaciones.`;
-        renderObservacionesRows(rows);
+        observacionesAllRows = Array.isArray(rows) ? rows : [];
+        manualObservacionesInfo.textContent = `Resultados: ${observacionesAllRows.length} observaciones.`;
+        applyObservacionesFilters();
       } catch (error) {
         manualObservacionesInfo.textContent = "No se pudieron consultar las observaciones.";
-        manualObservacionesBody.innerHTML = '<tr><td colspan="6" class="muted">Error al consultar.</td></tr>';
+        observacionesAllRows = [];
+        manualObservacionesBody.innerHTML = '<tr><td colspan="9" class="muted">Error al consultar.</td></tr>';
+        updateObservacionesMetrics([]);
       }
     };
 
@@ -717,6 +1271,67 @@
       manualAsunto.addEventListener("change", toggleManualCantidades);
       toggleManualCantidades();
     }
+    if (solventacionInputs.length) {
+      solventacionInputs.forEach((input) => {
+        input.addEventListener("input", updateSolventacionDetalleState);
+        input.addEventListener("change", updateSolventacionDetalleState);
+      });
+      hydrateSolventacionDetalle();
+    }
+    if (manualCaptureForm) {
+      manualCaptureForm.addEventListener("submit", (event) => {
+        if (!validateSolventacionDetalle()) {
+          event.preventDefault();
+          setManualStep(2);
+        }
+      });
+    }
+    if (manualSetTodayBtn && manualPeriodo) {
+      manualSetTodayBtn.addEventListener("click", () => {
+        const current = new Date();
+        const day = String(current.getDate()).padStart(2, "0");
+        const shortMonths = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+        const month = shortMonths[current.getMonth()] || "ene";
+        const year = String(current.getFullYear()).slice(-2);
+        const value = `${day}-${month}-${year}`;
+        if (manualPeriodo && !manualPeriodo.value.trim()) {
+          manualPeriodo.focus();
+        }
+        const field = document.getElementById("manual_fecha_notificacion");
+        if (field) {
+          field.value = value;
+          field.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      });
+    }
+    if (stepChips.length) {
+      stepChips.forEach((chip) => {
+        chip.addEventListener("click", () => {
+          setManualStep(Number(chip.dataset.stepTarget || 1));
+        });
+      });
+    }
+    if (stepNavButtons.length) {
+      stepNavButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          const direction = button.dataset.stepNav;
+          if (direction === "next") {
+            setManualStep(currentManualStep + 1);
+            return;
+          }
+          if (direction === "prev") {
+            setManualStep(currentManualStep - 1);
+          }
+        });
+      });
+    }
+    if (manualObsSearch) {
+      manualObsSearch.addEventListener("input", applyObservacionesFilters);
+    }
+    if (manualObsEstadoFilter) {
+      manualObsEstadoFilter.addEventListener("change", applyObservacionesFilters);
+    }
+    setManualStep(1);
 
     if (manualEjercicio && manualEnte) {
       let manualEntesFetchId = 0;
@@ -770,24 +1385,38 @@
         persistCurrentPdpDetalle();
         pdpDetalleIndex = Number(manualPdpSelector.value) || 0;
         loadSelectedPdpDetalle();
+        renderPreviewTable();
       });
     }
     if (manualPdpConcepto) {
       manualPdpConcepto.addEventListener("change", () => {
         renderSubconceptOptions(manualPdpConcepto.value || "", "");
         persistCurrentPdpDetalle();
+        renderPreviewTable();
       });
     }
     if (manualPdpSubconcepto) {
-      manualPdpSubconcepto.addEventListener("change", persistCurrentPdpDetalle);
+      manualPdpSubconcepto.addEventListener("change", () => {
+        persistCurrentPdpDetalle();
+        renderPreviewTable();
+      });
     }
     if (manualPdpMonto) {
-      manualPdpMonto.addEventListener("input", persistCurrentPdpDetalle);
+      manualPdpMonto.addEventListener("input", () => {
+        persistCurrentPdpDetalle();
+        renderPreviewTable();
+      });
     }
     if (manualCantidadPdp) {
       manualCantidadPdp.addEventListener("input", renderPdpDetalleMenu);
       manualCantidadPdp.addEventListener("change", renderPdpDetalleMenu);
     }
+    ["manual_cantidad_sa", "manual_cantidad_pras", "manual_cantidad_pefcf", "manual_cantidad_r"].forEach((id) => {
+      const element = document.getElementById(id);
+      if (!element) return;
+      element.addEventListener("input", renderPreviewTable);
+      element.addEventListener("change", renderPreviewTable);
+    });
     const loadPdpCatalog = async () => {
       try {
         const response = await fetch("/carga/pdp-catalogo");
@@ -916,6 +1545,52 @@
         manualNumeroOficio.addEventListener("input", fetchObservacionesCargadas);
       }
       if (manualObservacionesBody) {
+        manualObservacionesBody.addEventListener("change", (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLSelectElement) || !target.classList.contains("obs-estado-input")) {
+            return;
+          }
+          const row = target.closest("tr");
+          if (!row) {
+            return;
+          }
+          const estado = normalizeEstadoForUi(target.value || "");
+          const className = estadoClassName(estado);
+          row.classList.remove("is-emitido", "is-pendiente", "is-solventado");
+          row.classList.add(className);
+          target.classList.remove("is-emitido", "is-pendiente", "is-solventado");
+          target.classList.add(className);
+        });
+        const recalcPendingInRow = (row) => {
+          if (!row) {
+            return;
+          }
+          const emitidoInput = row.querySelector(".obs-monto-emitido-input");
+          const solventadoInput = row.querySelector(".obs-monto-solventado-input");
+          const pendienteInput = row.querySelector(".obs-monto-pendiente-input");
+          if (!emitidoInput || !solventadoInput || !pendienteInput) {
+            return;
+          }
+          const emitido = Number.parseFloat(String(emitidoInput.value || "0").replace(/,/g, "")) || 0;
+          const solventado = Number.parseFloat(String(solventadoInput.value || "0").replace(/,/g, "")) || 0;
+          const pendiente = emitido - solventado;
+          pendienteInput.value = pendiente.toFixed(2);
+          pendienteInput.classList.toggle("is-negative", pendiente < 0);
+        };
+        manualObservacionesBody.addEventListener("input", (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) {
+            return;
+          }
+          if (
+            !target.classList.contains("obs-monto-emitido-input")
+            && !target.classList.contains("obs-monto-solventado-input")
+          ) {
+            return;
+          }
+          const row = target.closest("tr");
+          recalcPendingInRow(row);
+        });
         manualObservacionesBody.addEventListener("click", (event) => {
           const target = event.target;
           if (!(target instanceof HTMLElement)) {
@@ -931,6 +1606,7 @@
       loadFuentesByEnte(manualFuente.value || "");
       toggleNuevaFuente();
       toggleObservacionesCargadas();
+      renderPreviewTable();
     }
   </script>
 </body>

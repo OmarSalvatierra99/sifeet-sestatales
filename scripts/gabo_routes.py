@@ -57,6 +57,7 @@ def register_gabo_routes(app, deps):
     globals().update(deps)
     TITULAR_EJERCICIO_FIJO = "2025"
     OBSERVACION_ESTADOS_VALIDOS = {"Emitido", "Pendiente", "Solventado"}
+    SOLVENTACION_TIPOS = ("PDP", "PEFCF", "PRAS", "R", "SA")
 
     def _tipo_auditoria_options(tipo_auditoria: str) -> list[str]:
         clean = " ".join((tipo_auditoria or "").split())
@@ -254,6 +255,54 @@ def register_gabo_routes(app, deps):
             parsed.append(amount)
         return parsed
 
+    def parse_manual_solventacion_details(raw_value: str) -> dict[str, dict]:
+        base = {
+            tipo: {
+                "cantidad": 0,
+                "emitido": 0.0,
+                "solventado": 0.0,
+                "pendiente": 0.0,
+            }
+            for tipo in SOLVENTACION_TIPOS
+        }
+        raw = (raw_value or "").strip()
+        if not raw:
+            return base
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError("El detalle de solventación tiene un formato inválido.") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("El detalle de solventación tiene un formato inválido.")
+
+        for raw_tipo, raw_data in payload.items():
+            tipo = str(raw_tipo or "").strip().upper()
+            if tipo == "PEFCT":
+                tipo = "PEFCF"
+            if tipo not in base:
+                continue
+            data = raw_data if isinstance(raw_data, dict) else {}
+            cantidad = parse_non_negative_int(str(data.get("cantidad", "0")), f"Cantidad {tipo}")
+            if cantidad <= 0:
+                continue
+            emitido_raw = str(data.get("emitido", "")).strip()
+            solventado_raw = str(data.get("solventado", "")).strip()
+            if not emitido_raw:
+                raise ValueError(f"Debes capturar monto emitido para {tipo}.")
+            if not solventado_raw:
+                raise ValueError(f"Debes capturar monto solventado para {tipo}.")
+            emitido = parse_non_negative_float(emitido_raw, f"Monto emitido {tipo}")
+            solventado = parse_non_negative_float(solventado_raw, f"Monto solventado {tipo}")
+            if solventado > emitido:
+                raise ValueError(f"En {tipo}, monto solventado no puede ser mayor a emitido.")
+            base[tipo] = {
+                "cantidad": cantidad,
+                "emitido": emitido,
+                "solventado": solventado,
+                "pendiente": emitido - solventado,
+            }
+        return base
+
     def materialize_observaciones_from_manual(
         db,
         *,
@@ -278,6 +327,7 @@ def register_gabo_routes(app, deps):
         monto_pdp_pendiente: float,
         pdp_amounts: list[float],
         pdp_details: list[dict] | None = None,
+        solventacion_totales_by_anexo: dict[str, dict] | None = None,
         replace_scope: bool = False,
     ) -> None:
         if replace_scope:
@@ -306,8 +356,15 @@ def register_gabo_routes(app, deps):
         for tipo_anexo, total in counts.items():
             for numero_observacion in range(1, total + 1):
                 monto_emitido = None
+                monto_solventado = None
+                monto_pendiente = None
                 pdp_concepto = None
                 pdp_subconcepto = None
+                totales_tipo = (
+                    (solventacion_totales_by_anexo or {}).get(tipo_anexo)
+                    if isinstance(solventacion_totales_by_anexo, dict)
+                    else None
+                )
                 if tipo_anexo == "PDP":
                     detalle = pdp_details[pdp_index] if pdp_details and pdp_index < len(pdp_details) else {}
                     monto_emitido = detalle.get("monto")
@@ -315,7 +372,20 @@ def register_gabo_routes(app, deps):
                         monto_emitido = pdp_amounts[pdp_index] if pdp_index < len(pdp_amounts) else 0.0
                     pdp_concepto = (detalle.get("concepto") or "").strip() or None
                     pdp_subconcepto = (detalle.get("subconcepto") or "").strip() or None
+                    if totales_tipo and numero_observacion == 1:
+                        monto_solventado = float(totales_tipo.get("solventado", 0.0) or 0.0)
+                        monto_pendiente = float(totales_tipo.get("pendiente", 0.0) or 0.0)
+                    elif numero_observacion == 1:
+                        monto_solventado = monto_pdp_solventado
+                        monto_pendiente = monto_pdp_pendiente
+                    else:
+                        monto_solventado = 0.0
+                        monto_pendiente = 0.0
                     pdp_index += 1
+                elif totales_tipo:
+                    monto_emitido = float(totales_tipo.get("emitido", 0.0) or 0.0) if numero_observacion == 1 else 0.0
+                    monto_solventado = float(totales_tipo.get("solventado", 0.0) or 0.0) if numero_observacion == 1 else 0.0
+                    monto_pendiente = float(totales_tipo.get("pendiente", 0.0) or 0.0) if numero_observacion == 1 else 0.0
                 db.execute(
                     """
                     INSERT INTO observaciones (
@@ -368,8 +438,8 @@ def register_gabo_routes(app, deps):
                         estado,
                         monto_emitido,
                         monto_emitido,
-                        monto_pdp_solventado if tipo_anexo == "PDP" else None,
-                        monto_pdp_pendiente if tipo_anexo == "PDP" else None,
+                        monto_solventado,
+                        monto_pendiente,
                         pdp_concepto if tipo_anexo == "PDP" else None,
                         pdp_subconcepto if tipo_anexo == "PDP" else None,
                         now,
@@ -536,6 +606,8 @@ def register_gabo_routes(app, deps):
                 numero_observacion,
                 TRIM(COALESCE(estado, '')) AS estado,
                 monto_pdp_emitido,
+                monto_pdp_solventado,
+                monto_pdp_pendiente,
                 TRIM(COALESCE(pdp_concepto_irregularidad, '')) AS pdp_concepto_irregularidad,
                 TRIM(COALESCE(pdp_subconcepto_irregularidad, '')) AS pdp_subconcepto_irregularidad
             FROM observaciones
@@ -569,20 +641,16 @@ def register_gabo_routes(app, deps):
     def carga_observacion_actualizar(observacion_id: int):
         payload = request.get_json(silent=True) or {}
         estado = _normalize_observacion_estado(payload.get("estado", ""))
-        monto_raw = payload.get("monto_pdp_emitido", "")
+        monto_emitido_raw = payload.get("monto_pdp_emitido", "")
+        monto_solventado_raw = payload.get("monto_pdp_solventado", "")
 
         if estado not in OBSERVACION_ESTADOS_VALIDOS:
             return jsonify({"ok": False, "error": "Estado inválido."}), 400
 
-        try:
-            monto = parse_non_negative_float(str(monto_raw), "Monto PDP emitido")
-        except ValueError:
-            return jsonify({"ok": False, "error": "Monto PDP inválido."}), 400
-
         db = get_db()
         current = db.execute(
             """
-            SELECT id
+            SELECT id, TRIM(COALESCE(tipo_anexo, '')) AS tipo_anexo
             FROM observaciones
             WHERE id = ?
             LIMIT 1
@@ -592,23 +660,54 @@ def register_gabo_routes(app, deps):
         if not current:
             return jsonify({"ok": False, "error": "Observación no encontrada."}), 404
 
-        db.execute(
-            """
-            UPDATE observaciones
-            SET estado = ?,
-                monto_pdp_emitido = ?,
-                monto = ?
-            WHERE id = ?
-            """,
-            (estado, monto, monto, observacion_id),
-        )
+        tipo_anexo = (current["tipo_anexo"] or "").strip().upper()
+        if tipo_anexo == "PDP":
+            try:
+                monto_emitido = parse_non_negative_float(str(monto_emitido_raw), "Monto PDP emitido")
+                monto_solventado = parse_non_negative_float(str(monto_solventado_raw), "Monto PDP solventado")
+            except ValueError:
+                return jsonify({"ok": False, "error": "Montos PDP inválidos."}), 400
+            if monto_solventado > monto_emitido:
+                return jsonify(
+                    {"ok": False, "error": "Monto solventado no puede ser mayor a emitido."},
+                    400,
+                )
+            monto_pendiente = monto_emitido - monto_solventado
+            db.execute(
+                """
+                UPDATE observaciones
+                SET estado = ?,
+                    monto_pdp_emitido = ?,
+                    monto_pdp_solventado = ?,
+                    monto_pdp_pendiente = ?,
+                    monto = ?
+                WHERE id = ?
+                """,
+                (
+                    estado,
+                    monto_emitido,
+                    monto_solventado,
+                    monto_pendiente,
+                    monto_emitido,
+                    observacion_id,
+                ),
+            )
+        else:
+            db.execute(
+                """
+                UPDATE observaciones
+                SET estado = ?
+                WHERE id = ?
+                """,
+                (estado, observacion_id),
+            )
         db.commit()
         return jsonify(
             {
                 "ok": True,
                 "id": observacion_id,
                 "estado": estado,
-                "monto_pdp_emitido": monto,
+                "tipo_anexo": tipo_anexo,
             }
         )
 
@@ -679,6 +778,7 @@ def register_gabo_routes(app, deps):
             "manual_monto_pdp_pendiente": "0",
             "manual_montos_pdp": "",
             "manual_pdp_detalle_json": "",
+            "manual_solventacion_detalle_json": "",
             "titular_ejercicio": TITULAR_EJERCICIO_FIJO,
             "titular_ente_id": "",
             "titular_tipo_auditoria": "Financiera",
@@ -728,6 +828,7 @@ def register_gabo_routes(app, deps):
                     "manual_monto_pdp_pendiente": (request.form.get("manual_monto_pdp_pendiente") or "").strip() or "0",
                     "manual_montos_pdp": (request.form.get("manual_montos_pdp") or "").strip(),
                     "manual_pdp_detalle_json": (request.form.get("manual_pdp_detalle_json") or "").strip(),
+                    "manual_solventacion_detalle_json": (request.form.get("manual_solventacion_detalle_json") or "").strip(),
                     "titular_ejercicio": TITULAR_EJERCICIO_FIJO,
                     "titular_ente_id": (request.form.get("titular_ente_id") or "").strip(),
                     "titular_tipo_auditoria": (request.form.get("titular_tipo_auditoria") or "").strip() or "Financiera",
@@ -913,6 +1014,7 @@ def register_gabo_routes(app, deps):
                     fecha_notificacion = form_data["manual_fecha_notificacion"]
                     raw_montos_pdp = form_data["manual_montos_pdp"]
                     raw_pdp_detalle_json = form_data["manual_pdp_detalle_json"]
+                    raw_solventacion_detalle_json = form_data["manual_solventacion_detalle_json"]
                     manual_edit_id = None
                     if manual_id_raw:
                         try:
@@ -1061,31 +1163,39 @@ def register_gabo_routes(app, deps):
                         cantidad_pras = parse_non_negative_int(form_data["manual_cantidad_pras"], "Cantidad PRAS")
                         cantidad_pefcf = parse_non_negative_int(form_data["manual_cantidad_pefcf"], "Cantidad PEFCF")
                         cantidad_r = parse_non_negative_int(form_data["manual_cantidad_r"], "Cantidad R")
+                        monto_pdp_emitido = parse_non_negative_float(form_data["manual_monto_pdp_emitido"], "Monto PDP emitido")
+                        monto_pdp_solventado = parse_non_negative_float(form_data["manual_monto_pdp_solventado"], "Monto PDP solventado")
+                        monto_pdp_pendiente = parse_non_negative_float(form_data["manual_monto_pdp_pendiente"], "Monto PDP pendiente")
+                        pdp_amounts = parse_pdp_amounts(raw_montos_pdp)
+                        pdp_details = parse_manual_pdp_details(raw_pdp_detalle_json, cantidad_pdp)
+                        solventacion_totales_by_anexo = {}
+                        if cantidad_pdp == 0 and pdp_amounts:
+                            raise ValueError("Capturaste montos PDP pero la cantidad PDP es 0.")
+                        if pdp_amounts and len(pdp_amounts) != cantidad_pdp:
+                            raise ValueError(
+                                "La cantidad de montos PDP no coincide con 'Cantidad PDP'. "
+                                "Captura un monto por línea."
+                            )
+                        if not pdp_amounts and cantidad_pdp > 0:
+                            # Sin detalle por observación: concentrar el total en la primera PDP.
+                            pdp_amounts = [monto_pdp_emitido] + [0.0] * (cantidad_pdp - 1)
+                        if cantidad_pdp > 0 and pdp_details:
+                            has_detail_amount = any((item.get("monto") is not None) for item in pdp_details)
+                            if has_detail_amount:
+                                pdp_amounts = [(item.get("monto") or 0.0) for item in pdp_details]
                     else:
-                        cantidad_sa = 0
-                        cantidad_pdp = 0
-                        cantidad_pras = 0
-                        cantidad_pefcf = 0
-                        cantidad_r = 0
-                    monto_pdp_emitido = parse_non_negative_float(form_data["manual_monto_pdp_emitido"], "Monto PDP emitido")
-                    monto_pdp_solventado = parse_non_negative_float(form_data["manual_monto_pdp_solventado"], "Monto PDP solventado")
-                    monto_pdp_pendiente = parse_non_negative_float(form_data["manual_monto_pdp_pendiente"], "Monto PDP pendiente")
-                    pdp_amounts = parse_pdp_amounts(raw_montos_pdp)
-                    pdp_details = parse_manual_pdp_details(raw_pdp_detalle_json, cantidad_pdp)
-                    if cantidad_pdp == 0 and pdp_amounts:
-                        raise ValueError("Capturaste montos PDP pero la cantidad PDP es 0.")
-                    if pdp_amounts and len(pdp_amounts) != cantidad_pdp:
-                        raise ValueError(
-                            "La cantidad de montos PDP no coincide con 'Cantidad PDP'. "
-                            "Captura un monto por línea."
-                        )
-                    if not pdp_amounts and cantidad_pdp > 0:
-                        # Sin detalle por observación: concentrar el total en la primera PDP.
-                        pdp_amounts = [monto_pdp_emitido] + [0.0] * (cantidad_pdp - 1)
-                    if cantidad_pdp > 0 and pdp_details:
-                        has_detail_amount = any((item.get("monto") is not None) for item in pdp_details)
-                        if has_detail_amount:
-                            pdp_amounts = [(item.get("monto") or 0.0) for item in pdp_details]
+                        detalle_solventacion = parse_manual_solventacion_details(raw_solventacion_detalle_json)
+                        cantidad_sa = int(detalle_solventacion["SA"]["cantidad"])
+                        cantidad_pdp = int(detalle_solventacion["PDP"]["cantidad"])
+                        cantidad_pras = int(detalle_solventacion["PRAS"]["cantidad"])
+                        cantidad_pefcf = int(detalle_solventacion["PEFCF"]["cantidad"])
+                        cantidad_r = int(detalle_solventacion["R"]["cantidad"])
+                        monto_pdp_emitido = float(detalle_solventacion["PDP"]["emitido"])
+                        monto_pdp_solventado = float(detalle_solventacion["PDP"]["solventado"])
+                        monto_pdp_pendiente = float(detalle_solventacion["PDP"]["pendiente"])
+                        solventacion_totales_by_anexo = detalle_solventacion
+                        pdp_details = []
+                        pdp_amounts = [monto_pdp_emitido] + [0.0] * (cantidad_pdp - 1) if cantidad_pdp > 0 else []
 
                     tipos_auditoria = (
                         ["Financiera", "Obra Pública"]
@@ -1268,6 +1378,7 @@ def register_gabo_routes(app, deps):
                                     monto_pdp_pendiente=monto_pdp_pendiente,
                                     pdp_amounts=pdp_amounts,
                                     pdp_details=pdp_details,
+                                    solventacion_totales_by_anexo=solventacion_totales_by_anexo,
                                     replace_scope=True,
                                 )
                                 db.commit()
@@ -1368,6 +1479,7 @@ def register_gabo_routes(app, deps):
                                         monto_pdp_pendiente=monto_pdp_pendiente,
                                         pdp_amounts=pdp_amounts,
                                         pdp_details=pdp_details,
+                                        solventacion_totales_by_anexo=solventacion_totales_by_anexo,
                                         replace_scope=False,
                                     )
                                 db.commit()
