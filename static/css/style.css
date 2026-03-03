@@ -1394,6 +1394,44 @@ tbody tr:hover td {
   font-size: 0.95rem;
 }
 
+.loader-context-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.loader-fuente-subsection {
+  background: #f8fbf9;
+  border-color: #d8e4dc;
+}
+
+.loader-fuente-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.loader-fuentes-list {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.loader-fuente-item {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0.7rem 0.8rem;
+}
+
+.loader-fuente-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.35rem;
+}
+
+.loader-fuente-item-head strong {
+  color: var(--color-accent);
+  font-size: 0.9rem;
+}
+
 .loader-manual-grid-5 {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
@@ -1449,6 +1487,18 @@ tbody tr:hover td {
 }
 
 .loader-inline-action .btn-secondary {
+  width: 100%;
+}
+
+.loader-date-inline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.loader-date-inline input {
+  min-width: 0;
   width: 100%;
 }
 
@@ -1824,7 +1874,13 @@ tbody tr:hover td {
   }
 
   .loader-manual-grid-5,
-  .loader-manual-grid-3 {
+  .loader-manual-grid-3,
+  .loader-context-grid,
+  .loader-fuente-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .loader-date-inline {
     grid-template-columns: 1fr;
   }
 
