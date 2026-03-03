@@ -1239,6 +1239,42 @@ tbody tr:hover td {
   border-left: 4px solid var(--color-accent);
 }
 
+.loader-mode-panel {
+  padding: 0.9rem 1rem;
+}
+
+.loader-mode-toggle {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.loader-mode-btn {
+  border: 1px solid var(--color-border);
+  background: #fbfcfb;
+  color: var(--color-muted);
+  border-radius: 999px;
+  padding: 0.42rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background var(--transition-base),
+    border-color var(--transition-base),
+    color var(--transition-base);
+}
+
+.loader-mode-btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.loader-mode-btn.is-active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
 .loader-flow-grid {
   margin-top: 1rem;
   display: grid;
