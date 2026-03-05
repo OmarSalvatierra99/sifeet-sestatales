@@ -84,19 +84,31 @@
         <input id="manual_ejercicio" name="manual_ejercicio" type="hidden" value="{{ form_data.manual_ejercicio }}">
         <input id="manual_ente_id" name="manual_ente_id" type="hidden" value="{{ form_data.manual_ente_id }}">
         <div class="loader-stepper" id="manualStepper">
-          <button type="button" class="loader-step-chip is-active" data-step-target="1">1. Oficio</button>
-          <button type="button" class="loader-step-chip" data-step-target="2">2. Observaciones Emitidas</button>
+          <button type="button" class="loader-step-chip is-active" id="manualStep1Chip" data-step-target="1">1. Oficio de Notificación de Cédula de Resultados</button>
+          <button type="button" class="loader-step-chip" id="manualStep2Chip" data-step-target="2">2. Observaciones Emitidas</button>
         </div>
 
         <section class="loader-step-section is-active" data-step="1">
           <div class="loader-step-head">
-            <h3>Oficio</h3>
+            <h3 id="manualStep1Title">Oficio de Notificación de Cédula de Resultados</h3>
             <p>Captura los datos generales del oficio antes de entrar al detalle de observaciones.</p>
           </div>
           <div class="form-grid loader-context-grid">
             <input id="manual_asunto" name="manual_asunto" type="hidden" value="{{ form_data.manual_asunto }}">
-            <div class="field">
-              <label for="manual_numero_oficio">Número de oficio</label>
+            <input id="manual_oficio_base" name="manual_oficio_base" type="hidden" value="{{ form_data.manual_oficio_base }}">
+            <div class="field" id="manual_oficio_base_field" style="display:none;">
+              <label for="manual_oficio_base_selector">Oficio de cédula a contestar</label>
+              <select
+                id="manual_oficio_base_selector"
+                data-selected-oficio="{{ form_data.manual_oficio_base }}"
+                data-selected-periodo="{{ form_data.manual_periodo }}"
+              >
+                <option value="">Selecciona un oficio de cédula</option>
+              </select>
+              <p class="helper" id="manual_oficio_base_hint">Selecciona un oficio base para heredar el periodo.</p>
+            </div>
+            <div class="field" id="manual_numero_oficio_field">
+              <label for="manual_numero_oficio" id="manual_numero_oficio_label">Número de oficio</label>
               <input
                 id="manual_numero_oficio"
                 name="manual_numero_oficio"
@@ -107,7 +119,7 @@
               >
               <datalist id="manual_oficio_options"></datalist>
             </div>
-            <div class="field">
+            <div class="field" id="manual_periodo_field">
               <label for="manual_periodo">Periodo</label>
               <input
                 id="manual_periodo"
@@ -119,6 +131,7 @@
                 required
               >
               <datalist id="manual_periodo_options"></datalist>
+              <p class="helper" id="manual_periodo_helper">Ej. 01 de enero al 31 de diciembre</p>
             </div>
             <div class="field">
               <label for="manual_fecha_notificacion">Fecha de notificación</label>
@@ -214,39 +227,6 @@
             <p class="helper" id="manual_fuentes_detalle_feedback"></p>
           </div>
           <input type="hidden" id="manual_solventacion_detalle_json" name="manual_solventacion_detalle_json" value="{{ form_data.manual_solventacion_detalle_json|e }}">
-          <div
-            class="loader-manual-subsection"
-            id="manual-solventacion-detalle"
-            style="{% if form_data.manual_asunto != 'Se emiten resultados de solventación del periodo' %}display:none;{% endif %}"
-          >
-            <h3>Detalle de observaciones de solventación</h3>
-            <p class="helper">Captura por tipo. Si cantidad es 0, los montos se consideran en 0. Pendiente = emitido - solventado.</p>
-            <div class="table-wrap loader-solv-table-wrap">
-              <table class="table-compact loader-solv-table">
-                <thead>
-                  <tr>
-                    <th>Tipo</th>
-                    <th>Cantidad</th>
-                    <th>Monto emitido</th>
-                    <th>Monto solventado</th>
-                    <th>Monto pendiente</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for tipo in ["PDP", "PEFCF", "PRAS", "R", "SA"] %}
-                    <tr data-solv-row="{{ tipo }}">
-                      <td><strong>{{ tipo }}</strong></td>
-                      <td><input type="number" min="0" step="1" class="solv-cantidad-input" data-solv-field="cantidad"></td>
-                      <td><input type="number" min="0" step="0.01" class="solv-emitido-input" data-solv-field="emitido" placeholder="0.00"></td>
-                      <td><input type="number" min="0" step="0.01" class="solv-solventado-input" data-solv-field="solventado" placeholder="0.00"></td>
-                      <td><input type="number" class="solv-pendiente-input" data-solv-field="pendiente" value="0.00" readonly></td>
-                    </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-            <p class="helper" id="manual_solventacion_error"></p>
-          </div>
           <input type="hidden" id="manual_pdp_detalle_json" name="manual_pdp_detalle_json" value="{{ form_data.manual_pdp_detalle_json|e }}">
           <div
             class="loader-manual-subsection"
@@ -280,43 +260,9 @@
             id="manual-observaciones-cargadas"
             style="{% if form_data.manual_asunto != 'Se emiten resultados de solventación del periodo' %}display:none;{% endif %}"
           >
-            <h3>Observaciones cargadas</h3>
-            <p class="helper" id="manual_observaciones_info">Selecciona ejercicio y ente para consultar.</p>
-            <div class="loader-obs-metrics">
-              <span class="loader-obs-chip">Total: <strong id="obsMetricTotal">0</strong></span>
-              <span class="loader-obs-chip">Pendiente: <strong id="obsMetricPendiente">0</strong></span>
-              <span class="loader-obs-chip">Solventado: <strong id="obsMetricSolventado">0</strong></span>
-            </div>
-            <div class="loader-obs-toolbar">
-              <input id="manual_observaciones_search" type="text" placeholder="Buscar por anexo, concepto o subconcepto">
-              <select id="manual_observaciones_estado_filter">
-                <option value="">Todos los estados</option>
-                <option value="Emitido">Emitido</option>
-                <option value="Pendiente">Pendiente</option>
-                <option value="Solventado">Solventado</option>
-              </select>
-            </div>
-            <div class="table-wrap loader-obs-table-wrap">
-              <table class="table-compact loader-obs-table">
-                <thead>
-                  <tr>
-                    <th>Anexo</th>
-                    <th>No. Obs</th>
-                    <th>Estado</th>
-                    <th>Concepto PDP</th>
-                    <th>Subconcepto PDP</th>
-                    <th>Emitido PDP</th>
-                    <th>Solventado PDP</th>
-                    <th>Pendiente PDP</th>
-                    <th>Acción</th>
-                  </tr>
-                </thead>
-                <tbody id="manualObservacionesBody">
-                  <tr>
-                    <td colspan="9" class="muted">Sin consulta.</td>
-                  </tr>
-                </tbody>
-              </table>
+            <p class="helper" id="manual_observaciones_info">Selecciona ejercicio, ente y oficio base para consultar observaciones.</p>
+            <div id="manualObservacionesBody" class="loader-obs-groups" aria-live="polite">
+              <p class="muted">Sin observaciones para mostrar.</p>
             </div>
           </div>
           <div class="loader-actions">
@@ -328,7 +274,7 @@
             </button>
             <button class="btn-secondary" type="submit" name="action" value="manual_check" id="manualValidateBtn">Validar etapa (borrador)</button>
           </div>
-          <p class="helper">`Validar etapa (borrador)`: verifica reglas sin commit a base de datos. `Guardar en progreso`: conserva el wizard localmente. `Guardar y Cerrar Oficio`: finaliza la captura y registra en base de datos.</p>
+          <p class="helper" id="manualActionsHelper">`Validar etapa (borrador)`: verifica reglas sin commit a base de datos. `Guardar en progreso`: conserva el wizard localmente. `Guardar y Cerrar Oficio`: finaliza la captura y registra en base de datos.</p>
         </section>
         {% if form_data.manual_id %}
           <p class="helper">Modo edición activo (ID {{ form_data.manual_id }}).</p>
@@ -358,37 +304,34 @@
               {% endfor %}
             </select>
           </div>
-          <div class="field">
-            <label for="titular_periodo_informe">Periodo informe</label>
-            <input id="titular_periodo_informe" name="titular_periodo_informe" type="text" value="{{ form_data.titular_periodo_informe }}" placeholder="Ej. 01 de enero al 31 de diciembre" required>
-          </div>
-          <div class="field">
-            <label for="titular_nombre">Titular</label>
-            <input id="titular_nombre" name="titular_nombre" type="text" value="{{ form_data.titular_nombre }}" required>
-          </div>
-          <div class="field">
-            <label for="titular_periodo_administrativo">Periodo del administrativo</label>
-            <input id="titular_periodo_administrativo" name="titular_periodo_administrativo" type="text" value="{{ form_data.titular_periodo_administrativo }}" placeholder="Ej. 01 de enero al 31 de diciembre" required>
-          </div>
-          <div class="field">
-            <label for="titular_administrativo">Administrativo</label>
-            <input id="titular_administrativo" name="titular_administrativo" type="text" value="{{ form_data.titular_administrativo }}" required>
-          </div>
-          <div class="field field-full">
-            <label for="titular_cedula_resultados">Cédula de resultados (particiones)</label>
-            <textarea
-              id="titular_cedula_resultados"
-              name="titular_cedula_resultados"
-              rows="3"
-              placeholder="Ej. 01 de enero al 31 de diciembre&#10;01 de enero al 30 de junio"
-              required
-            >{{ form_data.titular_cedula_resultados }}</textarea>
-            <p class="helper">Acepta múltiples periodos separados por salto de línea, `;` o `|`.</p>
-          </div>
         </div>
-        <div class="loader-actions">
-          <button type="button" class="btn-secondary" id="wizardSaveDraftBtnTitulares">Guardar en progreso</button>
-          <button class="btn-primary" type="submit" name="action" value="titular_save">Guardar</button>
+        <div class="loader-titulares-sections">
+          <section class="loader-titulares-block" aria-label="Datos del titular">
+            <h3>Titular</h3>
+            <div class="form-grid">
+              <div class="field">
+                <label for="titular_nombre">Nombre del titular</label>
+                <input id="titular_nombre" name="titular_nombre" type="text" value="{{ form_data.titular_nombre }}" required>
+              </div>
+              <div class="field">
+                <label for="titular_periodo_informe">Periodo del titular</label>
+                <input id="titular_periodo_informe" name="titular_periodo_informe" type="text" value="{{ form_data.titular_periodo_informe }}" placeholder="Ej. 01 de enero al 31 de diciembre" required>
+              </div>
+            </div>
+          </section>
+          <section class="loader-titulares-block" aria-label="Datos del administrativo">
+            <h3>Administrativo</h3>
+            <div class="form-grid">
+              <div class="field">
+                <label for="titular_administrativo">Nombre del administrativo</label>
+                <input id="titular_administrativo" name="titular_administrativo" type="text" value="{{ form_data.titular_administrativo }}" required>
+              </div>
+              <div class="field">
+                <label for="titular_periodo_administrativo">Periodo del administrativo</label>
+                <input id="titular_periodo_administrativo" name="titular_periodo_administrativo" type="text" value="{{ form_data.titular_periodo_administrativo }}" placeholder="Ej. 01 de enero al 31 de diciembre" required>
+              </div>
+            </div>
+          </section>
         </div>
       </form>
     </section>
@@ -473,8 +416,11 @@
       document.body.dataset.loaderMode = mode;
       const manualAsuntoField = document.getElementById("manual_asunto");
       const manualPanelTitle = document.getElementById("manualPanelTitle");
+      const manualStep1ChipEl = document.getElementById("manualStep1Chip");
+      const manualStep1TitleEl = document.getElementById("manualStep1Title");
       const manualStep2Title = document.getElementById("manualStep2Title");
       const manualStep2Help = document.getElementById("manualStep2Help");
+      const manualStep2ChipEl = document.getElementById("manualStep2Chip");
       const asuntoCedulaMode = "Notificación de Cédula de Resultados";
       const asuntoSolventacionMode = "Se emiten resultados de solventación del periodo";
       if (manualAsuntoField && mode !== "titulares") {
@@ -487,12 +433,30 @@
       if (manualPanelTitle && manualStep2Title && manualStep2Help && mode !== "titulares") {
         if (mode === "solventacion") {
           manualPanelTitle.textContent = "Oficios de Respuesta a Solventación";
-          manualStep2Title.textContent = "Detalle de Solventación";
-          manualStep2Help.textContent = "Captura cantidades y montos emitido/solventado por anexo para continuar el seguimiento.";
+          if (manualStep1ChipEl) {
+            manualStep1ChipEl.textContent = "1. Oficio de Resultados de Solventación";
+          }
+          if (manualStep1TitleEl) {
+            manualStep1TitleEl.textContent = "Oficio de Resultados de Solventación";
+          }
+          manualStep2Title.textContent = "Observaciones Solventadas";
+          manualStep2Help.textContent = "Se muestran observaciones del oficio base, separadas por tipo.";
+          if (manualStep2ChipEl) {
+            manualStep2ChipEl.textContent = "2. Observaciones Solventadas";
+          }
         } else {
           manualPanelTitle.textContent = "Notificación de Cédula de Resultados";
+          if (manualStep1ChipEl) {
+            manualStep1ChipEl.textContent = "1. Oficio de Notificación de Cédula de Resultados";
+          }
+          if (manualStep1TitleEl) {
+            manualStep1TitleEl.textContent = "Oficio de Notificación de Cédula de Resultados";
+          }
           manualStep2Title.textContent = "Observaciones Emitidas";
           manualStep2Help.textContent = "Selecciona tipo de auditoría, fuente y cantidades por anexo para registrar observaciones emitidas.";
+          if (manualStep2ChipEl) {
+            manualStep2ChipEl.textContent = "2. Observaciones Emitidas";
+          }
         }
       }
       loaderModeButtons.forEach((button) => {
@@ -518,10 +482,17 @@
     const manualEjercicio = document.getElementById("manual_ejercicio");
     const manualEnte = document.getElementById("manual_ente_id");
     const manualTipoAuditoria = document.getElementById("manual_tipo_auditoria");
+    const manualOficioBase = document.getElementById("manual_oficio_base");
+    const manualOficioBaseField = document.getElementById("manual_oficio_base_field");
+    const manualOficioBaseSelector = document.getElementById("manual_oficio_base_selector");
+    const manualOficioBaseHint = document.getElementById("manual_oficio_base_hint");
+    const manualNumeroOficioLabel = document.getElementById("manual_numero_oficio_label");
     const manualNumeroOficio = document.getElementById("manual_numero_oficio");
     const manualOficioOptions = document.getElementById("manual_oficio_options");
+    const manualPeriodoField = document.getElementById("manual_periodo_field");
     const manualPeriodo = document.getElementById("manual_periodo");
     const manualPeriodoOptions = document.getElementById("manual_periodo_options");
+    const manualPeriodoHelper = document.getElementById("manual_periodo_helper");
     const manualContextStatus = document.getElementById("manual_context_status");
     const manualFuente = document.getElementById("manual_fuente_id");
     const manualFuentesWrap = document.getElementById("manual_fuentes_wrap");
@@ -559,8 +530,10 @@
     const manualSaveBtn = document.getElementById("manualSaveBtn");
     const manualValidateBtn = document.getElementById("manualValidateBtn");
     const manualBackToStage1Btn = document.getElementById("manualBackToStage1Btn");
+    const manualActionsHelper = document.getElementById("manualActionsHelper");
     const wizardSaveDraftBtnManual = document.getElementById("wizardSaveDraftBtnManual");
     const manualStepper = document.getElementById("manualStepper");
+    const manualStep2Chip = document.getElementById("manualStep2Chip");
     const stepChips = manualStepper ? Array.from(manualStepper.querySelectorAll("[data-step-target]")) : [];
     const stepSections = Array.from(document.querySelectorAll(".loader-step-section[data-step]"));
     const maxManualStep = Math.max(1, stepSections.length);
@@ -595,13 +568,11 @@
     let wizardStageProgress = { manual: false, solventacion: false, titulares: false };
     let isRestoringDraft = false;
     const titularCaptureForm = document.getElementById("titularCaptureForm");
-    const wizardSaveDraftBtnTitulares = document.getElementById("wizardSaveDraftBtnTitulares");
     const titularTipoAuditoria = document.getElementById("titular_tipo_auditoria");
     const titularPeriodoInforme = document.getElementById("titular_periodo_informe");
     const titularNombre = document.getElementById("titular_nombre");
     const titularPeriodoAdministrativo = document.getElementById("titular_periodo_administrativo");
     const titularAdministrativo = document.getElementById("titular_administrativo");
-    const titularCedulaResultados = document.getElementById("titular_cedula_resultados");
 
     const escapeHtml = (value) => (
       String(value || "")
@@ -696,7 +667,10 @@
     };
 
     const setManualStep = (nextStep) => {
-      const step = Math.min(maxManualStep, Math.max(1, Number(nextStep) || 1));
+      let step = Math.min(maxManualStep, Math.max(1, Number(nextStep) || 1));
+      if (step > 1 && !validateContextStep({ showFeedback: false })) {
+        step = 1;
+      }
       currentManualStep = step;
       stepSections.forEach((section) => {
         const sectionStep = Number(section.dataset.step || 0);
@@ -731,6 +705,20 @@
         }
         return false;
       }
+      const isSolventacionMode = !!manualAsunto && (manualAsunto.value || "").trim() === asuntoSolventacion;
+      if (isSolventacionMode) {
+        syncSolventacionScopeSelection();
+        const oficioBase = manualOficioBase ? String(manualOficioBase.value || "").trim() : "";
+        if (!oficioBase) {
+          if (showFeedback) {
+            showWizardToast("Etapa 1: selecciona el oficio base de Notificación de Cédula.", "success");
+            if (manualOficioBaseSelector && typeof manualOficioBaseSelector.focus === "function") {
+              manualOficioBaseSelector.focus();
+            }
+          }
+          return false;
+        }
+      }
       for (const field of contextFields) {
         if (typeof field.checkValidity === "function" && !field.checkValidity()) {
           if (showFeedback && typeof field.reportValidity === "function") {
@@ -742,10 +730,22 @@
       return true;
     };
 
+    const updateManualStepAccess = () => {
+      const canOpenStep2 = validateContextStep({ showFeedback: false });
+      if (manualStep2Chip) {
+        manualStep2Chip.disabled = !canOpenStep2;
+        manualStep2Chip.title = canOpenStep2 ? "" : "Completa 1. Oficio para continuar.";
+      }
+      if (!canOpenStep2 && currentManualStep > 1) {
+        setManualStep(1);
+      }
+    };
+
     const saveContextDraft = () => {
       const payload = {
         manual_ejercicio: manualEjercicio ? (manualEjercicio.value || "").trim() : "",
         manual_ente_id: manualEnte ? (manualEnte.value || "").trim() : "",
+        manual_oficio_base: manualOficioBase ? (manualOficioBase.value || "").trim() : "",
         manual_numero_oficio: manualNumeroOficio ? (manualNumeroOficio.value || "").trim() : "",
         manual_periodo: manualPeriodo ? (manualPeriodo.value || "").trim() : "",
         manual_fecha_notificacion: manualFechaNotificacion ? (manualFechaNotificacion.value || "").trim() : "",
@@ -1631,6 +1631,40 @@
       }
       const isCedula = (manualAsunto.value || "").trim() === asuntoCedula;
       const isSolventacion = (manualAsunto.value || "").trim() === asuntoSolventacion;
+      if (manualOficioBaseField) {
+        manualOficioBaseField.style.display = isSolventacion ? "" : "none";
+      }
+      if (manualOficioBaseSelector) {
+        manualOficioBaseSelector.disabled = !isSolventacion;
+        manualOficioBaseSelector.required = isSolventacion;
+        if (isSolventacion && !String(manualOficioBaseSelector.value || "").trim() && cedulaScopeRows.length) {
+          manualOficioBaseSelector.value = "0";
+        }
+      }
+      if (manualNumeroOficioLabel) {
+        manualNumeroOficioLabel.textContent = isSolventacion
+          ? "Número de oficio de respuesta"
+          : "Número de oficio";
+      }
+      if (manualNumeroOficio) {
+        if (isSolventacion) {
+          manualNumeroOficio.removeAttribute("list");
+        } else {
+          manualNumeroOficio.setAttribute("list", "manual_oficio_options");
+        }
+      }
+      if (manualPeriodoField) {
+        manualPeriodoField.style.display = isSolventacion ? "none" : "";
+      }
+      if (manualPeriodo) {
+        manualPeriodo.readOnly = isSolventacion;
+      }
+      if (manualPeriodoHelper) {
+        manualPeriodoHelper.textContent = isSolventacion
+          ? "El periodo se hereda automáticamente del oficio base."
+          : "Ej. 01 de enero al 31 de diciembre";
+      }
+      syncSolventacionScopeSelection();
       blockCedula.style.display = isCedula ? "" : "none";
       cedulaInputs.forEach((input) => {
         input.disabled = !isCedula;
@@ -1673,6 +1707,41 @@
       return selected ? (selected.textContent || "").split(/\s+/).filter(Boolean).join(" ") : "";
     };
 
+    const getSelectedCedulaScopeRow = () => {
+      if (!manualOficioBaseSelector) {
+        return null;
+      }
+      const index = Number.parseInt(String(manualOficioBaseSelector.value || "").trim(), 10);
+      if (!Number.isFinite(index) || index < 0 || index >= cedulaScopeRows.length) {
+        return null;
+      }
+      return cedulaScopeRows[index];
+    };
+
+    const syncSolventacionScopeSelection = () => {
+      const selectedRow = getSelectedCedulaScopeRow();
+      const oficio = selectedRow ? String(selectedRow.oficio || "").trim() : "";
+      const periodo = selectedRow ? String(selectedRow.periodo || "").trim() : "";
+      if (manualOficioBase) {
+        manualOficioBase.value = oficio;
+      }
+      if (manualPeriodo && getManualMode() === "solventacion") {
+        manualPeriodo.value = periodo;
+      }
+      if (manualOficioBaseHint) {
+        if (!selectedRow) {
+          manualOficioBaseHint.textContent = cedulaScopeRows.length
+            ? "Selecciona el oficio de Notificación de Cédula que vas a contestar."
+            : "No hay oficios de cédula disponibles para este ejercicio y ente.";
+        } else {
+          manualOficioBaseHint.textContent = `Periodo heredado: ${periodo || "Sin periodo"}.`;
+        }
+      }
+      if (manualContextStatus) {
+        manualContextStatus.textContent = "";
+      }
+    };
+
     const renderCedulaScopeOptions = () => {
       const periodos = [];
       const oficios = [];
@@ -1702,11 +1771,51 @@
           .map((oficio) => `<option value="${escapeHtml(oficio)}"></option>`)
           .join("");
       }
+      if (manualOficioBaseSelector) {
+        const desiredOficio = String(
+          (manualOficioBase ? manualOficioBase.value : "")
+          || (manualOficioBaseSelector.dataset.selectedOficio || "")
+        ).trim();
+        const desiredPeriodo = String(
+          (manualPeriodo ? manualPeriodo.value : "")
+          || (manualOficioBaseSelector.dataset.selectedPeriodo || "")
+        ).trim();
+        manualOficioBaseSelector.innerHTML = '<option value="">Selecciona un oficio de cédula</option>'
+          + cedulaScopeRows.map((row, index) => (
+            `<option value="${index}">${escapeHtml(String(row.oficio || "").trim())} · ${escapeHtml(String(row.periodo || "").trim())}</option>`
+          )).join("");
+        manualOficioBaseSelector.dataset.selectedOficio = "";
+        manualOficioBaseSelector.dataset.selectedPeriodo = "";
+
+        let selectedIndex = -1;
+        if (desiredOficio || desiredPeriodo) {
+          selectedIndex = cedulaScopeRows.findIndex((row) => (
+            String((row && row.oficio) || "").trim().toLowerCase() === desiredOficio.toLowerCase()
+            && String((row && row.periodo) || "").trim().toLowerCase() === desiredPeriodo.toLowerCase()
+          ));
+          if (selectedIndex < 0 && desiredOficio) {
+            selectedIndex = cedulaScopeRows.findIndex((row) => (
+              String((row && row.oficio) || "").trim().toLowerCase() === desiredOficio.toLowerCase()
+            ));
+          }
+        }
+        if (selectedIndex < 0 && getManualMode() === "solventacion" && cedulaScopeRows.length === 1) {
+          selectedIndex = 0;
+        }
+        manualOficioBaseSelector.value = selectedIndex >= 0 ? String(selectedIndex) : "";
+      }
+      syncSolventacionScopeSelection();
     };
 
     const fetchCedulaScopeOptions = async () => {
-      const ejercicio = (manualEjercicio ? manualEjercicio.value : "").trim();
-      const enteId = (manualEnte ? manualEnte.value : "").trim();
+      const ejercicio = (
+        (principalEjercicio ? principalEjercicio.value : "")
+        || (manualEjercicio ? manualEjercicio.value : "")
+      ).trim();
+      const enteId = (
+        (principalEnte ? principalEnte.value : "")
+        || (manualEnte ? manualEnte.value : "")
+      ).trim();
       if (!ejercicio || !enteId) {
         cedulaScopeRows = [];
         renderCedulaScopeOptions();
@@ -1727,6 +1836,9 @@
         cedulaScopeRows = [];
       }
       renderCedulaScopeOptions();
+      if (getManualMode() === "solventacion") {
+        fetchObservacionesCargadas();
+      }
     };
 
     const updateObservacionesMetrics = (rows) => {
@@ -1783,54 +1895,88 @@
         return;
       }
       if (!Array.isArray(rows) || !rows.length) {
-        manualObservacionesBody.innerHTML = '<tr><td colspan="9" class="muted">Sin observaciones cargadas para este filtro.</td></tr>';
+        manualObservacionesBody.innerHTML = '<p class="muted">Sin observaciones cargadas para este oficio.</p>';
         return;
       }
-      manualObservacionesBody.innerHTML = rows.map((row) => {
-        const estadoActual = normalizeEstadoForUi(row.estado);
-        const estadoClass = estadoClassName(estadoActual);
-        const esPdp = String(row.tipo_anexo || "").trim().toUpperCase() === "PDP";
-        const montoEmitido = row.monto_pdp_emitido == null ? "0" : String(row.monto_pdp_emitido);
-        const montoSolventado = row.monto_pdp_solventado == null ? "0" : String(row.monto_pdp_solventado);
-        const emitidoNum = Number.parseFloat(String(montoEmitido).replace(/,/g, "")) || 0;
-        const solventadoNum = Number.parseFloat(String(montoSolventado).replace(/,/g, "")) || 0;
-        const pendienteNum = emitidoNum - solventadoNum;
-        const observacionId = Number(row.id || 0);
-        const pendienteClass = pendienteNum < 0 ? "is-negative" : "";
-        return (
-          `<tr data-observacion-id="${observacionId}" class="obs-row ${estadoClass}">` +
-          `<td>${row.tipo_anexo || ""}</td>` +
-          `<td>${row.numero_observacion || ""}</td>` +
-          `<td>` +
-          `<select class="obs-estado-input ${estadoClass}">` +
-          `<option value="Emitido"${estadoActual === "Emitido" ? " selected" : ""}>Emitido</option>` +
-          `<option value="Pendiente"${estadoActual === "Pendiente" ? " selected" : ""}>Pendiente</option>` +
-          `<option value="Solventado"${estadoActual === "Solventado" ? " selected" : ""}>Solventado</option>` +
-          `</select>` +
-          `</td>` +
-          `<td>${row.pdp_concepto_irregularidad || ""}</td>` +
-          `<td>${row.pdp_subconcepto_irregularidad || ""}</td>` +
-          `<td>` +
-          (esPdp
-            ? `<input class="obs-monto-emitido-input" type="number" step="0.01" min="0" value="${escapeHtml(montoEmitido)}">`
-            : `<span class="muted">—</span>`) +
-          `</td>` +
-          `<td>` +
-          (esPdp
-            ? `<input class="obs-monto-solventado-input" type="number" step="0.01" min="0" value="${escapeHtml(montoSolventado)}">`
-            : `<span class="muted">—</span>`) +
-          `</td>` +
-          `<td>` +
-          (esPdp
-            ? `<input class="obs-monto-pendiente-input ${pendienteClass}" type="number" value="${pendienteNum.toFixed(2)}" readonly>`
-            : `<span class="muted">—</span>`) +
-          `</td>` +
-          `<td>` +
-          `<button type="button" class="btn-secondary obs-save-btn">Guardar</button>` +
-          `</td>` +
-          `</tr>`
-        );
-      }).join("");
+      const orderedTipos = ["PDP", "PRAS", "R", "SA", "PEFCF"];
+      const grouped = {};
+      orderedTipos.forEach((tipo) => {
+        grouped[tipo] = [];
+      });
+      rows.forEach((row) => {
+        const tipo = normalizeTipoAnexo(String(row.tipo_anexo || "").trim());
+        if (!Object.prototype.hasOwnProperty.call(grouped, tipo)) {
+          grouped[tipo] = [];
+        }
+        grouped[tipo].push(row);
+      });
+
+      const tiposConDatos = Object.keys(grouped).filter((tipo) => Array.isArray(grouped[tipo]) && grouped[tipo].length > 0);
+      const orderedWithExtras = orderedTipos.concat(
+        tiposConDatos.filter((tipo) => !orderedTipos.includes(tipo))
+      );
+      const groupsHtml = orderedWithExtras
+        .filter((tipo) => Array.isArray(grouped[tipo]) && grouped[tipo].length > 0)
+        .map((tipo) => {
+          const items = grouped[tipo].map((row) => {
+            const observacionId = Number(row.id || 0);
+            const numero = String(row.numero_observacion || "").trim();
+            const estado = normalizeEstadoForUi(row.estado);
+            const concepto = String(row.pdp_concepto_irregularidad || "").trim();
+            const montoEmitidoNum = Number.parseFloat(String(row.monto_pdp_emitido ?? "0").replace(/,/g, "")) || 0;
+            const montoSolventadoNum = Number.parseFloat(String(row.monto_pdp_solventado ?? "0").replace(/,/g, "")) || 0;
+            const extra = tipo === "PDP" && concepto ? ` · ${concepto}` : "";
+            const isPdp = tipo === "PDP";
+            const estadoDisplay = isPdp
+              ? (estado === "Solventado" ? "Solventada" : estado)
+              : (estado === "Solventado" ? "Solventada" : "Pendiente");
+            const controlHtml = isPdp
+              ? (
+                `<select class="obs-estado-input">` +
+                `<option value="Emitido"${estado === "Emitido" ? " selected" : ""}>Emitido</option>` +
+                `<option value="Pendiente"${estado === "Pendiente" ? " selected" : ""}>Pendiente</option>` +
+                `<option value="Solventado"${estado === "Solventado" ? " selected" : ""}>Solventada</option>` +
+                `</select>`
+              )
+              : (
+                `<label class="obs-solventada-toggle">` +
+                `<input type="checkbox" class="obs-solventada-check"${estado === "Solventado" ? " checked" : ""}>` +
+                `<span>Solventada</span>` +
+                `</label>`
+              );
+            const pdpControls = isPdp
+              ? (
+                `<div class="loader-obs-item-edit">` +
+                `<label>Monto solventado PDP</label>` +
+                `<input class="obs-monto-solventado-input" type="number" min="0" step="0.01" value="${escapeHtml(montoSolventadoNum.toFixed(2))}">` +
+                `<small>Emitido: ${escapeHtml(formatMoney(montoEmitidoNum))}</small>` +
+                `</div>`
+              )
+              : "";
+            return (
+              `<li class="loader-obs-item" data-observacion-id="${observacionId}" data-tipo-anexo="${escapeHtml(tipo)}" data-monto-emitido="${escapeHtml(montoEmitidoNum.toFixed(2))}">` +
+              `<div class="loader-obs-item-main">` +
+              `<span class="loader-obs-item-label">#${escapeHtml(numero || "-")} · <strong class="obs-item-estado">${escapeHtml(estadoDisplay)}</strong>${escapeHtml(extra)}</span>` +
+              controlHtml +
+              `</div>` +
+              pdpControls +
+              `</li>`
+            );
+          }).join("");
+          return (
+            `<section class="loader-obs-group">` +
+            `<h4>${escapeHtml(tipo)} <span>(${grouped[tipo].length})</span></h4>` +
+            `<ul class="loader-obs-items">${items}</ul>` +
+            `</section>`
+          );
+        })
+        .join("");
+
+      manualObservacionesBody.innerHTML =
+        `<div class="loader-obs-bulk-actions">` +
+        `<button type="button" class="btn-primary obs-save-all-btn">Guardar</button>` +
+        `</div>` +
+        (groupsHtml || '<p class="muted">Sin observaciones cargadas para este oficio.</p>');
     };
 
     const applyObservacionesFilters = () => {
@@ -1859,64 +2005,125 @@
       renderObservacionesRows(filteredRows);
     };
 
-    const saveObservacionRow = async (button) => {
-      const row = button.closest("tr");
-      if (!row) {
-        return;
-      }
+    const buildObservacionPayload = (row) => {
       const observacionId = Number(row.dataset.observacionId || 0);
-      const estadoInput = row.querySelector(".obs-estado-input");
-      const anexoCell = row.children && row.children[0] ? String(row.children[0].textContent || "").trim().toUpperCase() : "";
-      const isPdp = anexoCell === "PDP";
-      const montoEmitidoInput = row.querySelector(".obs-monto-emitido-input");
-      const montoSolventadoInput = row.querySelector(".obs-monto-solventado-input");
-      if (!observacionId || !estadoInput) {
+      const tipoAnexo = normalizeTipoAnexo(String(row.dataset.tipoAnexo || "").trim());
+      const montoEmitidoRaw = String(row.dataset.montoEmitido || "0").trim();
+      if (!observacionId || !tipoAnexo) {
+        return null;
+      }
+      if (tipoAnexo === "PDP") {
+        const estadoInput = row.querySelector(".obs-estado-input");
+        if (!(estadoInput instanceof HTMLSelectElement)) {
+          return null;
+        }
+        const montoSolventadoInput = row.querySelector(".obs-monto-solventado-input");
+        return {
+          observacionId,
+          payload: {
+            estado: (estadoInput.value || "").trim() || "Pendiente",
+            monto_pdp_emitido: montoEmitidoRaw,
+            monto_pdp_solventado: (montoSolventadoInput ? montoSolventadoInput.value : "").trim(),
+          },
+        };
+      }
+      const solventadaCheck = row.querySelector(".obs-solventada-check");
+      const isChecked = solventadaCheck instanceof HTMLInputElement ? solventadaCheck.checked : false;
+      return {
+        observacionId,
+        payload: {
+          estado: isChecked ? "Solventado" : "Pendiente",
+        },
+      };
+    };
+
+    const saveObservacionesBulk = async (buttonElement) => {
+      const button = buttonElement instanceof HTMLButtonElement ? buttonElement : null;
+      if (!button) {
         return;
       }
-      const estado = (estadoInput.value || "").trim();
-      const payload = { estado };
-      if (isPdp) {
-        const montoEmitido = (montoEmitidoInput ? montoEmitidoInput.value : "").trim();
-        const montoSolventado = (montoSolventadoInput ? montoSolventadoInput.value : "").trim();
-        payload.monto_pdp_emitido = montoEmitido;
-        payload.monto_pdp_solventado = montoSolventado;
+      if (!manualObservacionesBody || !manualObservacionesInfo) {
+        return;
+      }
+      const rows = Array.from(manualObservacionesBody.querySelectorAll(".loader-obs-item"));
+      if (!rows.length) {
+        manualObservacionesInfo.textContent = "No hay observaciones para guardar.";
+        return;
+      }
+      const updates = rows
+        .map((row) => buildObservacionPayload(row))
+        .filter(Boolean);
+      if (!updates.length) {
+        manualObservacionesInfo.textContent = "No se encontraron cambios válidos para guardar.";
+        return;
       }
       button.disabled = true;
-      manualObservacionesInfo.textContent = "Guardando cambios...";
-      try {
-        const response = await fetch(`/carga/observaciones-cargadas/${encodeURIComponent(observacionId)}/actualizar`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        });
-        const data = await response.json();
-        if (!response.ok || !data.ok) {
-          throw new Error(data.error || "No se pudo guardar.");
+      manualObservacionesInfo.textContent = "Guardando observaciones...";
+      let okCount = 0;
+      let errorMessage = "";
+      for (const item of updates) {
+        try {
+          const response = await fetch(`/carga/observaciones-cargadas/${encodeURIComponent(item.observacionId)}/actualizar`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(item.payload),
+          });
+          const data = await response.json();
+          if (!response.ok || !data.ok) {
+            throw new Error(data.error || "No se pudo guardar.");
+          }
+          okCount += 1;
+        } catch (error) {
+          errorMessage = error && error.message ? error.message : "No se pudieron guardar los cambios.";
+          break;
         }
-        manualObservacionesInfo.textContent = `Observación ${observacionId} actualizada.`;
-        await fetchObservacionesCargadas();
-      } catch (error) {
-        manualObservacionesInfo.textContent = error.message || "No se pudieron guardar los cambios.";
-      } finally {
-        button.disabled = false;
       }
+      if (errorMessage) {
+        manualObservacionesInfo.textContent = errorMessage;
+        await fetchObservacionesCargadas();
+        button.disabled = false;
+        return;
+      }
+      await fetchObservacionesCargadas();
+      manualObservacionesInfo.textContent = `Observaciones actualizadas: ${okCount}.`;
+      button.disabled = false;
     };
 
     const fetchObservacionesCargadas = async () => {
       if (!manualObservacionesWrap || !manualObservacionesBody || !manualObservacionesInfo) {
         return;
       }
-      const ejercicio = (manualEjercicio ? manualEjercicio.value : "").trim();
-      const enteId = (manualEnte ? manualEnte.value : "").trim();
+      const ejercicio = (
+        (principalEjercicio ? principalEjercicio.value : "")
+        || (manualEjercicio ? manualEjercicio.value : "")
+      ).trim();
+      const enteId = (
+        (principalEnte ? principalEnte.value : "")
+        || (manualEnte ? manualEnte.value : "")
+      ).trim();
       const tipoAuditoria = (manualTipoAuditoria ? manualTipoAuditoria.value : "").trim();
       const fuente = resolveManualFuenteNombre();
-      const periodo = (manualPeriodo ? manualPeriodo.value : "").trim();
-      const oficio = (manualNumeroOficio ? manualNumeroOficio.value : "").trim();
       const mode = getManualMode();
+      const selectedScopeRow = mode === "solventacion" ? getSelectedCedulaScopeRow() : null;
+      const periodo = mode === "solventacion"
+        ? String((selectedScopeRow && selectedScopeRow.periodo) || (manualPeriodo ? manualPeriodo.value : "") || "").trim()
+        : String((manualPeriodo ? manualPeriodo.value : "") || "").trim();
+      const oficio = mode === "solventacion"
+        ? String((selectedScopeRow && selectedScopeRow.oficio) || (manualOficioBase ? manualOficioBase.value : "") || "").trim()
+        : String((manualNumeroOficio ? manualNumeroOficio.value : "") || "").trim();
       if (!ejercicio || !enteId) {
         manualObservacionesInfo.textContent = "Selecciona ejercicio y ente para consultar.";
+        observacionesAllRows = [];
+        isObservacionesLoading = false;
+        applyObservacionesFilters();
+        updateManualSaveState();
+        updateWizardModeAvailability();
+        return;
+      }
+      if (mode === "solventacion" && !oficio) {
+        manualObservacionesInfo.textContent = "Selecciona un oficio base para consultar observaciones.";
         observacionesAllRows = [];
         isObservacionesLoading = false;
         applyObservacionesFilters();
@@ -1956,16 +2163,16 @@
         if (getManualMode() === "solventacion" && !observacionesAllRows.length) {
           manualObservacionesInfo.textContent = (
             "No hay observaciones cargadas de Notificación de Cédula para esta clave "
-            + "(incluyendo el mismo periodo y oficio)."
+            + "(incluyendo el mismo periodo y oficio base)."
           );
         } else {
-          manualObservacionesInfo.textContent = `Resultados: ${observacionesAllRows.length} observaciones.`;
+          manualObservacionesInfo.textContent = `Observaciones encontradas: ${observacionesAllRows.length}.`;
         }
         applyObservacionesFilters();
       } catch (error) {
         manualObservacionesInfo.textContent = "No se pudieron consultar las observaciones.";
         observacionesAllRows = [];
-        manualObservacionesBody.innerHTML = '<tr><td colspan="9" class="muted">Error al consultar.</td></tr>';
+        manualObservacionesBody.innerHTML = '<p class="muted">Error al consultar.</p>';
         updateObservacionesMetrics([]);
       } finally {
         isObservacionesLoading = false;
@@ -2024,7 +2231,7 @@
           manualSaveBtn.disabled = true;
           manualSaveBtn.title = (
             "Resultados de Solventación requiere observaciones previas de "
-            + "Notificación de Cédula con la misma clave (incluye periodo y oficio)."
+            + "Notificación de Cédula con la misma clave (incluye periodo y oficio base)."
           );
           return;
         }
@@ -2049,12 +2256,22 @@
     const updateManualStageActions = () => {
       const mode = getManualMode();
       if (manualBackToStage1Btn) {
-        manualBackToStage1Btn.style.display = mode === "solventacion" ? "" : "none";
+        manualBackToStage1Btn.style.display = "none";
+      }
+      if (wizardSaveDraftBtnManual) {
+        wizardSaveDraftBtnManual.style.display = mode === "solventacion" ? "none" : "";
+      }
+      if (manualSaveBtn) {
+        manualSaveBtn.style.display = mode === "solventacion" ? "none" : "";
       }
       if (manualValidateBtn) {
+        manualValidateBtn.style.display = mode === "solventacion" ? "none" : "";
         manualValidateBtn.textContent = mode === "solventacion"
           ? "Validar etapa 2 (borrador)"
           : "Validar etapa 1 (borrador)";
+      }
+      if (manualActionsHelper) {
+        manualActionsHelper.style.display = mode === "solventacion" ? "none" : "";
       }
     };
 
@@ -2133,24 +2350,10 @@
       if (!hasSolventacionObservacionesBase()) {
         if (showFeedback) {
           showWizardToast(
-            "Etapa 2: bloqueado. Primero debe existir Notificación de Cédula con el mismo periodo y oficio.",
+            "Etapa 2: bloqueado. Primero debe existir Notificación de Cédula con el mismo periodo y oficio base.",
             toastLevel,
           );
         }
-        return false;
-      }
-      const solvState = parseSolventacionDetalleState();
-      const hasAnyCantidad = solventacionTipos.some((tipo) => {
-        const row = solvState[tipo] || {};
-        return Math.max(0, Number.parseInt(String(row.cantidad || 0), 10) || 0) > 0;
-      });
-      if (!hasAnyCantidad) {
-        if (showFeedback) {
-          showWizardToast("Etapa 2: captura al menos una cantidad de solventación.", toastLevel);
-        }
-        return false;
-      }
-      if (!validateSolventacionDetalle({ showFeedback, ignoreMode: true, toastLevel })) {
         return false;
       }
       return true;
@@ -2169,7 +2372,6 @@
         titularNombre,
         titularPeriodoAdministrativo,
         titularAdministrativo,
-        titularCedulaResultados,
       ].filter(Boolean);
       for (const field of titularFields) {
         if (typeof field.checkValidity === "function" && !field.checkValidity()) {
@@ -2213,6 +2415,10 @@
         principalScopeInfo.hidden = hasScope;
       }
       if (!hasScope) {
+        if (manualStep2Chip) {
+          manualStep2Chip.disabled = true;
+          manualStep2Chip.title = "Completa 1. Oficio para continuar.";
+        }
         loaderModeButtons.forEach((button) => {
           button.disabled = true;
           button.title = "Primero selecciona ejercicio y ente.";
@@ -2241,6 +2447,7 @@
         const isActive = panelMode === currentMode || (panelMode === "manual" && currentMode === "solventacion");
         panel.hidden = !isActive;
       });
+      updateManualStepAccess();
     };
 
     const canNavigateToMode = (_targetMode, { showFeedback = true } = {}) => {
@@ -2258,11 +2465,8 @@
         return false;
       }
       setLoaderMode(targetMode);
-      if (targetMode === "manual") {
+      if (targetMode === "manual" || targetMode === "solventacion") {
         setManualStep(1);
-      }
-      if (targetMode === "solventacion") {
-        setManualStep(2);
       }
       updateManualStageActions();
       updateWizardModeAvailability();
@@ -2484,11 +2688,13 @@
         if (manualContextStatus) {
           manualContextStatus.textContent = "";
         }
+        updateManualStepAccess();
       });
       field.addEventListener("change", () => {
         if (manualContextStatus) {
           manualContextStatus.textContent = "";
         }
+        updateManualStepAccess();
       });
     });
     setManualStep(1);
@@ -2522,11 +2728,6 @@
         saveWizardDraft({ announce: true });
       });
     }
-    if (wizardSaveDraftBtnTitulares) {
-      wizardSaveDraftBtnTitulares.addEventListener("click", () => {
-        saveWizardDraft({ announce: true });
-      });
-    }
     if (wizardRestoreDraftBtn) {
       wizardRestoreDraftBtn.addEventListener("click", () => {
         restoreWizardDraft();
@@ -2542,13 +2743,13 @@
 
     if (titularCaptureForm) {
       titularCaptureForm.addEventListener("submit", (event) => {
+        event.preventDefault();
         if (!validateStage3({ showFeedback: true })) {
-          event.preventDefault();
           return;
         }
         wizardStageProgress.titulares = true;
         updateWizardModeAvailability();
-        saveWizardDraft({ announce: false });
+        saveWizardDraft({ announce: true });
       });
     }
 
@@ -2782,12 +2983,16 @@
         toggleFuentesByTipo();
         loadFuentesByEnte("");
         fetchCedulaScopeOptions();
-        fetchObservacionesCargadas();
+        if (getManualMode() === "cedula") {
+          fetchObservacionesCargadas();
+        }
       });
       manualEjercicio.addEventListener("change", () => {
         loadFuentesByEnte("");
         fetchCedulaScopeOptions();
-        fetchObservacionesCargadas();
+        if (getManualMode() === "cedula") {
+          fetchObservacionesCargadas();
+        }
       });
       if (manualTipoAuditoria) {
         manualTipoAuditoria.addEventListener("change", () => {
@@ -2805,7 +3010,9 @@
           toggleFuentesByTipo();
           loadFuentesByEnte("");
           fetchCedulaScopeOptions();
-          fetchObservacionesCargadas();
+          if (getManualMode() === "cedula") {
+            fetchObservacionesCargadas();
+          }
         });
       }
       manualFuente.addEventListener("change", () => {
@@ -2813,14 +3020,18 @@
         toggleCantidadesByFuente();
         renderPdpDetalleMenu();
         fetchCedulaScopeOptions();
-        fetchObservacionesCargadas();
+        if (getManualMode() === "cedula") {
+          fetchObservacionesCargadas();
+        }
       });
       if (manualFuenteNuevaInput) {
         manualFuenteNuevaInput.addEventListener("input", () => {
           toggleCantidadesByFuente();
           renderPdpDetalleMenu();
           fetchCedulaScopeOptions();
-          fetchObservacionesCargadas();
+          if (getManualMode() === "cedula") {
+            fetchObservacionesCargadas();
+          }
         });
       }
       if (manualFuenteTipoHint && manualTipoAuditoria) {
@@ -2833,73 +3044,64 @@
       }
       toggleFuentesByTipo();
       if (manualPeriodo) {
-        manualPeriodo.addEventListener("input", fetchObservacionesCargadas);
+        manualPeriodo.addEventListener("input", () => {
+          if (getManualMode() === "cedula") {
+            fetchObservacionesCargadas();
+          }
+        });
       }
       if (manualNumeroOficio) {
-        manualNumeroOficio.addEventListener("input", fetchObservacionesCargadas);
+        manualNumeroOficio.addEventListener("input", () => {
+          if (getManualMode() === "cedula") {
+            fetchObservacionesCargadas();
+          }
+        });
+      }
+      if (manualOficioBaseSelector) {
+        manualOficioBaseSelector.addEventListener("change", () => {
+          syncSolventacionScopeSelection();
+          fetchObservacionesCargadas();
+          updateWizardModeAvailability();
+        });
       }
       if (principalEjercicio && principalEnte) {
         loadPrincipalEntes(principalEnte.dataset.selected || principalEnte.value || "");
       } else {
         fetchCedulaScopeOptions();
-        fetchObservacionesCargadas();
+        if (getManualMode() === "cedula") {
+          fetchObservacionesCargadas();
+        }
       }
       if (manualObservacionesBody) {
         manualObservacionesBody.addEventListener("change", (event) => {
           const target = event.target;
-          if (!(target instanceof HTMLSelectElement) || !target.classList.contains("obs-estado-input")) {
-            return;
-          }
-          const row = target.closest("tr");
+          const row = target instanceof HTMLElement ? target.closest(".loader-obs-item") : null;
           if (!row) {
             return;
           }
-          const estado = normalizeEstadoForUi(target.value || "");
-          const className = estadoClassName(estado);
-          row.classList.remove("is-emitido", "is-pendiente", "is-solventado");
-          row.classList.add(className);
-          target.classList.remove("is-emitido", "is-pendiente", "is-solventado");
-          target.classList.add(className);
-        });
-        const recalcPendingInRow = (row) => {
-          if (!row) {
+          const estadoText = row.querySelector(".obs-item-estado");
+          if (!estadoText) {
             return;
           }
-          const emitidoInput = row.querySelector(".obs-monto-emitido-input");
-          const solventadoInput = row.querySelector(".obs-monto-solventado-input");
-          const pendienteInput = row.querySelector(".obs-monto-pendiente-input");
-          if (!emitidoInput || !solventadoInput || !pendienteInput) {
+          if (target instanceof HTMLSelectElement && target.classList.contains("obs-estado-input")) {
+            const estado = normalizeEstadoForUi(target.value || "");
+            estadoText.textContent = estado === "Solventado" ? "Solventada" : estado;
             return;
           }
-          const emitido = Number.parseFloat(String(emitidoInput.value || "0").replace(/,/g, "")) || 0;
-          const solventado = Number.parseFloat(String(solventadoInput.value || "0").replace(/,/g, "")) || 0;
-          const pendiente = emitido - solventado;
-          pendienteInput.value = pendiente.toFixed(2);
-          pendienteInput.classList.toggle("is-negative", pendiente < 0);
-        };
-        manualObservacionesBody.addEventListener("input", (event) => {
-          const target = event.target;
-          if (!(target instanceof HTMLElement)) {
-            return;
+          if (target instanceof HTMLInputElement && target.classList.contains("obs-solventada-check")) {
+            estadoText.textContent = target.checked ? "Solventada" : "Pendiente";
           }
-          if (
-            !target.classList.contains("obs-monto-emitido-input")
-            && !target.classList.contains("obs-monto-solventado-input")
-          ) {
-            return;
-          }
-          const row = target.closest("tr");
-          recalcPendingInRow(row);
         });
         manualObservacionesBody.addEventListener("click", (event) => {
           const target = event.target;
           if (!(target instanceof HTMLElement)) {
             return;
           }
-          if (!target.classList.contains("obs-save-btn")) {
+          const saveButton = target.closest(".obs-save-all-btn");
+          if (!(saveButton instanceof HTMLElement)) {
             return;
           }
-          saveObservacionRow(target);
+          saveObservacionesBulk(saveButton);
         });
       }
 

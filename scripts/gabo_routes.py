@@ -577,6 +577,39 @@ def register_gabo_routes(app, deps):
             total += qty
         return total, counts
 
+    def count_existing_observaciones_by_clave(
+        db,
+        *,
+        ejercicio: str,
+        ente_id: str,
+        periodo: str,
+        oficio: str,
+    ) -> tuple[int, dict[str, int]]:
+        rows = db.execute(
+            f"""
+            SELECT
+                TRIM(COALESCE(tipo_anexo, '')) AS tipo_anexo,
+                COUNT(*) AS total
+            FROM observaciones
+            WHERE TRIM(COALESCE(ejercicio, '')) = ?
+              AND {normalize_ente_id_sql('ente_id')} = ?
+              AND LOWER(TRIM(COALESCE(periodo_cedula, ''))) = LOWER(TRIM(COALESCE(?, '')))
+              AND LOWER(TRIM(COALESCE(oficio, ''))) = LOWER(TRIM(COALESCE(?, '')))
+            GROUP BY TRIM(COALESCE(tipo_anexo, ''))
+            """,
+            (ejercicio, ente_id, periodo, oficio),
+        ).fetchall()
+        counts: dict[str, int] = {}
+        total = 0
+        for row in rows:
+            tipo = (row["tipo_anexo"] or "").strip().upper()
+            qty = int(row["total"] or 0)
+            if not tipo or qty <= 0:
+                continue
+            counts[tipo] = qty
+            total += qty
+        return total, counts
+
     @app.get("/carga/entes")
     @gabo_required
     def carga_entes_por_ejercicio():
@@ -912,6 +945,7 @@ def register_gabo_routes(app, deps):
             "manual_titular_nombre": "",
             "manual_administrativo_nombre": "",
             "manual_numero_oficio": "",
+            "manual_oficio_base": "",
             "manual_asunto": "Notificación de Cédula de Resultados",
             "manual_ejercicio": manual_ejercicio_default,
             "manual_fuente_id": "",
@@ -963,6 +997,7 @@ def register_gabo_routes(app, deps):
                     "manual_titular_nombre": (request.form.get("manual_titular_nombre") or "").strip(),
                     "manual_administrativo_nombre": (request.form.get("manual_administrativo_nombre") or "").strip(),
                     "manual_numero_oficio": (request.form.get("manual_numero_oficio") or "").strip(),
+                    "manual_oficio_base": " ".join((request.form.get("manual_oficio_base") or "").split()),
                     "manual_asunto": (request.form.get("manual_asunto") or "").strip() or "Notificación de Cédula de Resultados",
                     "manual_ejercicio": (request.form.get("manual_ejercicio") or "").strip() or manual_ejercicio_default,
                     "manual_fuente_id": (request.form.get("manual_fuente_id") or "").strip(),
@@ -1014,10 +1049,15 @@ def register_gabo_routes(app, deps):
                         titular_periodo_administrativo,
                         label="periodo administrativo",
                     )
-                    titular_cedula_periodos, titular_cedula_keys = parse_cedula_periodos(
-                        titular_ejercicio,
-                        form_data["titular_cedula_resultados"],
-                    )
+                    titular_cedula_raw = " ".join((form_data["titular_cedula_resultados"] or "").split())
+                    if titular_cedula_raw:
+                        titular_cedula_periodos, titular_cedula_keys = parse_cedula_periodos(
+                            titular_ejercicio,
+                            titular_cedula_raw,
+                        )
+                    else:
+                        titular_cedula_periodos = [titular_periodo_informe] if titular_periodo_informe else []
+                        titular_cedula_keys = [titular_periodo_informe_key] if titular_periodo_informe_key else []
                     titular_cedula_resultados = " | ".join(titular_cedula_periodos)
 
                     if not titular_ejercicio:
@@ -1036,11 +1076,6 @@ def register_gabo_routes(app, deps):
                         raise ValueError("Titulares: periodo administrativo requerido.")
                     if not titular_administrativo:
                         raise ValueError("Titulares: nombre administrativo requerido.")
-                    if not titular_cedula_periodos:
-                        raise ValueError(
-                            "Titulares: cédula de resultados requerida. "
-                            "Puedes capturar varias particiones."
-                        )
 
                     ente_row = db.execute(
                         """
@@ -1158,11 +1193,12 @@ def register_gabo_routes(app, deps):
                     titular_nombre = ""
                     administrativo_nombre = ""
                     numero_oficio = form_data["manual_numero_oficio"]
+                    oficio_base = " ".join(form_data["manual_oficio_base"].split())
                     asunto = form_data["manual_asunto"]
                     ejercicio = form_data["manual_ejercicio"]
                     fuente_id_raw = form_data["manual_fuente_id"]
                     fuente_nueva = " ".join(form_data["manual_fuente_nueva"].split()) if fuente_id_raw == "__new__" else ""
-                    periodo = form_data["manual_periodo"]
+                    periodo = " ".join(form_data["manual_periodo"].split())
                     periodo_titular = form_data["manual_periodo_titular"]
                     ramo_33 = "No"
                     estado = "E"
@@ -1171,6 +1207,7 @@ def register_gabo_routes(app, deps):
                     raw_pdp_detalle_json = form_data["manual_pdp_detalle_json"]
                     raw_solventacion_detalle_json = form_data["manual_solventacion_detalle_json"]
                     fuentes_detalle_rows = parse_manual_fuentes_detalle(form_data["manual_fuentes_detalle_json"])
+                    is_solventacion = asunto == "Se emiten resultados de solventación del periodo"
                     manual_edit_id = None
                     if manual_id_raw:
                         try:
@@ -1180,10 +1217,6 @@ def register_gabo_routes(app, deps):
 
                     if not manual_ente_id:
                         raise ValueError("Debes seleccionar un ente.")
-                    if not tipo_auditoria:
-                        raise ValueError("Debes seleccionar el tipo de auditoría.")
-                    if tipo_auditoria not in {"Financiera", "Obra Pública"}:
-                        raise ValueError("Tipo de auditoría inválido.")
                     if not numero_oficio:
                         raise ValueError("Debes capturar el número de oficio.")
                     if asunto not in ASUNTOS_MANUALES:
@@ -1192,20 +1225,93 @@ def register_gabo_routes(app, deps):
                         raise ValueError("Debes capturar el ejercicio.")
                     if ejercicio not in manual_ejercicios:
                         raise ValueError("El ejercicio seleccionado no está disponible.")
-                    if not periodo:
-                        raise ValueError("Debes capturar el periodo.")
                     if not fecha_notificacion:
                         raise ValueError("Debes capturar la fecha de notificación.")
                     try:
                         int(ejercicio)
                     except ValueError as exc:
                         raise ValueError("Ejercicio inválido.") from exc
+                    if is_solventacion:
+                        if not oficio_base:
+                            raise ValueError("Debes seleccionar el oficio de cédula a contestar.")
+                        period_rows = db.execute(
+                            f"""
+                            SELECT DISTINCT
+                                TRIM(COALESCE(periodo_cedula, '')) AS periodo
+                            FROM observaciones
+                            WHERE TRIM(COALESCE(ejercicio, '')) = ?
+                              AND {normalize_ente_id_sql('ente_id')} = ?
+                              AND LOWER(TRIM(COALESCE(oficio, ''))) = LOWER(TRIM(COALESCE(?, '')))
+                              AND TRIM(COALESCE(periodo_cedula, '')) != ''
+                            ORDER BY LOWER(TRIM(COALESCE(periodo_cedula, ''))) ASC
+                            LIMIT 1200
+                            """,
+                            (ejercicio, manual_ente_id, oficio_base),
+                        ).fetchall()
+                        period_options = [
+                            " ".join((row["periodo"] or "").split())
+                            for row in period_rows
+                            if " ".join((row["periodo"] or "").split())
+                        ]
+                        if not period_options:
+                            raise ValueError(
+                                "No se encontraron observaciones de Notificación de Cédula para el oficio base seleccionado."
+                            )
+                        if (
+                            not periodo
+                            or not any(
+                                periodo.lower() == option.lower()
+                                for option in period_options
+                            )
+                        ):
+                            periodo = period_options[0]
+                            form_data["manual_periodo"] = periodo
+
+                        scope_meta_row = db.execute(
+                            f"""
+                            SELECT
+                                TRIM(COALESCE(tipo_auditoria, '')) AS tipo_auditoria,
+                                TRIM(COALESCE(fuente_financiamiento, '')) AS fuente_nombre
+                            FROM observaciones
+                            WHERE TRIM(COALESCE(ejercicio, '')) = ?
+                              AND {normalize_ente_id_sql('ente_id')} = ?
+                              AND LOWER(TRIM(COALESCE(periodo_cedula, ''))) = LOWER(TRIM(COALESCE(?, '')))
+                              AND LOWER(TRIM(COALESCE(oficio, ''))) = LOWER(TRIM(COALESCE(?, '')))
+                            ORDER BY id ASC
+                            LIMIT 1
+                            """,
+                            (ejercicio, manual_ente_id, periodo, oficio_base),
+                        ).fetchone()
+                        if scope_meta_row:
+                            tipo_sugerido = (scope_meta_row["tipo_auditoria"] or "").strip()
+                            if tipo_sugerido in {"Financiera", "Obra Pública"}:
+                                tipo_auditoria = tipo_sugerido
+                                form_data["manual_tipo_auditoria"] = tipo_auditoria
+                            fuente_sugerida = " ".join((scope_meta_row["fuente_nombre"] or "").split())
+                            if fuente_sugerida:
+                                fuente_id_raw = f"__obs__:{fuente_sugerida}"
+                                form_data["manual_fuente_id"] = fuente_id_raw
+                        if not tipo_auditoria:
+                            tipo_auditoria = "Financiera"
+                            form_data["manual_tipo_auditoria"] = tipo_auditoria
+                    else:
+                        if not periodo:
+                            raise ValueError("Debes capturar el periodo.")
+
+                    if not tipo_auditoria:
+                        raise ValueError("Debes seleccionar el tipo de auditoría.")
+                    if tipo_auditoria not in {"Financiera", "Obra Pública"}:
+                        raise ValueError("Tipo de auditoría inválido.")
                     fuente_id = None
                     fuente_nombre = ""
                     usa_fuentes_detalle = (
                         asunto == "Notificación de Cédula de Resultados"
                         and len(fuentes_detalle_rows) > 0
                     )
+                    if is_solventacion and not fuente_id_raw:
+                        raise ValueError(
+                            "No se encontró una fuente base en la cédula seleccionada."
+                        )
                     if usa_fuentes_detalle and manual_edit_id:
                         raise ValueError("La edición con múltiples fuentes no está soportada.")
                     if not usa_fuentes_detalle and not fuente_id_raw:
@@ -1415,9 +1521,9 @@ def register_gabo_routes(app, deps):
                         solventacion_totales_by_anexo = detalle_solventacion
                         pdp_details = []
                         pdp_amounts = [monto_pdp_emitido] + [0.0] * (cantidad_pdp - 1) if cantidad_pdp > 0 else []
-                    is_solventacion = asunto == "Se emiten resultados de solventación del periodo"
 
                     tipos_auditoria = [tipo_auditoria]
+                    oficio_scope = oficio_base if is_solventacion else numero_oficio
                     if is_solventacion:
                         requested_counts = {
                             "SA": cantidad_sa,
@@ -1426,31 +1532,28 @@ def register_gabo_routes(app, deps):
                             "PEFCF": cantidad_pefcf,
                             "R": cantidad_r,
                         }
-                        for tipo_item in tipos_auditoria:
-                            total_scope, existing_counts = count_existing_observaciones_scope(
-                                db,
-                                ejercicio=ejercicio,
-                                ente_id=manual_ente_id,
-                                tipo_auditoria=tipo_item,
-                                fuente_nombre=fuente_nombre,
-                                periodo=periodo,
-                                oficio=numero_oficio,
+                        total_scope, existing_counts = count_existing_observaciones_by_clave(
+                            db,
+                            ejercicio=ejercicio,
+                            ente_id=manual_ente_id,
+                            periodo=periodo,
+                            oficio=oficio_scope,
+                        )
+                        if total_scope <= 0:
+                            raise ValueError(
+                                "Resultados de Solventación bloqueado: primero debe existir la "
+                                "Notificación de Cédula de Resultados para la misma clave "
+                                "(ejercicio, ente, periodo y oficio base)."
                             )
-                            if total_scope <= 0:
+                        for tipo_anexo, requested in requested_counts.items():
+                            if requested <= 0:
+                                continue
+                            available = int(existing_counts.get(tipo_anexo, 0))
+                            if requested > available:
                                 raise ValueError(
-                                    "Resultados de Solventación bloqueado: primero debe existir la "
-                                    "Notificación de Cédula de Resultados para la misma clave "
-                                    "(ejercicio, ente, tipo, fuente, periodo y oficio)."
+                                    f"En solventación, cantidad {tipo_anexo} ({requested}) excede "
+                                    f"las observaciones cargadas en cédula ({available})."
                                 )
-                            for tipo_anexo, requested in requested_counts.items():
-                                if requested <= 0:
-                                    continue
-                                available = int(existing_counts.get(tipo_anexo, 0))
-                                if requested > available:
-                                    raise ValueError(
-                                        f"En solventación, cantidad {tipo_anexo} ({requested}) excede "
-                                        f"las observaciones cargadas en cédula ({available})."
-                                    )
                     if manual_edit_id and len(tipos_auditoria) > 1:
                         raise ValueError(
                             "Para editar una captura existente, selecciona solo 'Financiero'."
