@@ -728,6 +728,67 @@ def register_gabo_routes(app, deps):
             payload.append(item)
         return jsonify(payload)
 
+    @app.get("/carga/observaciones-claves")
+    @gabo_required
+    def carga_observaciones_claves():
+        ejercicio = (request.args.get("ejercicio") or "").strip()
+        ente_id = normalize_ente_id(request.args.get("ente_id", ""))
+        tipo_auditoria = (request.args.get("tipo_auditoria") or "").strip()
+        fuente = " ".join((request.args.get("fuente") or "").split())
+        if not ejercicio or not ente_id:
+            return jsonify([])
+
+        db = get_db()
+        params: list[str] = [ejercicio, ente_id]
+        tipo_clause = ""
+        if tipo_auditoria:
+            tipo_options = _tipo_auditoria_options(tipo_auditoria)
+            if not tipo_options:
+                tipo_options = [tipo_auditoria]
+            tipo_placeholders = ", ".join(["?"] * len(tipo_options))
+            tipo_clause = f" AND TRIM(COALESCE(tipo_auditoria, '')) IN ({tipo_placeholders})"
+            params.extend(tipo_options)
+
+        where_extra: list[str] = []
+        if fuente:
+            where_extra.append(
+                "LOWER(TRIM(COALESCE(fuente_financiamiento, ''))) = LOWER(TRIM(COALESCE(?, '')))"
+            )
+            params.append(fuente)
+
+        where_sql = ""
+        if where_extra:
+            where_sql = " AND " + " AND ".join(where_extra)
+
+        rows = db.execute(
+            f"""
+            SELECT DISTINCT
+                TRIM(COALESCE(periodo_cedula, '')) AS periodo,
+                TRIM(COALESCE(oficio, '')) AS oficio
+            FROM observaciones
+            WHERE TRIM(COALESCE(ejercicio, '')) = ?
+              AND {normalize_ente_id_sql('ente_id')} = ?
+              {tipo_clause}
+              {where_sql}
+              AND TRIM(COALESCE(periodo_cedula, '')) != ''
+              AND TRIM(COALESCE(oficio, '')) != ''
+            ORDER BY
+              LOWER(TRIM(COALESCE(periodo_cedula, ''))) ASC,
+              LOWER(TRIM(COALESCE(oficio, ''))) ASC
+            LIMIT 1200
+            """,
+            params,
+        ).fetchall()
+
+        payload = []
+        for row in rows:
+            periodo = (row["periodo"] or "").strip()
+            oficio = (row["oficio"] or "").strip()
+            if not periodo or not oficio:
+                continue
+            payload.append({"periodo": periodo, "oficio": oficio})
+        return jsonify(payload)
+
     @app.post("/carga/observaciones-cargadas/<int:observacion_id>/actualizar")
     @gabo_required
     def carga_observacion_actualizar(observacion_id: int):
@@ -1377,8 +1438,8 @@ def register_gabo_routes(app, deps):
                             )
                             if total_scope <= 0:
                                 raise ValueError(
-                                    "Para capturar Oficios de Respuesta a Solventación primero debe existir "
-                                    "la Notificación de Cédula de Resultados para la misma clave "
+                                    "Resultados de Solventación bloqueado: primero debe existir la "
+                                    "Notificación de Cédula de Resultados para la misma clave "
                                     "(ejercicio, ente, tipo, fuente, periodo y oficio)."
                                 )
                             for tipo_anexo, requested in requested_counts.items():
@@ -1388,7 +1449,7 @@ def register_gabo_routes(app, deps):
                                 if requested > available:
                                     raise ValueError(
                                         f"En solventación, cantidad {tipo_anexo} ({requested}) excede "
-                                        f"las observaciones existentes ({available})."
+                                        f"las observaciones cargadas en cédula ({available})."
                                     )
                     if manual_edit_id and len(tipos_auditoria) > 1:
                         raise ValueError(

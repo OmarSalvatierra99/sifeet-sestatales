@@ -31,21 +31,41 @@
 
   <main class="page-content loader-content">
     <section class="panel loader-mode-panel">
+      <div class="form-grid loader-context-grid" style="margin-bottom:0.85rem;">
+        <div class="field">
+          <label for="principal_ejercicio">Ejercicio (principal)</label>
+          <select id="principal_ejercicio">
+            {% for ejercicio in manual_ejercicios %}
+              <option value="{{ ejercicio }}" {% if form_data.manual_ejercicio == ejercicio %}selected{% endif %}>{{ ejercicio }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="principal_ente_id">Ente (principal)</label>
+          <select id="principal_ente_id" data-selected="{{ form_data.manual_ente_id }}">
+            <option value="">Selecciona un ente</option>
+            {% for ente in manual_entes %}
+              <option value="{{ ente.ente_id }}" {% if form_data.manual_ente_id == ente.ente_id %}selected{% endif %}>
+                {{ ente.ente_numero }} - {{ ente.ente_nombre }}
+              </option>
+            {% endfor %}
+          </select>
+          <p class="helper">Este filtro alimenta Notificación de Cédula, Solventación y Titulares.</p>
+        </div>
+      </div>
       <div class="loader-mode-toggle" role="tablist" aria-label="Seleccionar módulo de captura">
         <button type="button" class="loader-mode-btn" data-loader-mode-target="manual" aria-pressed="false">
-          1. Notificación de Cédula de Resultados
+          Notificación de Cédula de Resultados
         </button>
         <button type="button" class="loader-mode-btn" data-loader-mode-target="solventacion" aria-pressed="false">
-          2. Resultados de Solventación
+          Resultados de Solventación
         </button>
         <button type="button" class="loader-mode-btn" data-loader-mode-target="titulares" aria-pressed="false">
-          3. Carga de titulares
+          Carga de titulares
         </button>
       </div>
-      <div class="loader-actions" style="margin-top:0.75rem; padding-top:0.65rem; border-top:1px solid var(--color-border);">
-        <button type="button" class="btn-secondary" id="wizardSaveDraftBtnTop">Guardar en progreso</button>
-        <button type="button" class="btn-secondary" id="wizardRestoreDraftBtn">Restaurar borrador</button>
-        <button type="button" class="btn-secondary" id="wizardClearDraftBtn">Limpiar borrador</button>
+      <div class="status status-info" id="principal_scope_info" hidden>
+        Primero selecciona ejercicio y ente.
       </div>
       <div class="status status-info" id="wizardToast" hidden></div>
     </section>
@@ -61,6 +81,8 @@
       {% endif %}
       <form class="record-form loader-manual-form" method="POST" autocomplete="off" id="manualCaptureForm">
         <input type="hidden" name="manual_id" value="{{ form_data.manual_id }}">
+        <input id="manual_ejercicio" name="manual_ejercicio" type="hidden" value="{{ form_data.manual_ejercicio }}">
+        <input id="manual_ente_id" name="manual_ente_id" type="hidden" value="{{ form_data.manual_ente_id }}">
         <div class="loader-stepper" id="manualStepper">
           <button type="button" class="loader-step-chip is-active" data-step-target="1">1. Oficio</button>
           <button type="button" class="loader-step-chip" data-step-target="2">2. Observaciones Emitidas</button>
@@ -74,31 +96,29 @@
           <div class="form-grid loader-context-grid">
             <input id="manual_asunto" name="manual_asunto" type="hidden" value="{{ form_data.manual_asunto }}">
             <div class="field">
-              <label for="manual_ejercicio">Ejercicio</label>
-              <select id="manual_ejercicio" name="manual_ejercicio" required>
-                {% for ejercicio in manual_ejercicios %}
-                  <option value="{{ ejercicio }}" {% if form_data.manual_ejercicio == ejercicio %}selected{% endif %}>{{ ejercicio }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="field">
-              <label for="manual_ente_id">Ente</label>
-              <select id="manual_ente_id" name="manual_ente_id" required>
-                <option value="">Selecciona un ente</option>
-                {% for ente in manual_entes %}
-                  <option value="{{ ente.ente_id }}" {% if form_data.manual_ente_id == ente.ente_id %}selected{% endif %}>
-                    {{ ente.ente_numero }} - {{ ente.ente_nombre }}
-                  </option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="field">
               <label for="manual_numero_oficio">Número de oficio</label>
-              <input id="manual_numero_oficio" name="manual_numero_oficio" type="text" value="{{ form_data.manual_numero_oficio }}" required>
+              <input
+                id="manual_numero_oficio"
+                name="manual_numero_oficio"
+                type="text"
+                value="{{ form_data.manual_numero_oficio }}"
+                list="manual_oficio_options"
+                required
+              >
+              <datalist id="manual_oficio_options"></datalist>
             </div>
             <div class="field">
               <label for="manual_periodo">Periodo</label>
-              <input id="manual_periodo" name="manual_periodo" type="text" value="{{ form_data.manual_periodo }}" placeholder="Ej. 01 de enero al 31 de diciembre" required>
+              <input
+                id="manual_periodo"
+                name="manual_periodo"
+                type="text"
+                value="{{ form_data.manual_periodo }}"
+                list="manual_periodo_options"
+                placeholder="Ej. 01 de enero al 31 de diciembre"
+                required
+              >
+              <datalist id="manual_periodo_options"></datalist>
             </div>
             <div class="field">
               <label for="manual_fecha_notificacion">Fecha de notificación</label>
@@ -326,29 +346,10 @@
         </div>
       {% endif %}
       <form class="record-form loader-manual-form" method="POST" autocomplete="off" id="titularCaptureForm">
+        <input id="titular_ejercicio" name="titular_ejercicio" type="hidden" value="{{ form_data.titular_ejercicio }}">
+        <input id="titular_ente_id" name="titular_ente_id" type="hidden" value="{{ form_data.titular_ente_id }}">
+        <p class="helper">Ejercicio y ente se toman del filtro principal.</p>
         <div class="form-grid">
-          <div class="field">
-            <label for="titular_ejercicio">Ejercicio</label>
-            <select id="titular_ejercicio" name="titular_ejercicio" required>
-              {% for ejercicio in titular_ejercicios %}
-                <option value="{{ ejercicio }}" {% if form_data.titular_ejercicio == ejercicio %}selected{% endif %}>
-                  {{ ejercicio }}
-                </option>
-              {% endfor %}
-            </select>
-            <p class="helper">Ejercicio fijo para captura de titulares: 2025.</p>
-          </div>
-          <div class="field">
-            <label for="titular_ente_id">Ente (ejercicio seleccionado)</label>
-            <select id="titular_ente_id" name="titular_ente_id" data-selected="{{ form_data.titular_ente_id }}" required>
-              <option value="">Selecciona un ente</option>
-              {% for ente in titular_entes %}
-                <option value="{{ ente.ente_id }}" {% if form_data.titular_ente_id == ente.ente_id %}selected{% endif %}>
-                  {{ ente.ente_numero }} - {{ ente.ente_nombre }}
-                </option>
-              {% endfor %}
-            </select>
-          </div>
           <div class="field">
             <label for="titular_tipo_auditoria">Tipo de auditoría</label>
             <select id="titular_tipo_auditoria" name="titular_tipo_auditoria" required>
@@ -422,6 +423,13 @@
         {% endif %}
       </section>
     {% endif %}
+    <section class="panel loader-mode-panel">
+      <div class="loader-actions" style="margin-top:0.1rem;">
+        <button type="button" class="btn-secondary" id="wizardSaveDraftBtnTop">Guardar en progreso</button>
+        <button type="button" class="btn-secondary" id="wizardRestoreDraftBtn">Restaurar borrador</button>
+        <button type="button" class="btn-secondary" id="wizardClearDraftBtn">Limpiar borrador</button>
+      </div>
+    </section>
   </main>
 
   <footer class="site-footer">
@@ -431,7 +439,6 @@
     const loaderModeButtons = Array.from(document.querySelectorAll("[data-loader-mode-target]"));
     const loaderModePanels = Array.from(document.querySelectorAll("[data-loader-mode-panel]"));
     const validLoaderModes = new Set(["manual", "solventacion", "titulares"]);
-    const loaderModeOrder = ["manual", "solventacion", "titulares"];
     const wizardToast = document.getElementById("wizardToast");
     const wizardSaveDraftBtnTop = document.getElementById("wizardSaveDraftBtnTop");
     const wizardRestoreDraftBtn = document.getElementById("wizardRestoreDraftBtn");
@@ -503,60 +510,18 @@
 
     const titularEjercicio = document.getElementById("titular_ejercicio");
     const titularEnte = document.getElementById("titular_ente_id");
-    if (titularEjercicio && titularEnte) {
-      let currentFetchId = 0;
 
-      const loadEntesByEjercicio = async (selectedEnteId = "") => {
-        const requestId = ++currentFetchId;
-        const ejercicio = (titularEjercicio.value || "").trim();
-        titularEnte.innerHTML = '<option value=\"\">Cargando entes...</option>';
-        if (!ejercicio) {
-          titularEnte.innerHTML = '<option value=\"\">Selecciona un ente</option>';
-          titularEnte.value = "";
-          return;
-        }
-        try {
-          const response = await fetch(`/carga/entes?ejercicio=${encodeURIComponent(ejercicio)}`);
-          if (!response.ok) {
-            throw new Error("No se pudo cargar entes");
-          }
-          if (requestId !== currentFetchId) {
-            return;
-          }
-          const rows = await response.json();
-          if (!Array.isArray(rows) || !rows.length) {
-            titularEnte.innerHTML = '<option value=\"\">Sin entes para ese ejercicio</option>';
-            titularEnte.value = "";
-            return;
-          }
-          titularEnte.innerHTML = '<option value=\"\">Selecciona un ente</option>' + rows.map((row) => (
-            `<option value="${row.ente_id}">${row.ente_numero || ""} - ${row.ente_nombre || ""}</option>`
-          )).join("");
-          const normalizedSelection = (selectedEnteId || "").trim();
-          if (normalizedSelection && rows.some((row) => (row.ente_id || "").trim() === normalizedSelection)) {
-            titularEnte.value = normalizedSelection;
-          } else {
-            titularEnte.value = "";
-          }
-        } catch (error) {
-          titularEnte.innerHTML = '<option value=\"\">No se pudieron cargar entes</option>';
-          titularEnte.value = "";
-        }
-      };
-
-      titularEjercicio.addEventListener("change", () => {
-        loadEntesByEjercicio("");
-      });
-
-      loadEntesByEjercicio(titularEnte.dataset.selected || titularEnte.value || "");
-    }
-
+    const principalEjercicio = document.getElementById("principal_ejercicio");
+    const principalEnte = document.getElementById("principal_ente_id");
+    const principalScopeInfo = document.getElementById("principal_scope_info");
     const manualAsunto = document.getElementById("manual_asunto");
     const manualEjercicio = document.getElementById("manual_ejercicio");
     const manualEnte = document.getElementById("manual_ente_id");
     const manualTipoAuditoria = document.getElementById("manual_tipo_auditoria");
     const manualNumeroOficio = document.getElementById("manual_numero_oficio");
+    const manualOficioOptions = document.getElementById("manual_oficio_options");
     const manualPeriodo = document.getElementById("manual_periodo");
+    const manualPeriodoOptions = document.getElementById("manual_periodo_options");
     const manualContextStatus = document.getElementById("manual_context_status");
     const manualFuente = document.getElementById("manual_fuente_id");
     const manualFuentesWrap = document.getElementById("manual_fuentes_wrap");
@@ -622,6 +587,8 @@
     let pdpSubconceptCatalog = {};
     let currentManualStep = 1;
     let observacionesAllRows = [];
+    let cedulaScopeRows = [];
+    let isObservacionesLoading = false;
     let fuentesDetalleState = [];
     const solventacionTipos = ["PDP", "PEFCF", "PRAS", "R", "SA"];
     const contextDraftKey = "sifeet_manual_context_draft";
@@ -742,14 +709,28 @@
     };
 
     const contextFields = [
-      manualEjercicio,
-      manualEnte,
       manualNumeroOficio,
       manualPeriodo,
       manualFechaNotificacion,
     ].filter(Boolean);
 
+    const hasPrincipalScope = () => {
+      const ejercicio = principalEjercicio ? String(principalEjercicio.value || "").trim() : "";
+      const enteId = principalEnte ? String(principalEnte.value || "").trim() : "";
+      return !!(ejercicio && enteId);
+    };
+
+    const showPrincipalScopeMessage = () => {
+      showWizardToast("Primero selecciona ejercicio y ente.", "info");
+    };
+
     const validateContextStep = ({ showFeedback = true } = {}) => {
+      if (!hasPrincipalScope()) {
+        if (showFeedback) {
+          showPrincipalScopeMessage();
+        }
+        return false;
+      }
       for (const field of contextFields) {
         if (typeof field.checkValidity === "function" && !field.checkValidity()) {
           if (showFeedback && typeof field.reportValidity === "function") {
@@ -832,6 +813,71 @@
       window.setTimeout(() => setSelectValueWhenReady(field, expected, retries - 1), 180);
     };
 
+    const syncPrincipalFiltersToForms = ({ syncTitular = true } = {}) => {
+      const ejercicio = principalEjercicio ? String(principalEjercicio.value || "").trim() : "";
+      const enteId = principalEnte ? String(principalEnte.value || "").trim() : "";
+      if (manualEjercicio && manualEjercicio.value !== ejercicio) {
+        manualEjercicio.value = ejercicio;
+        manualEjercicio.dispatchEvent(new Event("change", { bubbles: true }));
+      } else if (manualEjercicio) {
+        manualEjercicio.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (manualEnte && manualEnte.value !== enteId) {
+        manualEnte.value = enteId;
+        manualEnte.dispatchEvent(new Event("change", { bubbles: true }));
+      } else if (manualEnte) {
+        manualEnte.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (syncTitular && titularEjercicio) {
+        titularEjercicio.value = ejercicio;
+      }
+      if (syncTitular && titularEnte) {
+        titularEnte.value = enteId;
+      }
+      updateWizardModeAvailability();
+    };
+
+    const loadPrincipalEntes = async (selectedEnteId = "") => {
+      if (!principalEjercicio || !principalEnte) {
+        syncPrincipalFiltersToForms({ syncTitular: true });
+        return;
+      }
+      const ejercicio = String(principalEjercicio.value || "").trim();
+      principalEnte.innerHTML = '<option value="">Cargando entes...</option>';
+      if (!ejercicio) {
+        principalEnte.innerHTML = '<option value="">Selecciona un ente</option>';
+        principalEnte.value = "";
+        syncPrincipalFiltersToForms({ syncTitular: true });
+        return;
+      }
+      try {
+        const response = await fetch(`/carga/entes?ejercicio=${encodeURIComponent(ejercicio)}`);
+        if (!response.ok) {
+          throw new Error("No se pudo cargar entes");
+        }
+        const rows = await response.json();
+        if (!Array.isArray(rows) || !rows.length) {
+          principalEnte.innerHTML = '<option value="">Sin entes para ese ejercicio</option>';
+          principalEnte.value = "";
+          syncPrincipalFiltersToForms({ syncTitular: true });
+          return;
+        }
+        principalEnte.innerHTML = '<option value="">Selecciona un ente</option>' + rows.map((row) => (
+          `<option value="${row.ente_id}">${row.ente_numero || ""} - ${row.ente_nombre || ""}</option>`
+        )).join("");
+        const normalizedSelection = (selectedEnteId || "").trim();
+        if (normalizedSelection && rows.some((row) => String(row.ente_id || "").trim() === normalizedSelection)) {
+          principalEnte.value = normalizedSelection;
+        } else {
+          principalEnte.value = "";
+        }
+      } catch (_error) {
+        principalEnte.innerHTML = '<option value="">No se pudieron cargar entes</option>';
+        principalEnte.value = "";
+      }
+      syncPrincipalFiltersToForms({ syncTitular: true });
+    };
+
     const saveWizardDraft = ({ announce = true } = {}) => {
       const payload = {
         version: 1,
@@ -911,11 +957,16 @@
           titulares: !!payload.stage_progress.titulares,
         };
       }
-      if (manualEjercicio) {
-        manualEjercicio.dispatchEvent(new Event("change", { bubbles: true }));
+      if (principalEjercicio && manualFormValues.manual_ejercicio) {
+        principalEjercicio.value = String(manualFormValues.manual_ejercicio || "").trim();
       }
-      if (titularEjercicio) {
-        titularEjercicio.dispatchEvent(new Event("change", { bubbles: true }));
+      if (principalEnte) {
+        principalEnte.dataset.selected = String(manualFormValues.manual_ente_id || "").trim();
+      }
+      if (principalEjercicio && principalEnte) {
+        loadPrincipalEntes(principalEnte.dataset.selected || "");
+      } else if (manualEjercicio) {
+        manualEjercicio.dispatchEvent(new Event("change", { bubbles: true }));
       }
       if (manualAsunto) {
         manualAsunto.dispatchEvent(new Event("change", { bubbles: true }));
@@ -933,9 +984,7 @@
       const draftMode = validLoaderModes.has(payload.loader_mode) ? payload.loader_mode : "manual";
       setLoaderMode(draftMode);
       setManualStep(payload.manual_step || 1);
-      setSelectValueWhenReady(manualEnte, manualFormValues.manual_ente_id || "", 10);
       setSelectValueWhenReady(manualFuente, manualFormValues.manual_fuente_id || "", 10);
-      setSelectValueWhenReady(titularEnte, titularFormValues.titular_ente_id || "", 10);
       window.setTimeout(() => {
         isRestoringDraft = false;
         updateWizardModeAvailability();
@@ -1624,6 +1673,62 @@
       return selected ? (selected.textContent || "").split(/\s+/).filter(Boolean).join(" ") : "";
     };
 
+    const renderCedulaScopeOptions = () => {
+      const periodos = [];
+      const oficios = [];
+      const seenPeriodos = new Set();
+      const seenOficios = new Set();
+      (Array.isArray(cedulaScopeRows) ? cedulaScopeRows : []).forEach((row) => {
+        const periodo = String((row && row.periodo) || "").trim();
+        const oficio = String((row && row.oficio) || "").trim();
+        if (periodo && !seenPeriodos.has(periodo.toLowerCase())) {
+          seenPeriodos.add(periodo.toLowerCase());
+          periodos.push(periodo);
+        }
+        if (oficio && !seenOficios.has(oficio.toLowerCase())) {
+          seenOficios.add(oficio.toLowerCase());
+          oficios.push(oficio);
+        }
+      });
+      periodos.sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+      oficios.sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+      if (manualPeriodoOptions) {
+        manualPeriodoOptions.innerHTML = periodos
+          .map((periodo) => `<option value="${escapeHtml(periodo)}"></option>`)
+          .join("");
+      }
+      if (manualOficioOptions) {
+        manualOficioOptions.innerHTML = oficios
+          .map((oficio) => `<option value="${escapeHtml(oficio)}"></option>`)
+          .join("");
+      }
+    };
+
+    const fetchCedulaScopeOptions = async () => {
+      const ejercicio = (manualEjercicio ? manualEjercicio.value : "").trim();
+      const enteId = (manualEnte ? manualEnte.value : "").trim();
+      if (!ejercicio || !enteId) {
+        cedulaScopeRows = [];
+        renderCedulaScopeOptions();
+        return;
+      }
+      const params = new URLSearchParams({
+        ejercicio,
+        ente_id: enteId,
+      });
+      try {
+        const response = await fetch(`/carga/observaciones-claves?${params.toString()}`);
+        if (!response.ok) {
+          throw new Error("No se pudieron cargar periodos/oficios");
+        }
+        const rows = await response.json();
+        cedulaScopeRows = Array.isArray(rows) ? rows : [];
+      } catch (_error) {
+        cedulaScopeRows = [];
+      }
+      renderCedulaScopeOptions();
+    };
+
     const updateObservacionesMetrics = (rows) => {
       const safeRows = Array.isArray(rows) ? rows : [];
       const pendientes = safeRows.filter((row) => normalizeEstadoForUi(row.estado) === "Pendiente").length;
@@ -1809,21 +1914,27 @@
       const fuente = resolveManualFuenteNombre();
       const periodo = (manualPeriodo ? manualPeriodo.value : "").trim();
       const oficio = (manualNumeroOficio ? manualNumeroOficio.value : "").trim();
+      const mode = getManualMode();
       if (!ejercicio || !enteId) {
         manualObservacionesInfo.textContent = "Selecciona ejercicio y ente para consultar.";
         observacionesAllRows = [];
+        isObservacionesLoading = false;
         applyObservacionesFilters();
+        updateManualSaveState();
+        updateWizardModeAvailability();
         return;
       }
+      isObservacionesLoading = true;
+      updateManualSaveState();
       manualObservacionesInfo.textContent = "Consultando observaciones...";
       const params = new URLSearchParams({
         ejercicio,
         ente_id: enteId,
       });
-      if (tipoAuditoria) {
+      if (mode === "cedula" && tipoAuditoria) {
         params.set("tipo_auditoria", tipoAuditoria);
       }
-      if (fuente) {
+      if (mode === "cedula" && fuente) {
         params.set("fuente", fuente);
       }
       if (periodo) {
@@ -1842,13 +1953,24 @@
         if (getManualMode() === "solventacion") {
           hydrateSolventacionFromObservaciones(observacionesAllRows);
         }
-        manualObservacionesInfo.textContent = `Resultados: ${observacionesAllRows.length} observaciones.`;
+        if (getManualMode() === "solventacion" && !observacionesAllRows.length) {
+          manualObservacionesInfo.textContent = (
+            "No hay observaciones cargadas de Notificación de Cédula para esta clave "
+            + "(incluyendo el mismo periodo y oficio)."
+          );
+        } else {
+          manualObservacionesInfo.textContent = `Resultados: ${observacionesAllRows.length} observaciones.`;
+        }
         applyObservacionesFilters();
       } catch (error) {
         manualObservacionesInfo.textContent = "No se pudieron consultar las observaciones.";
         observacionesAllRows = [];
         manualObservacionesBody.innerHTML = '<tr><td colspan="9" class="muted">Error al consultar.</td></tr>';
         updateObservacionesMetrics([]);
+      } finally {
+        isObservacionesLoading = false;
+        updateManualSaveState();
+        updateWizardModeAvailability();
       }
     };
 
@@ -1868,6 +1990,9 @@
       if (asunto === asuntoSolventacion) return "solventacion";
       return "cedula";
     };
+    const hasSolventacionObservacionesBase = () => (
+      Array.isArray(observacionesAllRows) && observacionesAllRows.length > 0
+    );
     const isPdpDetalleCompleto = () => {
       const totalPdp = getTotalPdpFromFuentes();
       if (totalPdp <= 0) {
@@ -1889,7 +2014,20 @@
         return;
       }
       const mode = getManualMode();
-      if (mode !== "cedula") {
+      if (mode === "solventacion") {
+        if (isObservacionesLoading) {
+          manualSaveBtn.disabled = true;
+          manualSaveBtn.title = "Espera a que termine la consulta de observaciones de cédula.";
+          return;
+        }
+        if (!hasSolventacionObservacionesBase()) {
+          manualSaveBtn.disabled = true;
+          manualSaveBtn.title = (
+            "Resultados de Solventación requiere observaciones previas de "
+            + "Notificación de Cédula con la misma clave (incluye periodo y oficio)."
+          );
+          return;
+        }
         manualSaveBtn.disabled = false;
         manualSaveBtn.title = "";
         return;
@@ -1986,6 +2124,21 @@
         }
         return false;
       }
+      if (isObservacionesLoading) {
+        if (showFeedback) {
+          showWizardToast("Etapa 2: espera a que termine la consulta de observaciones de cédula.", toastLevel);
+        }
+        return false;
+      }
+      if (!hasSolventacionObservacionesBase()) {
+        if (showFeedback) {
+          showWizardToast(
+            "Etapa 2: bloqueado. Primero debe existir Notificación de Cédula con el mismo periodo y oficio.",
+            toastLevel,
+          );
+        }
+        return false;
+      }
       const solvState = parseSolventacionDetalleState();
       const hasAnyCantidad = solventacionTipos.some((tipo) => {
         const row = solvState[tipo] || {};
@@ -2004,9 +2157,13 @@
     };
 
     const validateStage3 = ({ showFeedback = true } = {}) => {
+      if (!hasPrincipalScope()) {
+        if (showFeedback) {
+          showPrincipalScopeMessage();
+        }
+        return false;
+      }
       const titularFields = [
-        titularEjercicio,
-        titularEnte,
         titularTipoAuditoria,
         titularPeriodoInforme,
         titularNombre,
@@ -2022,28 +2179,6 @@
           }
           return false;
         }
-      }
-      const manualEnteId = manualEnte ? String(manualEnte.value || "").trim() : "";
-      const titularEnteId = titularEnte ? String(titularEnte.value || "").trim() : "";
-      if (manualEnteId && titularEnteId && manualEnteId !== titularEnteId) {
-        if (showFeedback && titularEnte) {
-          titularEnte.setCustomValidity("El ente debe coincidir con el oficio validado.");
-          titularEnte.reportValidity();
-          titularEnte.setCustomValidity("");
-          showWizardToast("Etapa 3: el ente de titulares debe coincidir con el oficio cargado.", "success");
-        }
-        return false;
-      }
-      const manualTipo = manualTipoAuditoria ? String(manualTipoAuditoria.value || "").trim() : "";
-      const titularTipo = titularTipoAuditoria ? String(titularTipoAuditoria.value || "").trim() : "";
-      if (manualTipo && titularTipo && manualTipo !== titularTipo) {
-        if (showFeedback && titularTipoAuditoria) {
-          titularTipoAuditoria.setCustomValidity("El tipo de auditoría debe coincidir con el oficio.");
-          titularTipoAuditoria.reportValidity();
-          titularTipoAuditoria.setCustomValidity("");
-          showWizardToast("Etapa 3: tipo de auditoría inconsistente con el contexto del oficio.", "success");
-        }
-        return false;
       }
       return true;
     };
@@ -2073,44 +2208,45 @@
 
     const updateWizardModeAvailability = () => {
       refreshWizardStageProgress();
+      const hasScope = hasPrincipalScope();
+      if (principalScopeInfo) {
+        principalScopeInfo.hidden = hasScope;
+      }
+      if (!hasScope) {
+        loaderModeButtons.forEach((button) => {
+          button.disabled = true;
+          button.title = "Primero selecciona ejercicio y ente.";
+        });
+        loaderModePanels.forEach((panel) => {
+          panel.hidden = true;
+        });
+        return;
+      }
       const currentMode = document.body.dataset.loaderMode || "manual";
       loaderModeButtons.forEach((button) => {
         const mode = button.dataset.loaderModeTarget || "manual";
-        const modeIndex = loaderModeOrder.indexOf(mode);
-        const canOpen = modeIndex <= 0
-          || (modeIndex === 1 && wizardStageProgress.manual)
-          || (modeIndex === 2 && wizardStageProgress.manual && wizardStageProgress.solventacion);
-        const isCurrent = mode === currentMode;
-        button.disabled = !isCurrent && !canOpen;
         if (mode === "manual") {
-          button.title = "Etapa 1";
+          button.disabled = false;
+          button.title = "Notificación de Cédula de Resultados";
         } else if (mode === "solventacion") {
-          button.title = wizardStageProgress.manual
-            ? "Etapa 2 desbloqueada"
-            : "Completa y valida la Etapa 1 para desbloquear.";
+          button.disabled = false;
+          button.title = "Resultados de Solventación";
         } else {
-          button.title = (wizardStageProgress.manual && wizardStageProgress.solventacion)
-            ? "Etapa 3 desbloqueada"
-            : "Completa y valida Etapa 1 y Etapa 2 para desbloquear.";
+          button.disabled = false;
+          button.title = "Carga de titulares";
         }
+      });
+      loaderModePanels.forEach((panel) => {
+        const panelMode = panel.dataset.loaderModePanel || "";
+        const isActive = panelMode === currentMode || (panelMode === "manual" && currentMode === "solventacion");
+        panel.hidden = !isActive;
       });
     };
 
-    const canNavigateToMode = (targetMode, { showFeedback = true } = {}) => {
-      const targetIndex = loaderModeOrder.indexOf(targetMode);
-      const currentIndex = loaderModeOrder.indexOf(document.body.dataset.loaderMode || "manual");
-      if (targetIndex <= currentIndex) {
-        return true;
-      }
-      if (targetIndex >= 1 && !validateStage1({ showFeedback: false })) {
+    const canNavigateToMode = (_targetMode, { showFeedback = true } = {}) => {
+      if (!hasPrincipalScope()) {
         if (showFeedback) {
-          showWizardToast("Completa primero la Etapa 1 para continuar.", "success");
-        }
-        return false;
-      }
-      if (targetIndex >= 2 && !validateStage2({ showFeedback: false })) {
-        if (showFeedback) {
-          showWizardToast("Completa primero la Etapa 2 para continuar.", "success");
+          showPrincipalScopeMessage();
         }
         return false;
       }
@@ -2280,8 +2416,8 @@
         if (action === "manual_check") {
           showWizardToast(
             mode === "cedula"
-              ? "Etapa 1 validada en modo borrador. Puedes continuar a Etapa 2."
-              : "Etapa 2 validada en modo borrador. Puedes continuar a Etapa 3.",
+              ? "Notificación de Cédula validada en modo borrador."
+              : "Resultados de Solventación validados en modo borrador.",
             "success",
           );
         }
@@ -2406,20 +2542,6 @@
 
     if (titularCaptureForm) {
       titularCaptureForm.addEventListener("submit", (event) => {
-        if (!validateStage1({ showFeedback: false })) {
-          event.preventDefault();
-          showWizardToast("Debes completar la Etapa 1 antes de guardar titulares.", "success");
-          navigateWizardMode("manual", { force: true });
-          setManualStep(2);
-          return;
-        }
-        if (!validateStage2({ showFeedback: false })) {
-          event.preventDefault();
-          showWizardToast("Debes completar la Etapa 2 antes de guardar titulares.", "success");
-          navigateWizardMode("solventacion", { force: true });
-          setManualStep(2);
-          return;
-        }
         if (!validateStage3({ showFeedback: true })) {
           event.preventDefault();
           return;
@@ -2646,13 +2768,25 @@
         }
       };
 
+      if (principalEjercicio && principalEnte) {
+        principalEjercicio.addEventListener("change", () => {
+          loadPrincipalEntes("");
+        });
+        principalEnte.addEventListener("change", () => {
+          syncPrincipalFiltersToForms({ syncTitular: true });
+          updateWizardModeAvailability();
+        });
+      }
+
       manualEnte.addEventListener("change", () => {
         toggleFuentesByTipo();
         loadFuentesByEnte("");
+        fetchCedulaScopeOptions();
         fetchObservacionesCargadas();
       });
       manualEjercicio.addEventListener("change", () => {
         loadFuentesByEnte("");
+        fetchCedulaScopeOptions();
         fetchObservacionesCargadas();
       });
       if (manualTipoAuditoria) {
@@ -2670,6 +2804,7 @@
           }
           toggleFuentesByTipo();
           loadFuentesByEnte("");
+          fetchCedulaScopeOptions();
           fetchObservacionesCargadas();
         });
       }
@@ -2677,12 +2812,14 @@
         toggleNuevaFuente();
         toggleCantidadesByFuente();
         renderPdpDetalleMenu();
+        fetchCedulaScopeOptions();
         fetchObservacionesCargadas();
       });
       if (manualFuenteNuevaInput) {
         manualFuenteNuevaInput.addEventListener("input", () => {
           toggleCantidadesByFuente();
           renderPdpDetalleMenu();
+          fetchCedulaScopeOptions();
           fetchObservacionesCargadas();
         });
       }
@@ -2700,6 +2837,12 @@
       }
       if (manualNumeroOficio) {
         manualNumeroOficio.addEventListener("input", fetchObservacionesCargadas);
+      }
+      if (principalEjercicio && principalEnte) {
+        loadPrincipalEntes(principalEnte.dataset.selected || principalEnte.value || "");
+      } else {
+        fetchCedulaScopeOptions();
+        fetchObservacionesCargadas();
       }
       if (manualObservacionesBody) {
         manualObservacionesBody.addEventListener("change", (event) => {
