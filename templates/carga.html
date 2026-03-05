@@ -33,15 +33,21 @@
     <section class="panel loader-mode-panel">
       <div class="loader-mode-toggle" role="tablist" aria-label="Seleccionar módulo de captura">
         <button type="button" class="loader-mode-btn" data-loader-mode-target="manual" aria-pressed="false">
-          Notificación de Cédula de Resultados
+          1. Notificación de Cédula de Resultados
         </button>
         <button type="button" class="loader-mode-btn" data-loader-mode-target="solventacion" aria-pressed="false">
-          Oficios de Respuesta a Solventación
+          2. Resultados de Solventación
         </button>
         <button type="button" class="loader-mode-btn" data-loader-mode-target="titulares" aria-pressed="false">
-          Carga de titulares
+          3. Carga de titulares
         </button>
       </div>
+      <div class="loader-actions">
+        <button type="button" class="btn-secondary" id="wizardSaveDraftBtnTop">Guardar en progreso</button>
+        <button type="button" class="btn-secondary" id="wizardRestoreDraftBtn">Restaurar borrador</button>
+        <button type="button" class="btn-secondary" id="wizardClearDraftBtn">Limpiar borrador</button>
+      </div>
+      <div class="status status-info" id="wizardToast" hidden></div>
     </section>
 
     <section class="panel loader-card" data-loader-mode-panel="manual">
@@ -295,11 +301,14 @@
           </div>
           <div class="loader-actions">
             <button type="button" class="btn-secondary" id="manualAddNewFuenteBtnInline">Agregar Fuente y Continuar Oficio</button>
+            <button type="button" class="btn-secondary" id="manualBackToStage1Btn" style="display:none;">Editar Etapa 1</button>
+            <button type="button" class="btn-secondary" id="wizardSaveDraftBtnManual">Guardar en progreso</button>
             <button class="btn-primary" type="submit" name="action" value="manual_save" id="manualSaveBtn">
               {% if form_data.manual_id %}Guardar Cambios y Cerrar Oficio{% else %}Guardar y Cerrar Oficio{% endif %}
             </button>
+            <button class="btn-secondary" type="submit" name="action" value="manual_check" id="manualValidateBtn">Validar etapa (borrador)</button>
           </div>
-          <p class="helper">`Agregar Fuente y Continuar Oficio`: agrega otra fuente con más observaciones al mismo oficio. `Guardar y Cerrar Oficio`: finaliza la captura del oficio y registra toda la información en la base de datos.</p>
+          <p class="helper">`Validar etapa (borrador)`: verifica reglas sin commit a base de datos. `Guardar en progreso`: conserva el wizard localmente. `Guardar y Cerrar Oficio`: finaliza la captura y registra en base de datos.</p>
         </section>
         {% if form_data.manual_id %}
           <p class="helper">Modo edición activo (ID {{ form_data.manual_id }}).</p>
@@ -316,7 +325,7 @@
           {{ titular_result.message }}
         </div>
       {% endif %}
-      <form class="record-form loader-manual-form" method="POST" autocomplete="off">
+      <form class="record-form loader-manual-form" method="POST" autocomplete="off" id="titularCaptureForm">
         <div class="form-grid">
           <div class="field">
             <label for="titular_ejercicio">Ejercicio</label>
@@ -377,6 +386,7 @@
           </div>
         </div>
         <div class="loader-actions">
+          <button type="button" class="btn-secondary" id="wizardSaveDraftBtnTitulares">Guardar en progreso</button>
           <button class="btn-primary" type="submit" name="action" value="titular_save">Guardar</button>
         </div>
       </form>
@@ -421,6 +431,36 @@
     const loaderModeButtons = Array.from(document.querySelectorAll("[data-loader-mode-target]"));
     const loaderModePanels = Array.from(document.querySelectorAll("[data-loader-mode-panel]"));
     const validLoaderModes = new Set(["manual", "solventacion", "titulares"]);
+    const loaderModeOrder = ["manual", "solventacion", "titulares"];
+    const wizardToast = document.getElementById("wizardToast");
+    const wizardSaveDraftBtnTop = document.getElementById("wizardSaveDraftBtnTop");
+    const wizardRestoreDraftBtn = document.getElementById("wizardRestoreDraftBtn");
+    const wizardClearDraftBtn = document.getElementById("wizardClearDraftBtn");
+    const gaboWizardDraftKey = "sifeet_gabo_wizard_draft_v1";
+    let wizardToastTimer = null;
+
+    const showWizardToast = (message, level = "info") => {
+      if (!wizardToast) {
+        return;
+      }
+      wizardToast.classList.remove("status-info", "status-success", "status-error");
+      if (level === "success") {
+        wizardToast.classList.add("status-success");
+      } else if (level === "error") {
+        wizardToast.classList.add("status-error");
+      } else {
+        wizardToast.classList.add("status-info");
+      }
+      wizardToast.textContent = message;
+      wizardToast.hidden = false;
+      if (wizardToastTimer) {
+        window.clearTimeout(wizardToastTimer);
+      }
+      wizardToastTimer = window.setTimeout(() => {
+        wizardToast.hidden = true;
+      }, 4200);
+    };
+
     const setLoaderMode = (rawMode) => {
       const mode = validLoaderModes.has(rawMode) ? rawMode : "manual";
       document.body.dataset.loaderMode = mode;
@@ -459,14 +499,7 @@
         panel.hidden = !isActive;
       });
     };
-    if (loaderModeButtons.length && loaderModePanels.length) {
-      loaderModeButtons.forEach((button) => {
-        button.addEventListener("click", () => {
-          setLoaderMode(button.dataset.loaderModeTarget || "manual");
-        });
-      });
-      setLoaderMode(document.body.dataset.loaderMode || "manual");
-    }
+    setLoaderMode(document.body.dataset.loaderMode || "manual");
 
     const titularEjercicio = document.getElementById("titular_ejercicio");
     const titularEnte = document.getElementById("titular_ente_id");
@@ -559,6 +592,9 @@
     const manualFechaNotificacion = document.getElementById("manual_fecha_notificacion");
     const manualCaptureForm = document.getElementById("manualCaptureForm");
     const manualSaveBtn = document.getElementById("manualSaveBtn");
+    const manualValidateBtn = document.getElementById("manualValidateBtn");
+    const manualBackToStage1Btn = document.getElementById("manualBackToStage1Btn");
+    const wizardSaveDraftBtnManual = document.getElementById("wizardSaveDraftBtnManual");
     const manualStepper = document.getElementById("manualStepper");
     const stepChips = manualStepper ? Array.from(manualStepper.querySelectorAll("[data-step-target]")) : [];
     const stepSections = Array.from(document.querySelectorAll(".loader-step-section[data-step]"));
@@ -589,6 +625,16 @@
     let fuentesDetalleState = [];
     const solventacionTipos = ["PDP", "PEFCF", "PRAS", "R", "SA"];
     const contextDraftKey = "sifeet_manual_context_draft";
+    let wizardStageProgress = { manual: false, solventacion: false, titulares: false };
+    let isRestoringDraft = false;
+    const titularCaptureForm = document.getElementById("titularCaptureForm");
+    const wizardSaveDraftBtnTitulares = document.getElementById("wizardSaveDraftBtnTitulares");
+    const titularTipoAuditoria = document.getElementById("titular_tipo_auditoria");
+    const titularPeriodoInforme = document.getElementById("titular_periodo_informe");
+    const titularNombre = document.getElementById("titular_nombre");
+    const titularPeriodoAdministrativo = document.getElementById("titular_periodo_administrativo");
+    const titularAdministrativo = document.getElementById("titular_administrativo");
+    const titularCedulaResultados = document.getElementById("titular_cedula_resultados");
 
     const escapeHtml = (value) => (
       String(value || "")
@@ -703,10 +749,10 @@
       manualFechaNotificacion,
     ].filter(Boolean);
 
-    const validateContextStep = () => {
+    const validateContextStep = ({ showFeedback = true } = {}) => {
       for (const field of contextFields) {
         if (typeof field.checkValidity === "function" && !field.checkValidity()) {
-          if (typeof field.reportValidity === "function") {
+          if (showFeedback && typeof field.reportValidity === "function") {
             field.reportValidity();
           }
           return false;
@@ -729,6 +775,183 @@
       } catch (_error) {
         return false;
       }
+      return true;
+    };
+
+    const collectNamedFields = (formElement) => {
+      const values = {};
+      if (!formElement) {
+        return values;
+      }
+      const fields = Array.from(formElement.querySelectorAll("input[name], select[name], textarea[name]"));
+      fields.forEach((field) => {
+        const name = String(field.name || "").trim();
+        if (!name || name === "action") {
+          return;
+        }
+        if (field instanceof HTMLInputElement && (field.type === "checkbox" || field.type === "radio")) {
+          if (!field.checked) {
+            return;
+          }
+        }
+        values[name] = field.value;
+      });
+      return values;
+    };
+
+    const applyNamedFields = (values) => {
+      if (!values || typeof values !== "object") {
+        return;
+      }
+      Object.entries(values).forEach(([name, value]) => {
+        const field = document.getElementsByName(name)[0];
+        if (!field) {
+          return;
+        }
+        field.value = String(value ?? "");
+      });
+    };
+
+    const setSelectValueWhenReady = (field, value, retries = 8) => {
+      if (!field || !value) {
+        return;
+      }
+      const expected = String(value).trim();
+      if (!expected) {
+        return;
+      }
+      const exists = Array.from(field.options || []).some((option) => String(option.value || "").trim() === expected);
+      if (exists) {
+        field.value = expected;
+        field.dispatchEvent(new Event("change", { bubbles: true }));
+        return;
+      }
+      if (retries <= 0) {
+        return;
+      }
+      window.setTimeout(() => setSelectValueWhenReady(field, expected, retries - 1), 180);
+    };
+
+    const saveWizardDraft = ({ announce = true } = {}) => {
+      const payload = {
+        version: 1,
+        saved_at: new Date().toISOString(),
+        loader_mode: document.body.dataset.loaderMode || "manual",
+        manual_step: currentManualStep,
+        manual_form: collectNamedFields(manualCaptureForm),
+        titular_form: collectNamedFields(titularCaptureForm),
+        fuentes_detalle: Array.isArray(fuentesDetalleState) ? fuentesDetalleState : [],
+        pdp_detalle: Array.isArray(pdpDetalleState) ? pdpDetalleState : [],
+        solventacion_detalle_json: manualSolventacionDetalleJson ? (manualSolventacionDetalleJson.value || "") : "",
+        stage_progress: wizardStageProgress,
+      };
+      try {
+        localStorage.setItem(gaboWizardDraftKey, JSON.stringify(payload));
+        if (announce) {
+          showWizardToast("Guardado en progreso actualizado.", "success");
+        }
+        return true;
+      } catch (_error) {
+        if (announce) {
+          showWizardToast("No se pudo guardar el borrador en este navegador.", "error");
+        }
+        return false;
+      }
+    };
+
+    const restoreWizardDraft = () => {
+      let raw = "";
+      try {
+        raw = localStorage.getItem(gaboWizardDraftKey) || "";
+      } catch (_error) {
+        showWizardToast("No se pudo acceder al almacenamiento local.", "error");
+        return false;
+      }
+      if (!raw) {
+        showWizardToast("No hay borrador guardado para restaurar.", "info");
+        return false;
+      }
+      let payload = null;
+      try {
+        payload = JSON.parse(raw);
+      } catch (_error) {
+        showWizardToast("El borrador está corrupto y no se pudo restaurar.", "error");
+        return false;
+      }
+      const manualFormValues = payload && typeof payload.manual_form === "object" ? payload.manual_form : {};
+      const titularFormValues = payload && typeof payload.titular_form === "object" ? payload.titular_form : {};
+      isRestoringDraft = true;
+      applyNamedFields(manualFormValues);
+      applyNamedFields(titularFormValues);
+      if (Array.isArray(payload.fuentes_detalle)) {
+        fuentesDetalleState = payload.fuentes_detalle.map((row) => ({
+          tipo_auditoria: String(row.tipo_auditoria || "").trim(),
+          fuente_nombre: String(row.fuente_nombre || "").trim(),
+          cantidad_sa: Math.max(0, Number.parseInt(String(row.cantidad_sa || "0"), 10) || 0),
+          cantidad_pdp: Math.max(0, Number.parseInt(String(row.cantidad_pdp || "0"), 10) || 0),
+          cantidad_pras: Math.max(0, Number.parseInt(String(row.cantidad_pras || "0"), 10) || 0),
+          cantidad_pefcf: Math.max(0, Number.parseInt(String(row.cantidad_pefcf || "0"), 10) || 0),
+          cantidad_r: Math.max(0, Number.parseInt(String(row.cantidad_r || "0"), 10) || 0),
+        }));
+      }
+      if (Array.isArray(payload.pdp_detalle)) {
+        pdpDetalleState = payload.pdp_detalle.map((row) => ({
+          concepto: String(row.concepto || "").trim(),
+          subconcepto: String(row.subconcepto || "").trim(),
+          monto: String(row.monto ?? "").trim(),
+        }));
+      }
+      if (manualSolventacionDetalleJson && typeof payload.solventacion_detalle_json === "string") {
+        manualSolventacionDetalleJson.value = payload.solventacion_detalle_json;
+      }
+      if (payload && payload.stage_progress && typeof payload.stage_progress === "object") {
+        wizardStageProgress = {
+          manual: !!payload.stage_progress.manual,
+          solventacion: !!payload.stage_progress.solventacion,
+          titulares: !!payload.stage_progress.titulares,
+        };
+      }
+      if (manualEjercicio) {
+        manualEjercicio.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (titularEjercicio) {
+        titularEjercicio.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (manualAsunto) {
+        manualAsunto.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (manualTipoAuditoria) {
+        manualTipoAuditoria.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (manualFuente) {
+        manualFuente.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      renderFuentesDetalleRows();
+      renderPdpDetalleMenu();
+      renderPreviewTable();
+      updateSolventacionDetalleState();
+      const draftMode = validLoaderModes.has(payload.loader_mode) ? payload.loader_mode : "manual";
+      setLoaderMode(draftMode);
+      setManualStep(payload.manual_step || 1);
+      setSelectValueWhenReady(manualEnte, manualFormValues.manual_ente_id || "", 10);
+      setSelectValueWhenReady(manualFuente, manualFormValues.manual_fuente_id || "", 10);
+      setSelectValueWhenReady(titularEnte, titularFormValues.titular_ente_id || "", 10);
+      window.setTimeout(() => {
+        isRestoringDraft = false;
+        updateWizardModeAvailability();
+      }, 900);
+      showWizardToast("Borrador restaurado correctamente.", "success");
+      return true;
+    };
+
+    const clearWizardDraft = () => {
+      try {
+        localStorage.removeItem(gaboWizardDraftKey);
+      } catch (_error) {
+        showWizardToast("No se pudo limpiar el borrador.", "error");
+        return false;
+      }
+      showWizardToast("Borrador eliminado.", "info");
       return true;
     };
 
@@ -784,6 +1007,7 @@
       if (!fuentesDetalleState.length) {
         manualFuentesDetalleList.innerHTML = '<p class="muted">Sin fuentes agregadas.</p>';
         updateManualSaveState();
+        updateWizardModeAvailability();
         return;
       }
       manualFuentesDetalleList.innerHTML = fuentesDetalleState.map((item, idx) => (
@@ -802,6 +1026,7 @@
         `</article>`
       )).join("");
       updateManualSaveState();
+      updateWizardModeAvailability();
     };
 
     const addFuenteDetalleRow = () => {
@@ -1107,41 +1332,53 @@
       updateSolventacionDetalleState();
     };
 
-    const validateSolventacionDetalle = () => {
+    const validateSolventacionDetalle = ({ showFeedback = true, ignoreMode = false, toastLevel = "success" } = {}) => {
       const payload = updateSolventacionDetalleState();
-      if (!manualAsunto || (manualAsunto.value || "").trim() !== asuntoSolventacion) {
+      if (!ignoreMode && (!manualAsunto || (manualAsunto.value || "").trim() !== asuntoSolventacion)) {
         return true;
       }
+      const reportMontoError = (tipo, message, field) => {
+        if (showFeedback && manualSolventacionError) {
+          manualSolventacionError.textContent = message;
+        }
+        if (showFeedback && field && typeof field.setCustomValidity === "function") {
+          field.setCustomValidity(message);
+          if (typeof field.reportValidity === "function") {
+            field.reportValidity();
+          }
+          field.setCustomValidity("");
+        }
+        if (showFeedback) {
+          showWizardToast(`Etapa 2: ${message}`, toastLevel);
+        }
+      };
       for (const tipo of solventacionTipos) {
         const item = payload[tipo] || { cantidad: 0, emitido: "0", solventado: "0" };
         const cantidad = Math.max(0, Number.parseInt(String(item.cantidad || 0), 10) || 0);
         if (cantidad <= 0) {
           continue;
         }
+        const row = solventacionRows.find((candidate) => normalizeTipoAnexo(candidate.dataset.solvRow || "") === tipo);
+        const emitidoInput = row ? row.querySelector("[data-solv-field='emitido']") : null;
+        const solventadoInput = row ? row.querySelector("[data-solv-field='solventado']") : null;
         const emitidoRaw = String(item.emitido ?? "").trim();
         const solventadoRaw = String(item.solventado ?? "").trim();
         if (!emitidoRaw || !solventadoRaw) {
-          if (manualSolventacionError) {
-            manualSolventacionError.textContent = `Captura monto emitido y solventado para ${tipo}.`;
-          }
+          reportMontoError(tipo, `Captura monto emitido y solventado para ${tipo}.`, !emitidoRaw ? emitidoInput : solventadoInput);
           return false;
         }
         const emitido = Number.parseFloat(emitidoRaw.replace(/,/g, ""));
         const solventado = Number.parseFloat(solventadoRaw.replace(/,/g, ""));
         if (!Number.isFinite(emitido) || emitido < 0 || !Number.isFinite(solventado) || solventado < 0) {
-          if (manualSolventacionError) {
-            manualSolventacionError.textContent = `Montos inválidos para ${tipo}.`;
-          }
+          reportMontoError(tipo, `Montos inválidos para ${tipo}.`, !Number.isFinite(emitido) || emitido < 0 ? emitidoInput : solventadoInput);
           return false;
         }
         if (solventado > emitido) {
-          if (manualSolventacionError) {
-            manualSolventacionError.textContent = `En ${tipo}, solventado no puede ser mayor a emitido.`;
-          }
+          reportMontoError(tipo, `En ${tipo}, solventado no puede ser mayor a emitido.`, solventadoInput);
           return false;
         }
       }
-      if (manualSolventacionError) {
+      if (showFeedback && manualSolventacionError) {
         manualSolventacionError.textContent = "";
       }
       return true;
@@ -1279,6 +1516,7 @@
       syncPdpDetalleJson();
       renderPdpBreakdown();
       updateManualSaveState();
+      updateWizardModeAvailability();
     };
 
     const loadSelectedPdpDetalle = () => {
@@ -1335,6 +1573,7 @@
       renderPdpBreakdown();
       renderPreviewTable();
       updateManualSaveState();
+      updateWizardModeAvailability();
     };
 
     const toggleManualCantidades = () => {
@@ -1356,7 +1595,6 @@
       if (isSolventacion) {
         hydrateSolventacionDetalle();
       } else {
-        writeSolventacionDetalleJson({});
         if (manualSolventacionError) {
           manualSolventacionError.textContent = "";
         }
@@ -1365,6 +1603,7 @@
       toggleObservacionesCargadas();
       renderPreviewTable();
       updateManualSaveState();
+      updateWizardModeAvailability();
     };
 
     const resolveManualFuenteNombre = () => {
@@ -1668,6 +1907,232 @@
       manualSaveBtn.disabled = false;
       manualSaveBtn.title = "";
     };
+
+    const updateManualStageActions = () => {
+      const mode = getManualMode();
+      if (manualBackToStage1Btn) {
+        manualBackToStage1Btn.style.display = mode === "solventacion" ? "" : "none";
+      }
+      if (manualValidateBtn) {
+        manualValidateBtn.textContent = mode === "solventacion"
+          ? "Validar etapa 2 (borrador)"
+          : "Validar etapa 1 (borrador)";
+      }
+    };
+
+    const validateStage1 = ({ showFeedback = true, toastLevel = "success" } = {}) => {
+      if (!validateContextStep({ showFeedback })) {
+        if (showFeedback) {
+          showWizardToast("Etapa 1: completa los datos del oficio.", toastLevel);
+        }
+        return false;
+      }
+      if (!fuentesDetalleState.length) {
+        if (showFeedback) {
+          setManualStep(2);
+          if (manualFuentesDetalleFeedback) {
+            manualFuentesDetalleFeedback.textContent = "Agrega al menos una fuente de financiamiento.";
+          }
+          showWizardToast("Etapa 1: agrega al menos una fuente con observaciones emitidas.", toastLevel);
+        }
+        return false;
+      }
+      const totalPdp = getTotalPdpFromFuentes();
+      if (totalPdp > 0) {
+        const normalizedPdp = normalizePdpDetalleState(
+          totalPdp,
+          pdpDetalleState.length ? pdpDetalleState : parsePdpDetalleState(),
+        );
+        const missingIndex = normalizedPdp.findIndex((item) => {
+          const concepto = String(item.concepto || "").trim();
+          const montoRaw = String(item.monto || "").trim();
+          const monto = Number.parseFloat(montoRaw.replace(/,/g, ""));
+          return !concepto || !montoRaw || !Number.isFinite(monto) || monto < 0;
+        });
+        if (missingIndex >= 0) {
+          if (showFeedback) {
+            pdpDetalleState = normalizedPdp;
+            syncPdpDetalleJson();
+            renderPdpDetalleMenu();
+            if (manualPdpSelector) {
+              manualPdpSelector.value = String(missingIndex);
+              manualPdpSelector.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+            const missingRow = normalizedPdp[missingIndex] || {};
+            const concepto = String(missingRow.concepto || "").trim();
+            const montoRaw = String(missingRow.monto || "").trim();
+            const monto = Number.parseFloat(montoRaw.replace(/,/g, ""));
+            if (!concepto && manualPdpConcepto) {
+              manualPdpConcepto.setCustomValidity("Captura el concepto de la observación PDP.");
+              manualPdpConcepto.reportValidity();
+              manualPdpConcepto.setCustomValidity("");
+            } else if ((!montoRaw || !Number.isFinite(monto) || monto < 0) && manualPdpMonto) {
+              manualPdpMonto.setCustomValidity("Captura un monto PDP válido.");
+              manualPdpMonto.reportValidity();
+              manualPdpMonto.setCustomValidity("");
+            }
+            showWizardToast("Etapa 1: el detalle PDP tiene campos vacíos o formato inválido.", toastLevel);
+          }
+          return false;
+        }
+      }
+      return true;
+    };
+
+    const validateStage2 = ({ showFeedback = true, toastLevel = "success" } = {}) => {
+      if (!validateContextStep({ showFeedback })) {
+        if (showFeedback) {
+          showWizardToast("Etapa 2: completa el contexto del oficio antes de solventación.", toastLevel);
+        }
+        return false;
+      }
+      const solvState = parseSolventacionDetalleState();
+      const hasAnyCantidad = solventacionTipos.some((tipo) => {
+        const row = solvState[tipo] || {};
+        return Math.max(0, Number.parseInt(String(row.cantidad || 0), 10) || 0) > 0;
+      });
+      if (!hasAnyCantidad) {
+        if (showFeedback) {
+          showWizardToast("Etapa 2: captura al menos una cantidad de solventación.", toastLevel);
+        }
+        return false;
+      }
+      if (!validateSolventacionDetalle({ showFeedback, ignoreMode: true, toastLevel })) {
+        return false;
+      }
+      return true;
+    };
+
+    const validateStage3 = ({ showFeedback = true } = {}) => {
+      const titularFields = [
+        titularEjercicio,
+        titularEnte,
+        titularTipoAuditoria,
+        titularPeriodoInforme,
+        titularNombre,
+        titularPeriodoAdministrativo,
+        titularAdministrativo,
+        titularCedulaResultados,
+      ].filter(Boolean);
+      for (const field of titularFields) {
+        if (typeof field.checkValidity === "function" && !field.checkValidity()) {
+          if (showFeedback && typeof field.reportValidity === "function") {
+            field.reportValidity();
+            showWizardToast("Etapa 3: completa la información de titulares.", "success");
+          }
+          return false;
+        }
+      }
+      const manualEnteId = manualEnte ? String(manualEnte.value || "").trim() : "";
+      const titularEnteId = titularEnte ? String(titularEnte.value || "").trim() : "";
+      if (manualEnteId && titularEnteId && manualEnteId !== titularEnteId) {
+        if (showFeedback && titularEnte) {
+          titularEnte.setCustomValidity("El ente debe coincidir con el oficio validado.");
+          titularEnte.reportValidity();
+          titularEnte.setCustomValidity("");
+          showWizardToast("Etapa 3: el ente de titulares debe coincidir con el oficio cargado.", "success");
+        }
+        return false;
+      }
+      const manualTipo = manualTipoAuditoria ? String(manualTipoAuditoria.value || "").trim() : "";
+      const titularTipo = titularTipoAuditoria ? String(titularTipoAuditoria.value || "").trim() : "";
+      if (manualTipo && titularTipo && manualTipo !== titularTipo) {
+        if (showFeedback && titularTipoAuditoria) {
+          titularTipoAuditoria.setCustomValidity("El tipo de auditoría debe coincidir con el oficio.");
+          titularTipoAuditoria.reportValidity();
+          titularTipoAuditoria.setCustomValidity("");
+          showWizardToast("Etapa 3: tipo de auditoría inconsistente con el contexto del oficio.", "success");
+        }
+        return false;
+      }
+      return true;
+    };
+
+    const validateStageByMode = (mode, { showFeedback = true } = {}) => {
+      if (mode === "manual") {
+        return validateStage1({ showFeedback });
+      }
+      if (mode === "solventacion") {
+        return validateStage2({ showFeedback });
+      }
+      if (mode === "titulares") {
+        return validateStage3({ showFeedback });
+      }
+      return true;
+    };
+
+    const refreshWizardStageProgress = () => {
+      wizardStageProgress.manual = validateStage1({ showFeedback: false });
+      if ((document.body.dataset.loaderMode || "") === "solventacion" || wizardStageProgress.solventacion) {
+        wizardStageProgress.solventacion = validateStage2({ showFeedback: false });
+      }
+      if ((document.body.dataset.loaderMode || "") === "titulares" || wizardStageProgress.titulares) {
+        wizardStageProgress.titulares = validateStage3({ showFeedback: false });
+      }
+    };
+
+    const updateWizardModeAvailability = () => {
+      refreshWizardStageProgress();
+      const currentMode = document.body.dataset.loaderMode || "manual";
+      loaderModeButtons.forEach((button) => {
+        const mode = button.dataset.loaderModeTarget || "manual";
+        const modeIndex = loaderModeOrder.indexOf(mode);
+        const canOpen = modeIndex <= 0
+          || (modeIndex === 1 && wizardStageProgress.manual)
+          || (modeIndex === 2 && wizardStageProgress.manual && wizardStageProgress.solventacion);
+        const isCurrent = mode === currentMode;
+        button.disabled = !isCurrent && !canOpen;
+        if (mode === "manual") {
+          button.title = "Etapa 1";
+        } else if (mode === "solventacion") {
+          button.title = wizardStageProgress.manual
+            ? "Etapa 2 desbloqueada"
+            : "Completa y valida la Etapa 1 para desbloquear.";
+        } else {
+          button.title = (wizardStageProgress.manual && wizardStageProgress.solventacion)
+            ? "Etapa 3 desbloqueada"
+            : "Completa y valida Etapa 1 y Etapa 2 para desbloquear.";
+        }
+      });
+    };
+
+    const canNavigateToMode = (targetMode, { showFeedback = true } = {}) => {
+      const targetIndex = loaderModeOrder.indexOf(targetMode);
+      const currentIndex = loaderModeOrder.indexOf(document.body.dataset.loaderMode || "manual");
+      if (targetIndex <= currentIndex) {
+        return true;
+      }
+      if (targetIndex >= 1 && !validateStage1({ showFeedback: false })) {
+        if (showFeedback) {
+          showWizardToast("Completa primero la Etapa 1 para continuar.", "success");
+        }
+        return false;
+      }
+      if (targetIndex >= 2 && !validateStage2({ showFeedback: false })) {
+        if (showFeedback) {
+          showWizardToast("Completa primero la Etapa 2 para continuar.", "success");
+        }
+        return false;
+      }
+      return true;
+    };
+
+    const navigateWizardMode = (targetMode, { force = false } = {}) => {
+      if (!force && !canNavigateToMode(targetMode, { showFeedback: true })) {
+        return false;
+      }
+      setLoaderMode(targetMode);
+      if (targetMode === "manual") {
+        setManualStep(1);
+      }
+      if (targetMode === "solventacion") {
+        setManualStep(2);
+      }
+      updateManualStageActions();
+      updateWizardModeAvailability();
+      saveWizardDraft({ announce: false });
+      return true;
+    };
     const toggleFuentesByTipo = () => {
       const hasTipo = !!(manualTipoAuditoria && (manualTipoAuditoria.value || "").trim());
       const hasEnte = !!(manualEnte && (manualEnte.value || "").trim());
@@ -1690,6 +2155,7 @@
           : "Selecciona ente en Oficio y tipo de auditoría para consultar fuentes registradas.";
       }
       updateManualSaveState();
+      updateWizardModeAvailability();
     };
 
     const toggleCantidadesByFuente = () => {
@@ -1703,6 +2169,7 @@
         input.disabled = !hasFuente;
       });
       updateManualSaveState();
+      updateWizardModeAvailability();
     };
     if (manualAsunto) {
       manualAsunto.addEventListener("change", () => {
@@ -1729,12 +2196,15 @@
           }
         }
         updateManualSaveState();
+        updateManualStageActions();
+        updateWizardModeAvailability();
       });
       toggleManualCantidades();
       const initialMode = getManualMode();
       if (manualAddNewFuenteBtnInline) {
         manualAddNewFuenteBtnInline.style.display = initialMode === "cedula" ? "" : "none";
       }
+      updateManualStageActions();
     }
     toggleCantidadesByFuente();
     toggleFuentesByTipo();
@@ -1774,46 +2244,46 @@
       });
     }
     if (solventacionInputs.length) {
+      const handleSolventacionInputChange = () => {
+        updateSolventacionDetalleState();
+        updateWizardModeAvailability();
+      };
       solventacionInputs.forEach((input) => {
-        input.addEventListener("input", updateSolventacionDetalleState);
-        input.addEventListener("change", updateSolventacionDetalleState);
+        input.addEventListener("input", handleSolventacionInputChange);
+        input.addEventListener("change", handleSolventacionInputChange);
       });
       hydrateSolventacionDetalle();
     }
     if (manualCaptureForm) {
       manualCaptureForm.addEventListener("submit", (event) => {
+        const submitter = event.submitter instanceof HTMLElement ? event.submitter : null;
+        const action = submitter && submitter.getAttribute("name") === "action"
+          ? (submitter.getAttribute("value") || "").trim()
+          : "manual_save";
         const mode = getManualMode();
-        if (mode === "cedula") {
-          if (!fuentesDetalleState.length) {
-            event.preventDefault();
-            setManualStep(2);
-            if (manualFuentesDetalleFeedback) {
-              manualFuentesDetalleFeedback.textContent = "Agrega al menos una fuente de financiamiento en el detalle.";
-            }
-            return;
-          }
-          const pdpTotal = fuentesDetalleState.reduce((sum, row) => sum + Number(row.cantidad_pdp || 0), 0);
-          if (pdpTotal > 0) {
-            const normalizedPdp = normalizePdpDetalleState(pdpTotal, pdpDetalleState.length ? pdpDetalleState : parsePdpDetalleState());
-            const missingData = normalizedPdp.some((item) => {
-              const concepto = String(item.concepto || "").trim();
-              const montoRaw = String(item.monto || "").trim();
-              const monto = Number.parseFloat(montoRaw.replace(/,/g, ""));
-              return !concepto || !montoRaw || !Number.isFinite(monto) || monto < 0;
-            });
-            if (missingData) {
-              event.preventDefault();
-              setManualStep(2);
-              if (manualFuentesDetalleFeedback) {
-                manualFuentesDetalleFeedback.textContent = "Completa todos los datos de las observaciones PDP (concepto y monto).";
-              }
-              return;
-            }
-          }
-        }
-        if (mode === "solventacion" && !validateSolventacionDetalle()) {
+        const validStage = mode === "cedula"
+          ? validateStage1({ showFeedback: true })
+          : validateStage2({ showFeedback: true });
+        if (!validStage) {
           event.preventDefault();
           setManualStep(2);
+          updateWizardModeAvailability();
+          return;
+        }
+        if (mode === "cedula") {
+          wizardStageProgress.manual = true;
+        } else {
+          wizardStageProgress.solventacion = true;
+        }
+        updateWizardModeAvailability();
+        saveWizardDraft({ announce: false });
+        if (action === "manual_check") {
+          showWizardToast(
+            mode === "cedula"
+              ? "Etapa 1 validada en modo borrador. Puedes continuar a Etapa 2."
+              : "Etapa 2 validada en modo borrador. Puedes continuar a Etapa 3.",
+            "success",
+          );
         }
       });
     }
@@ -1886,6 +2356,108 @@
       });
     });
     setManualStep(1);
+    updateWizardModeAvailability();
+
+    if (loaderModeButtons.length) {
+      loaderModeButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          const targetMode = button.dataset.loaderModeTarget || "manual";
+          navigateWizardMode(targetMode, { force: false });
+        });
+      });
+    }
+
+    if (manualBackToStage1Btn) {
+      manualBackToStage1Btn.addEventListener("click", () => {
+        saveWizardDraft({ announce: false });
+        navigateWizardMode("manual", { force: true });
+        setManualStep(1);
+        showWizardToast("Regresaste a Etapa 1 para edición sin perder captura previa.", "info");
+      });
+    }
+
+    if (wizardSaveDraftBtnTop) {
+      wizardSaveDraftBtnTop.addEventListener("click", () => {
+        saveWizardDraft({ announce: true });
+      });
+    }
+    if (wizardSaveDraftBtnManual) {
+      wizardSaveDraftBtnManual.addEventListener("click", () => {
+        saveWizardDraft({ announce: true });
+      });
+    }
+    if (wizardSaveDraftBtnTitulares) {
+      wizardSaveDraftBtnTitulares.addEventListener("click", () => {
+        saveWizardDraft({ announce: true });
+      });
+    }
+    if (wizardRestoreDraftBtn) {
+      wizardRestoreDraftBtn.addEventListener("click", () => {
+        restoreWizardDraft();
+        updateManualStageActions();
+        updateWizardModeAvailability();
+      });
+    }
+    if (wizardClearDraftBtn) {
+      wizardClearDraftBtn.addEventListener("click", () => {
+        clearWizardDraft();
+      });
+    }
+
+    if (titularCaptureForm) {
+      titularCaptureForm.addEventListener("submit", (event) => {
+        if (!validateStage1({ showFeedback: false })) {
+          event.preventDefault();
+          showWizardToast("Debes completar la Etapa 1 antes de guardar titulares.", "success");
+          navigateWizardMode("manual", { force: true });
+          setManualStep(2);
+          return;
+        }
+        if (!validateStage2({ showFeedback: false })) {
+          event.preventDefault();
+          showWizardToast("Debes completar la Etapa 2 antes de guardar titulares.", "success");
+          navigateWizardMode("solventacion", { force: true });
+          setManualStep(2);
+          return;
+        }
+        if (!validateStage3({ showFeedback: true })) {
+          event.preventDefault();
+          return;
+        }
+        wizardStageProgress.titulares = true;
+        updateWizardModeAvailability();
+        saveWizardDraft({ announce: false });
+      });
+    }
+
+    let draftAutosaveTimer = null;
+    const scheduleDraftAutosave = () => {
+      if (draftAutosaveTimer) {
+        window.clearTimeout(draftAutosaveTimer);
+      }
+      draftAutosaveTimer = window.setTimeout(() => {
+        saveWizardDraft({ announce: false });
+      }, 450);
+    };
+    [manualCaptureForm, titularCaptureForm].forEach((formElement) => {
+      if (!formElement) {
+        return;
+      }
+      formElement.addEventListener("input", scheduleDraftAutosave);
+      formElement.addEventListener("change", scheduleDraftAutosave);
+    });
+
+    try {
+      const hasDraft = !!localStorage.getItem(gaboWizardDraftKey);
+      const hasCurrentValues = !!(
+        (manualNumeroOficio && String(manualNumeroOficio.value || "").trim())
+        || (titularNombre && String(titularNombre.value || "").trim())
+      );
+      void hasDraft;
+      void hasCurrentValues;
+    } catch (_error) {
+      // No-op if browser storage is unavailable.
+    }
 
     if (manualEjercicio && manualEnte) {
       let manualEntesFetchId = 0;
@@ -2085,7 +2657,7 @@
       });
       if (manualTipoAuditoria) {
         manualTipoAuditoria.addEventListener("change", () => {
-          if (fuentesDetalleState.length) {
+          if (!isRestoringDraft && fuentesDetalleState.length) {
             fuentesDetalleState = [];
             syncFuentesDetalleState();
             renderFuentesDetalleRows();
