@@ -643,6 +643,7 @@ def init_db() -> None:
                 tipo_anexo TEXT NOT NULL,
                 numero_observacion INTEGER NOT NULL,
                 estado TEXT NOT NULL,
+                reclasificada INTEGER NOT NULL DEFAULT 0,
                 monto_pdp_emitido REAL,
                 monto_pdp_solventado REAL,
                 monto_pdp_pendiente REAL,
@@ -853,6 +854,10 @@ def init_db() -> None:
                     WHERE estado IS NULL AND estatus IS NOT NULL
                     """
                 )
+        if "reclasificada" not in observaciones_columns:
+            conn.execute(
+                "ALTER TABLE observaciones ADD COLUMN reclasificada INTEGER NOT NULL DEFAULT 0"
+            )
         if "monto_pdp_emitido" not in observaciones_columns:
             conn.execute("ALTER TABLE observaciones ADD COLUMN monto_pdp_emitido REAL")
         if "monto_pdp_solventado" not in observaciones_columns:

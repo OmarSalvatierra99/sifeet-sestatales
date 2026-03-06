@@ -730,6 +730,9 @@ def register_gabo_routes(app, deps):
                 TRIM(COALESCE(tipo_anexo, '')) AS tipo_anexo,
                 numero_observacion,
                 TRIM(COALESCE(estado, '')) AS estado,
+                COALESCE(reclasificada, 0) AS reclasificada,
+                TRIM(COALESCE(tipo_auditoria, '')) AS tipo_auditoria,
+                TRIM(COALESCE(fuente_financiamiento, '')) AS fuente_financiamiento,
                 monto_pdp_emitido,
                 monto_pdp_solventado,
                 monto_pdp_pendiente,
@@ -758,6 +761,7 @@ def register_gabo_routes(app, deps):
         for row in rows:
             item = dict(row)
             item["estado"] = _normalize_observacion_estado(item.get("estado", ""))
+            item["reclasificada"] = 1 if int(item.get("reclasificada") or 0) else 0
             payload.append(item)
         return jsonify(payload)
 
@@ -826,12 +830,10 @@ def register_gabo_routes(app, deps):
     @gabo_required
     def carga_observacion_actualizar(observacion_id: int):
         payload = request.get_json(silent=True) or {}
+        accion = " ".join(str(payload.get("accion", "") or "").lower().split())
         estado = _normalize_observacion_estado(payload.get("estado", ""))
         monto_emitido_raw = payload.get("monto_pdp_emitido", "")
         monto_solventado_raw = payload.get("monto_pdp_solventado", "")
-
-        if estado not in OBSERVACION_ESTADOS_VALIDOS:
-            return jsonify({"ok": False, "error": "Estado inválido."}), 400
 
         db = get_db()
         current = db.execute(
@@ -847,6 +849,43 @@ def register_gabo_routes(app, deps):
             return jsonify({"ok": False, "error": "Observación no encontrada."}), 404
 
         tipo_anexo = (current["tipo_anexo"] or "").strip().upper()
+        if accion in {"reclasificar_pdp_pras", "reclasificar_pras", "pdp_a_pras"}:
+            if tipo_anexo != "PDP":
+                return jsonify(
+                    {"ok": False, "error": "Solo se puede reclasificar observaciones PDP."},
+                    400,
+                )
+            db.execute(
+                """
+                UPDATE observaciones
+                SET tipo_anexo = 'PRAS',
+                    estado = 'Pendiente',
+                    reclasificada = 1,
+                    pdp_concepto_irregularidad = '',
+                    pdp_subconcepto_irregularidad = '',
+                    monto_pdp_emitido = 0,
+                    monto_pdp_solventado = 0,
+                    monto_pdp_pendiente = 0,
+                    monto = 0
+                WHERE id = ?
+                """,
+                (observacion_id,),
+            )
+            db.commit()
+            return jsonify(
+                {
+                    "ok": True,
+                    "id": observacion_id,
+                    "estado": "Pendiente",
+                    "tipo_anexo": "PRAS",
+                    "reclasificada": 1,
+                    "accion": "reclasificar_pdp_pras",
+                }
+            )
+
+        if estado not in OBSERVACION_ESTADOS_VALIDOS:
+            return jsonify({"ok": False, "error": "Estado inválido."}), 400
+
         if tipo_anexo == "PDP":
             try:
                 monto_emitido = parse_non_negative_float(str(monto_emitido_raw), "Monto PDP emitido")
