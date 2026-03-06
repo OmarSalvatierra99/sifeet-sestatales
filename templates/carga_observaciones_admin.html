@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SIFEET Estatales · Editar/Borrar Observaciones</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
+</head>
+<body class="loader-page obs-admin-page">
+  <header class="site-header">
+    <div class="header-inner">
+      <img src="{{ url_for('static', filename='img/ofs_logo.png') }}" alt="Logo institucional" class="ofs-logo">
+      <div class="header-text">
+        <p class="eyebrow">Órgano de Fiscalización Superior del Estado de Tlaxcala</p>
+        <h1>SIFEET Estatales</h1>
+        <p class="subtitle">Edición y eliminación de observaciones</p>
+      </div>
+      <div class="header-badge user-badge">
+        <div class="user-meta">
+          <span>Usuario</span>
+          <strong>{{ "Gabo" if user.username == "gabo" else user.username }}</strong>
+        </div>
+        <div class="user-actions">
+          <span class="user-role">Carga</span>
+          <a class="btn-secondary btn-compact" href="{{ url_for('logout') }}">Cerrar sesión</a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="page-content loader-content obs-admin-content">
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Editar/Borrar observaciones</h2>
+        <p>Filtra observaciones ya cargadas para corregir estado/montos o eliminarlas.</p>
+      </div>
+
+      <form id="obsAdminFiltersForm" class="record-form filters-form" autocomplete="off">
+        <div class="form-grid">
+          <div class="field">
+            <label for="obs_admin_ejercicio">Ejercicio</label>
+            <select id="obs_admin_ejercicio" name="ejercicio" required>
+              {% for ejercicio in ejercicios %}
+                <option value="{{ ejercicio }}" {% if ejercicio == ejercicio_default %}selected{% endif %}>{{ ejercicio }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="obs_admin_ente_id">Ente</label>
+            <select id="obs_admin_ente_id" name="ente_id">
+              <option value="">Todos los entes</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="obs_admin_tipo_auditoria">Tipo de auditoría</label>
+            <select id="obs_admin_tipo_auditoria" name="tipo_auditoria">
+              <option value="">Todos</option>
+              <option value="Financiera">Financiera</option>
+              <option value="Obra Pública">Obra Pública</option>
+              <option value="Financiera y Obra Pública">Financiera y Obra Pública</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="obs_admin_fuente">Fuente de financiamiento</label>
+            <select id="obs_admin_fuente" name="fuente">
+              <option value="">Todas</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="obs_admin_periodo">Periodo</label>
+            <input id="obs_admin_periodo" name="periodo" type="text" placeholder="Ej. 01 de enero al 31 de diciembre">
+          </div>
+          <div class="field">
+            <label for="obs_admin_oficio">Oficio</label>
+            <input id="obs_admin_oficio" name="oficio" type="text" placeholder="Número de oficio">
+          </div>
+          <div class="field">
+            <label for="obs_admin_estado">Estado</label>
+            <select id="obs_admin_estado" name="estado">
+              <option value="">Todos</option>
+              <option value="Emitido">Emitido</option>
+              <option value="Pendiente">Pendiente</option>
+              <option value="Solventado">Solventado</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="obs_admin_tipo_anexo">Tipo de anexo</label>
+            <select id="obs_admin_tipo_anexo" name="tipo_anexo">
+              <option value="">Todos</option>
+              <option value="SA">SA</option>
+              <option value="PDP">PDP</option>
+              <option value="PRAS">PRAS</option>
+              <option value="PEFCF">PEFCF</option>
+              <option value="R">R</option>
+            </select>
+          </div>
+        </div>
+        <p class="helper">Consulta automática activada: al cambiar filtros se actualizan las observaciones.</p>
+      </form>
+
+      <div class="loader-obs-toolbar obs-admin-toolbar">
+        <input id="obs_admin_quick_search" type="text" placeholder="Buscar en resultados (anexo, oficio, fuente, concepto...)">
+        <select id="obs_admin_quick_estado">
+          <option value="">Estado rápido: todos</option>
+          <option value="Emitido">Emitido</option>
+          <option value="Pendiente">Pendiente</option>
+          <option value="Solventado">Solventado</option>
+        </select>
+      </div>
+
+      <div class="loader-preview-metrics">
+        <span class="loader-obs-chip">Total: <strong id="obsAdminMetricTotal">0</strong></span>
+        <span class="loader-obs-chip">Pendientes: <strong id="obsAdminMetricPendiente">0</strong></span>
+        <span class="loader-obs-chip">Solventadas: <strong id="obsAdminMetricSolventado">0</strong></span>
+      </div>
+
+      <div id="obsAdminStatus" class="status status-info" hidden></div>
+
+      <div class="table-meta">
+        <span id="obsAdminCount">Selecciona filtros; la consulta es automática.</span>
+        <div class="obs-admin-actions-inline">
+          <button type="button" class="btn-secondary" id="obsAdminDeleteSelectedBtn">Eliminar seleccionadas</button>
+          <button type="button" class="btn-secondary" id="obsAdminDeleteAllBtn">Borrar todo (filtro)</button>
+        </div>
+      </div>
+
+      <div class="loader-obs-table-wrap">
+        <table class="loader-obs-table obs-admin-table">
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="obsAdminSelectAll" aria-label="Seleccionar todas"></th>
+              <th>Observación</th>
+              <th>Contexto</th>
+              <th>Estado</th>
+              <th>PDP</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="obsAdminTableBody">
+            <tr>
+              <td colspan="6" class="muted">Sin resultados para mostrar.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    © Órgano de Fiscalización Superior del Estado de Tlaxcala · SIFEET Estatales
+  </footer>
+  <div class="floating-clear-btn obs-admin-fab-latest" aria-label="Filtro rápido por días">
+    <span class="floating-clear-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.8"/>
+        <path d="M12 8V12L14.8 13.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </span>
+    <span class="obs-admin-fab-latest-label">Últimas</span>
+    <select id="obs_admin_quick_latest">
+      <option value="">Todas</option>
+      <option value="1">Último día</option>
+      <option value="2">2 días</option>
+      <option value="3">3 días</option>
+      <option value="7">7 días</option>
+      <option value="15">15 días</option>
+      <option value="30">30 días</option>
+    </select>
+  </div>
+  <button class="floating-clear-btn obs-admin-fab-clear" type="button" id="obsAdminClearBtn" aria-label="Limpiar filtros">
+    <span class="floating-clear-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v8h-2v-8Zm4 0h2v8h-2v-8ZM7 10h2v8H7v-8Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </span>
+    <span>Limpiar filtros</span>
+  </button>
+  <a class="floating-clear-btn obs-admin-fab-back" href="{{ url_for('carga') }}" aria-label="Regresar a carga">
+    <span class="floating-clear-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M14.5 5L7.5 12L14.5 19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M8 12H20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <span>Regresar a carga</span>
+  </a>
+
+  <script>
+    const filtersForm = document.getElementById("obsAdminFiltersForm");
+    const ejercicioInput = document.getElementById("obs_admin_ejercicio");
+    const enteInput = document.getElementById("obs_admin_ente_id");
+    const tipoAuditoriaInput = document.getElementById("obs_admin_tipo_auditoria");
+    const fuenteInput = document.getElementById("obs_admin_fuente");
+    const periodoInput = document.getElementById("obs_admin_periodo");
+    const oficioInput = document.getElementById("obs_admin_oficio");
+    const estadoInput = document.getElementById("obs_admin_estado");
+    const tipoAnexoInput = document.getElementById("obs_admin_tipo_anexo");
+    const quickSearchInput = document.getElementById("obs_admin_quick_search");
+    const quickEstadoInput = document.getElementById("obs_admin_quick_estado");
+    const quickLatestInput = document.getElementById("obs_admin_quick_latest");
+    const clearBtn = document.getElementById("obsAdminClearBtn");
+    const statusBox = document.getElementById("obsAdminStatus");
+    const countLabel = document.getElementById("obsAdminCount");
+    const tableBody = document.getElementById("obsAdminTableBody");
+    const selectAllCheckbox = document.getElementById("obsAdminSelectAll");
+    const metricTotal = document.getElementById("obsAdminMetricTotal");
+    const metricPendiente = document.getElementById("obsAdminMetricPendiente");
+    const metricSolventado = document.getElementById("obsAdminMetricSolventado");
+    const deleteSelectedBtn = document.getElementById("obsAdminDeleteSelectedBtn");
+    const deleteAllBtn = document.getElementById("obsAdminDeleteAllBtn");
+
+    let allRows = [];
+    let filteredRows = [];
+
+    const escapeHtml = (value) => (
+      String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;")
+    );
+
+    const formatMoney = (value) => {
+      const amount = Number(value) || 0;
+      return amount.toLocaleString("es-MX", {
+        style: "currency",
+        currency: "MXN",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+    };
+
+    const normalizeEstado = (value) => {
+      const key = String(value || "").trim().toLowerCase();
+      if (key === "e" || key === "emitido") return "Emitido";
+      if (key === "p" || key === "pendiente") return "Pendiente";
+      if (key === "s" || key === "solventado") return "Solventado";
+      return "Emitido";
+    };
+
+    const estadoClassName = (estado) => {
+      if (estado === "Pendiente") return "is-pendiente";
+      if (estado === "Solventado") return "is-solventado";
+      return "is-emitido";
+    };
+
+    const normalizeTipoAnexo = (value) => {
+      const clean = String(value || "").trim().toUpperCase();
+      if (clean === "PEFCT") return "PEFCF";
+      return clean;
+    };
+
+    const parseMoneyInput = (rawValue) => {
+      const raw = String(rawValue || "").trim();
+      if (!raw) {
+        return null;
+      }
+      const normalized = raw.replace(/\$/g, "").replace(/,/g, "").replace(/\s+/g, "");
+      const value = Number.parseFloat(normalized);
+      if (!Number.isFinite(value) || value < 0) {
+        return null;
+      }
+      return value;
+    };
+
+    const parseCreatedAtMs = (rawValue) => {
+      const raw = String(rawValue || "").trim();
+      if (!raw) {
+        return NaN;
+      }
+      const normalized = raw.replace(" ", "T");
+      const parsed = Date.parse(normalized);
+      return Number.isFinite(parsed) ? parsed : NaN;
+    };
+
+    const showStatus = (message, level = "info") => {
+      if (!statusBox) return;
+      statusBox.hidden = false;
+      statusBox.classList.remove("status-info", "status-success", "status-error");
+      statusBox.classList.add(level === "success" ? "status-success" : (level === "error" ? "status-error" : "status-info"));
+      statusBox.textContent = message;
+    };
+
+    const clearStatus = () => {
+      if (!statusBox) return;
+      statusBox.hidden = true;
+      statusBox.textContent = "";
+    };
+
+    const renderEmptyRow = (message) => {
+      tableBody.innerHTML = `<tr><td colspan="6" class="muted">${escapeHtml(message)}</td></tr>`;
+      if (selectAllCheckbox) {
+        selectAllCheckbox.checked = false;
+      }
+    };
+
+    const resolveFuenteFilter = () => {
+      if (!fuenteInput) {
+        return "";
+      }
+      const rawValue = String(fuenteInput.value || "").trim();
+      if (!rawValue) {
+        return "";
+      }
+      if (rawValue.startsWith("__obs__:")) {
+        return rawValue.replace("__obs__:", "").trim();
+      }
+      const selected = fuenteInput.options[fuenteInput.selectedIndex];
+      const selectedLabel = selected ? String(selected.textContent || "").trim() : "";
+      return selectedLabel || rawValue;
+    };
+
+    const readFilters = () => ({
+      ejercicio: String(ejercicioInput ? ejercicioInput.value : "").trim(),
+      ente_id: String(enteInput ? enteInput.value : "").trim(),
+      tipo_auditoria: String(tipoAuditoriaInput ? tipoAuditoriaInput.value : "").trim(),
+      fuente: resolveFuenteFilter(),
+      periodo: String(periodoInput ? periodoInput.value : "").trim(),
+      oficio: String(oficioInput ? oficioInput.value : "").trim(),
+      estado: String(estadoInput ? estadoInput.value : "").trim(),
+      tipo_anexo: String(tipoAnexoInput ? tipoAnexoInput.value : "").trim(),
+    });
+
+    const buildQueryString = (filters) => {
+      const params = new URLSearchParams();
+      Object.entries(filters).forEach(([key, value]) => {
+        if (String(value || "").trim()) {
+          params.set(key, String(value).trim());
+        }
+      });
+      return params.toString();
+    };
+
+    const updateMetrics = (rows) => {
+      const safeRows = Array.isArray(rows) ? rows : [];
+      const pendientes = safeRows.filter((row) => normalizeEstado(row.estado) === "Pendiente").length;
+      const solventadas = safeRows.filter((row) => normalizeEstado(row.estado) === "Solventado").length;
+      if (metricTotal) metricTotal.textContent = String(safeRows.length);
+      if (metricPendiente) metricPendiente.textContent = String(pendientes);
+      if (metricSolventado) metricSolventado.textContent = String(solventadas);
+    };
+
+    const syncSelectAllState = () => {
+      if (!selectAllCheckbox) return;
+      const checks = Array.from(tableBody.querySelectorAll(".obs-admin-row-check"));
+      if (!checks.length) {
+        selectAllCheckbox.checked = false;
+        return;
+      }
+      const checkedCount = checks.filter((item) => item instanceof HTMLInputElement && item.checked).length;
+      selectAllCheckbox.checked = checkedCount > 0 && checkedCount === checks.length;
+    };
+
+    const updateRowVisualState = (row) => {
+      if (!(row instanceof HTMLElement)) {
+        return;
+      }
+      const estadoSelect = row.querySelector(".obs-admin-estado");
+      const estado = normalizeEstado(estadoSelect ? estadoSelect.value : "Emitido");
+      const tipoAnexo = normalizeTipoAnexo(row.dataset.tipoAnexo || "");
+      const estadoClass = estadoClassName(estado);
+      row.classList.remove("is-emitido", "is-pendiente", "is-solventado");
+      row.classList.add(estadoClass);
+      if (estadoSelect) {
+        estadoSelect.value = estado;
+        estadoSelect.classList.remove("is-emitido", "is-pendiente", "is-solventado");
+        estadoSelect.classList.add(estadoClass);
+      }
+
+      if (tipoAnexo !== "PDP") {
+        return;
+      }
+
+      const solventadoInput = row.querySelector(".obs-admin-solventado");
+      const pendienteCell = row.querySelector(".obs-admin-pendiente");
+      const errorText = row.querySelector(".obs-admin-row-error");
+      const emitido = Number.parseFloat(String(row.dataset.montoEmitido || "0")) || 0;
+      let solventado = solventadoInput ? parseMoneyInput(solventadoInput.value) : 0;
+      if (solventado === null) {
+        solventado = 0;
+      }
+      if (estado === "Solventado" && solventadoInput && solventado < emitido) {
+        solventado = emitido;
+        solventadoInput.value = emitido.toFixed(2);
+      }
+      const isInvalid = solventado > emitido;
+      if (solventadoInput) {
+        solventadoInput.classList.toggle("is-invalid", isInvalid);
+      }
+      if (errorText) {
+        if (isInvalid) {
+          errorText.hidden = false;
+          errorText.textContent = `Máximo permitido: ${formatMoney(emitido)}.`;
+        } else {
+          errorText.hidden = true;
+          errorText.textContent = "";
+        }
+      }
+      if (pendienteCell) {
+        const pendiente = Math.max(0, emitido - Math.min(solventado, emitido));
+        pendienteCell.textContent = formatMoney(pendiente);
+      }
+    };
+
+    const renderRows = (rows) => {
+      if (!Array.isArray(rows) || !rows.length) {
+        renderEmptyRow("Sin observaciones para los filtros seleccionados.");
+        return;
+      }
+
+      tableBody.innerHTML = rows.map((row) => {
+        const id = Number(row.id || 0);
+        const tipoAnexo = normalizeTipoAnexo(row.tipo_anexo);
+        const estado = normalizeEstado(row.estado);
+        const estadoClass = estadoClassName(estado);
+        const isPdp = tipoAnexo === "PDP";
+        const emitido = Number.parseFloat(String(row.monto_pdp_emitido || 0)) || 0;
+        const solventado = Number.parseFloat(String(row.monto_pdp_solventado || 0)) || 0;
+        const pendiente = Math.max(0, emitido - Math.min(solventado, emitido));
+        const numeroObs = String(row.numero_observacion || "").trim() || "-";
+        const enteLabel = `${String(row.ente_numero || "").trim()} - ${String(row.ente_nombre || "").trim()}`.trim();
+        const auditoriaLabel = String(row.tipo_auditoria || "").trim() || "-";
+        const fuenteLabel = String(row.fuente_financiamiento || "").trim() || "-";
+        const periodoLabel = String(row.periodo_cedula || "").trim() || "-";
+        const oficioLabel = String(row.oficio || "").trim() || "-";
+        const createdAtLabel = String(row.created_at || "").trim() || "-";
+        const concepto = String(row.pdp_concepto_irregularidad || "").trim();
+        const subconcepto = String(row.pdp_subconcepto_irregularidad || "").trim();
+        const conceptoFinal = concepto || subconcepto || (row.reclasificada ? "Reclasificada PDP a PRAS" : "");
+        const observacionLabel = `${tipoAnexo || "-"} #${numeroObs}`;
+        const pdpCellHtml = isPdp
+          ? (
+            `<div class="obs-admin-pdp-cell">` +
+              `<span>Emitido: <strong>${escapeHtml(formatMoney(emitido))}</strong></span>` +
+              `<label for="obs_admin_solventado_${id}">Solventado</label>` +
+              `<input id="obs_admin_solventado_${id}" class="obs-admin-solventado obs-monto-solventado-input" type="text" inputmode="decimal" value="${escapeHtml(solventado.toFixed(2))}" aria-label="Monto solventado PDP">` +
+              `<span>Pendiente: <strong class="obs-admin-pendiente">${escapeHtml(formatMoney(pendiente))}</strong></span>` +
+              `<small class="obs-pdp-error obs-admin-row-error" hidden></small>` +
+            `</div>`
+          )
+          : (
+            `<div class="obs-admin-pdp-cell">` +
+              `<span class="muted">No aplica</span>` +
+            `</div>`
+          );
+        const contextoConcepto = conceptoFinal
+          ? `<span><strong>Concepto:</strong> ${escapeHtml(conceptoFinal)}</span>`
+          : "";
+
+        return (
+          `<tr class="obs-row ${estadoClass}" data-observacion-id="${id}" data-tipo-anexo="${escapeHtml(tipoAnexo)}" data-monto-emitido="${escapeHtml(emitido.toFixed(2))}">` +
+            `<td><input type="checkbox" class="obs-admin-row-check" value="${id}" aria-label="Seleccionar observación ${id}"></td>` +
+            `<td>` +
+              `<div class="obs-admin-observacion-main">` +
+                `<strong>ID ${id} · ${escapeHtml(observacionLabel)}</strong>` +
+                `<span><strong>Ente:</strong> ${escapeHtml(enteLabel || row.ente_id || "-")}</span>` +
+                `<span><strong>Auditoría:</strong> ${escapeHtml(auditoriaLabel)}</span>` +
+              `</div>` +
+            `</td>` +
+            `<td>` +
+              `<div class="obs-admin-contexto">` +
+                `<span><strong>Periodo:</strong> ${escapeHtml(periodoLabel)}</span>` +
+                `<span><strong>Oficio:</strong> ${escapeHtml(oficioLabel)}</span>` +
+                `<span><strong>Fuente:</strong> ${escapeHtml(fuenteLabel)}</span>` +
+                `<span><strong>Cargada:</strong> ${escapeHtml(createdAtLabel)}</span>` +
+                contextoConcepto +
+              `</div>` +
+            `</td>` +
+            `<td>` +
+              `<select class="obs-admin-estado obs-estado-input ${estadoClass}">` +
+                `<option value="Emitido"${estado === "Emitido" ? " selected" : ""}>Emitido</option>` +
+                `<option value="Pendiente"${estado === "Pendiente" ? " selected" : ""}>Pendiente</option>` +
+                `<option value="Solventado"${estado === "Solventado" ? " selected" : ""}>Solventado</option>` +
+              `</select>` +
+            `</td>` +
+            `<td>${pdpCellHtml}</td>` +
+            `<td>` +
+              `<div class="obs-admin-row-actions">` +
+                `<button type="button" class="btn-secondary btn-compact obs-admin-save-btn">Guardar</button>` +
+                `<button type="button" class="btn-secondary btn-compact obs-admin-delete-btn">Eliminar</button>` +
+              `</div>` +
+            `</td>` +
+          `</tr>`
+        );
+      }).join("");
+
+      Array.from(tableBody.querySelectorAll("tr")).forEach((row) => {
+        updateRowVisualState(row);
+      });
+      syncSelectAllState();
+    };
+
+    const applyClientFilters = () => {
+      const search = String(quickSearchInput ? quickSearchInput.value : "").trim().toLowerCase();
+      const quickEstado = String(quickEstadoInput ? quickEstadoInput.value : "").trim();
+      const latestDays = Number.parseInt(
+        String(quickLatestInput ? quickLatestInput.value : "").trim(),
+        10,
+      );
+      let rows = allRows.filter((row) => {
+        const estado = normalizeEstado(row.estado);
+        if (quickEstado && estado !== quickEstado) {
+          return false;
+        }
+        if (!search) {
+          return true;
+        }
+        const haystack = [
+          row.id,
+          row.ente_id,
+          row.ente_nombre,
+          row.ente_numero,
+          row.tipo_anexo,
+          row.numero_observacion,
+          row.tipo_auditoria,
+          row.fuente_financiamiento,
+          row.periodo_cedula,
+          row.oficio,
+          row.created_at,
+          row.pdp_concepto_irregularidad,
+          row.pdp_subconcepto_irregularidad,
+          estado,
+        ]
+          .map((item) => String(item || "").toLowerCase())
+          .join(" ");
+        return haystack.includes(search);
+      });
+      if (Number.isFinite(latestDays) && latestDays > 0) {
+        const now = Date.now();
+        const threshold = now - (latestDays * 24 * 60 * 60 * 1000);
+        rows = rows
+          .filter((row) => {
+            const createdAtMs = parseCreatedAtMs(row.created_at);
+            return Number.isFinite(createdAtMs) && createdAtMs >= threshold;
+          })
+          .sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+      }
+      filteredRows = rows;
+      renderRows(filteredRows);
+      updateMetrics(filteredRows);
+      if (countLabel) {
+        const latestLabel = Number.isFinite(latestDays) && latestDays > 0
+          ? ` · últimos ${latestDays} día(s)`
+          : "";
+        countLabel.textContent = `${filteredRows.length} de ${allRows.length} observaciones${latestLabel}.`;
+      }
+    };
+
+    const fetchRows = async ({ announce = true } = {}) => {
+      const filters = readFilters();
+      if (!filters.ejercicio) {
+        showStatus("Selecciona un ejercicio para cargar observaciones.", "error");
+        return;
+      }
+      renderEmptyRow("Consultando observaciones...");
+      try {
+        const query = buildQueryString(filters);
+        const response = await fetch(`/carga/observaciones-admin/datos?${query}`);
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "No se pudo consultar observaciones.");
+        }
+        allRows = Array.isArray(data.rows) ? data.rows : [];
+        applyClientFilters();
+        if (announce) {
+          showStatus(`Consulta completada: ${allRows.length} observaciones encontradas.`, "success");
+        }
+      } catch (error) {
+        allRows = [];
+        filteredRows = [];
+        updateMetrics([]);
+        renderEmptyRow("No se pudieron consultar las observaciones.");
+        if (countLabel) {
+          countLabel.textContent = "Sin resultados.";
+        }
+        showStatus(error && error.message ? error.message : "Error al consultar observaciones.", "error");
+      }
+    };
+
+    const buildRowPayload = (row) => {
+      const id = Number(row.dataset.observacionId || 0);
+      const tipoAnexo = normalizeTipoAnexo(row.dataset.tipoAnexo || "");
+      const estadoSelect = row.querySelector(".obs-admin-estado");
+      const estado = normalizeEstado(estadoSelect ? estadoSelect.value : "Emitido");
+      if (!id) {
+        return { error: "Observación inválida." };
+      }
+      if (tipoAnexo === "PDP") {
+        const emitido = Number.parseFloat(String(row.dataset.montoEmitido || "0")) || 0;
+        const solventadoInput = row.querySelector(".obs-admin-solventado");
+        const parsed = solventadoInput ? parseMoneyInput(solventadoInput.value) : null;
+        if (parsed === null) {
+          return { error: "Captura un monto solventado válido para PDP." };
+        }
+        if (parsed > emitido) {
+          return { error: "Monto solventado PDP no puede ser mayor al emitido." };
+        }
+        const solventado = estado === "Solventado" ? emitido : parsed;
+        return {
+          id,
+          payload: {
+            estado,
+            monto_pdp_emitido: emitido.toFixed(2),
+            monto_pdp_solventado: solventado.toFixed(2),
+          },
+        };
+      }
+      return {
+        id,
+        payload: { estado },
+      };
+    };
+
+    const saveRow = async (row, button) => {
+      const payloadResult = buildRowPayload(row);
+      if (payloadResult.error) {
+        showStatus(payloadResult.error, "error");
+        return;
+      }
+      if (button instanceof HTMLButtonElement) {
+        button.disabled = true;
+      }
+      try {
+        const response = await fetch(
+          `/carga/observaciones-cargadas/${encodeURIComponent(payloadResult.id)}/actualizar`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payloadResult.payload),
+          },
+        );
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "No se pudo actualizar la observación.");
+        }
+        await fetchRows({ announce: false });
+        showStatus(`Observación ${payloadResult.id} actualizada.`, "success");
+      } catch (error) {
+        showStatus(error && error.message ? error.message : "Error al guardar cambios.", "error");
+      } finally {
+        if (button instanceof HTMLButtonElement) {
+          button.disabled = false;
+        }
+      }
+    };
+
+    const deleteOne = async (row, button) => {
+      const id = Number(row.dataset.observacionId || 0);
+      if (!id) {
+        showStatus("Observación inválida.", "error");
+        return;
+      }
+      const ok = window.confirm(`¿Seguro que deseas eliminar la observación ID ${id}?`);
+      if (!ok) {
+        return;
+      }
+      if (button instanceof HTMLButtonElement) {
+        button.disabled = true;
+      }
+      try {
+        const response = await fetch(`/carga/observaciones-admin/${encodeURIComponent(id)}/borrar`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "No se pudo eliminar la observación.");
+        }
+        await fetchRows({ announce: false });
+        showStatus(`Observación ${id} eliminada.`, "success");
+      } catch (error) {
+        showStatus(error && error.message ? error.message : "Error al eliminar observación.", "error");
+      } finally {
+        if (button instanceof HTMLButtonElement) {
+          button.disabled = false;
+        }
+      }
+    };
+
+    const deleteSelected = async () => {
+      const checks = Array.from(tableBody.querySelectorAll(".obs-admin-row-check"))
+        .filter((item) => item instanceof HTMLInputElement && item.checked);
+      const ids = checks
+        .map((item) => Number(item.value || 0))
+        .filter((id) => Number.isFinite(id) && id > 0);
+      if (!ids.length) {
+        showStatus("Selecciona al menos una observación para eliminar.", "info");
+        return;
+      }
+      const confirmed = window.confirm(
+        `¿Seguro que deseas eliminar ${ids.length} observación(es) seleccionada(s)?`
+      );
+      if (!confirmed) {
+        return;
+      }
+      deleteSelectedBtn.disabled = true;
+      try {
+        const response = await fetch("/carga/observaciones-admin/borrar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "No se pudieron eliminar las observaciones seleccionadas.");
+        }
+        await fetchRows({ announce: false });
+        showStatus(`Observaciones eliminadas: ${data.deleted || ids.length}.`, "success");
+      } catch (error) {
+        showStatus(error && error.message ? error.message : "Error al eliminar seleccionadas.", "error");
+      } finally {
+        deleteSelectedBtn.disabled = false;
+      }
+    };
+
+    const deleteAllByFilters = async () => {
+      const filters = readFilters();
+      if (!filters.ejercicio) {
+        showStatus("Debes seleccionar ejercicio para borrar.", "error");
+        return;
+      }
+      const totalInView = filteredRows.length;
+      const confirmed = window.confirm(
+        `¿Seguro que deseas BORRAR TODO lo encontrado con estos filtros?` +
+        `\nObservaciones visibles: ${totalInView}.` +
+        `\nEsta acción no se puede deshacer.`
+      );
+      if (!confirmed) {
+        return;
+      }
+      deleteAllBtn.disabled = true;
+      try {
+        const response = await fetch("/carga/observaciones-admin/borrar-todo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(filters),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "No se pudo borrar el conjunto filtrado.");
+        }
+        await fetchRows({ announce: false });
+        showStatus(`Observaciones eliminadas: ${data.deleted || 0}.`, "success");
+      } catch (error) {
+        showStatus(error && error.message ? error.message : "Error al borrar por filtros.", "error");
+      } finally {
+        deleteAllBtn.disabled = false;
+      }
+    };
+
+    const loadEntes = async (selectedValue = "") => {
+      if (!ejercicioInput || !enteInput) {
+        return;
+      }
+      const ejercicio = String(ejercicioInput.value || "").trim();
+      enteInput.innerHTML = '<option value="">Cargando entes...</option>';
+      if (!ejercicio) {
+        enteInput.innerHTML = '<option value="">Todos los entes</option>';
+        enteInput.value = "";
+        return;
+      }
+      try {
+        const response = await fetch(`/carga/entes?ejercicio=${encodeURIComponent(ejercicio)}`);
+        if (!response.ok) {
+          throw new Error("No se pudieron cargar entes.");
+        }
+        const rows = await response.json();
+        const options = Array.isArray(rows) ? rows : [];
+        enteInput.innerHTML = '<option value="">Todos los entes</option>' + options.map((row) => (
+          `<option value="${escapeHtml(row.ente_id)}">${escapeHtml(`${row.ente_numero || ""} - ${row.ente_nombre || ""}`)}</option>`
+        )).join("");
+        const selected = String(selectedValue || "").trim();
+        if (selected && options.some((row) => String(row.ente_id || "").trim() === selected)) {
+          enteInput.value = selected;
+        } else {
+          enteInput.value = "";
+        }
+      } catch (_error) {
+        enteInput.innerHTML = '<option value="">No se pudieron cargar entes</option>';
+        enteInput.value = "";
+      }
+    };
+
+    const loadFuentes = async (selectedValue = "") => {
+      if (!fuenteInput || !ejercicioInput || !enteInput) {
+        return;
+      }
+      const ejercicio = String(ejercicioInput.value || "").trim();
+      const enteId = String(enteInput.value || "").trim();
+      const tipoAuditoria = String(tipoAuditoriaInput ? tipoAuditoriaInput.value : "").trim();
+      if (!ejercicio || !enteId) {
+        fuenteInput.innerHTML = '<option value="">Todas</option>';
+        fuenteInput.value = "";
+        return;
+      }
+      fuenteInput.innerHTML = '<option value="">Cargando fuentes...</option>';
+      try {
+        const params = new URLSearchParams({
+          ejercicio,
+          ente_id: enteId,
+        });
+        if (tipoAuditoria) {
+          params.set("tipo_auditoria", tipoAuditoria);
+        }
+        const response = await fetch(`/carga/fuentes-ente?${params.toString()}`);
+        if (!response.ok) {
+          throw new Error("No se pudieron cargar fuentes.");
+        }
+        const rows = await response.json();
+        const options = Array.isArray(rows) ? rows : [];
+        fuenteInput.innerHTML = '<option value="">Todas</option>' + options.map((row) => (
+          `<option value="${escapeHtml(row.id)}">${escapeHtml(row.nombre || "")}</option>`
+        )).join("");
+        const selected = String(selectedValue || "").trim();
+        if (selected && options.some((row) => String(row.id || "").trim() === selected)) {
+          fuenteInput.value = selected;
+        } else {
+          fuenteInput.value = "";
+        }
+      } catch (_error) {
+        fuenteInput.innerHTML = '<option value="">No se pudieron cargar fuentes</option>';
+        fuenteInput.value = "";
+      }
+    };
+
+    if (filtersForm) {
+      filtersForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+      });
+    }
+
+    if (ejercicioInput) {
+      ejercicioInput.addEventListener("change", async () => {
+        clearStatus();
+        await loadEntes("");
+        await loadFuentes("");
+        await fetchRows({ announce: false });
+      });
+    }
+
+    if (enteInput) {
+      enteInput.addEventListener("change", async () => {
+        clearStatus();
+        await loadFuentes("");
+        await fetchRows({ announce: false });
+      });
+    }
+
+    if (tipoAuditoriaInput) {
+      tipoAuditoriaInput.addEventListener("change", async () => {
+        clearStatus();
+        await loadFuentes(String(fuenteInput ? fuenteInput.value : "").trim());
+        await fetchRows({ announce: false });
+      });
+    }
+
+    if (fuenteInput) {
+      fuenteInput.addEventListener("change", async () => {
+        clearStatus();
+        await fetchRows({ announce: false });
+      });
+    }
+
+    [estadoInput, tipoAnexoInput].forEach((field) => {
+      if (!field) return;
+      field.addEventListener("change", async () => {
+        clearStatus();
+        await fetchRows({ announce: false });
+      });
+    });
+
+    [periodoInput, oficioInput].forEach((field) => {
+      if (!field) return;
+      field.addEventListener("change", async () => {
+        clearStatus();
+        await fetchRows({ announce: false });
+      });
+      field.addEventListener("keydown", async (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        clearStatus();
+        await fetchRows({ announce: false });
+      });
+    });
+
+    if (quickSearchInput) {
+      quickSearchInput.addEventListener("input", applyClientFilters);
+    }
+    if (quickEstadoInput) {
+      quickEstadoInput.addEventListener("change", applyClientFilters);
+    }
+    if (quickLatestInput) {
+      quickLatestInput.addEventListener("change", async () => {
+        if (!allRows.length) {
+          await fetchRows({ announce: false });
+          return;
+        }
+        applyClientFilters();
+      });
+    }
+
+    if (clearBtn) {
+      clearBtn.addEventListener("click", async () => {
+        if (filtersForm) {
+          filtersForm.reset();
+        }
+        if (quickSearchInput) {
+          quickSearchInput.value = "";
+        }
+        if (quickEstadoInput) {
+          quickEstadoInput.value = "";
+        }
+        if (quickLatestInput) {
+          quickLatestInput.value = "";
+        }
+        await loadEntes("");
+        await loadFuentes("");
+        await fetchRows({ announce: false });
+        showStatus("Filtros limpiados.", "info");
+      });
+    }
+
+    if (selectAllCheckbox) {
+      selectAllCheckbox.addEventListener("change", () => {
+        const checks = Array.from(tableBody.querySelectorAll(".obs-admin-row-check"));
+        checks.forEach((item) => {
+          if (item instanceof HTMLInputElement) {
+            item.checked = selectAllCheckbox.checked;
+          }
+        });
+      });
+    }
+
+    if (tableBody) {
+      tableBody.addEventListener("change", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (target.classList.contains("obs-admin-row-check")) {
+          syncSelectAllState();
+          return;
+        }
+        const row = target.closest("tr");
+        if (row) {
+          updateRowVisualState(row);
+        }
+      });
+      tableBody.addEventListener("input", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (!target.classList.contains("obs-admin-solventado")) return;
+        const row = target.closest("tr");
+        if (row) {
+          updateRowVisualState(row);
+        }
+      });
+      tableBody.addEventListener("click", async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        const saveBtn = target.closest(".obs-admin-save-btn");
+        if (saveBtn) {
+          const row = saveBtn.closest("tr");
+          if (row) {
+            await saveRow(row, saveBtn);
+          }
+          return;
+        }
+        const deleteBtn = target.closest(".obs-admin-delete-btn");
+        if (deleteBtn) {
+          const row = deleteBtn.closest("tr");
+          if (row) {
+            await deleteOne(row, deleteBtn);
+          }
+        }
+      });
+    }
+
+    if (deleteSelectedBtn) {
+      deleteSelectedBtn.addEventListener("click", async () => {
+        await deleteSelected();
+      });
+    }
+
+    if (deleteAllBtn) {
+      deleteAllBtn.addEventListener("click", async () => {
+        await deleteAllByFilters();
+      });
+    }
+
+    loadEntes("").then(async () => {
+      await loadFuentes("");
+      await fetchRows({ announce: false });
+    });
+  </script>
+</body>
+</html>

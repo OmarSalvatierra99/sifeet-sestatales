@@ -610,6 +610,105 @@ def register_gabo_routes(app, deps):
             total += qty
         return total, counts
 
+    def build_observaciones_admin_scope(raw_scope) -> tuple[list[str], list[str], dict, int]:
+        ejercicio = " ".join((raw_scope.get("ejercicio") or "").split())
+        ente_id = normalize_ente_id(raw_scope.get("ente_id", ""))
+        tipo_auditoria = " ".join((raw_scope.get("tipo_auditoria") or "").split())
+        fuente = " ".join((raw_scope.get("fuente") or "").split())
+        periodo = " ".join((raw_scope.get("periodo") or "").split())
+        oficio = " ".join((raw_scope.get("oficio") or "").split())
+        estado_raw = " ".join((raw_scope.get("estado") or "").split())
+        tipo_anexo = " ".join((raw_scope.get("tipo_anexo") or "").split()).upper()
+
+        if tipo_anexo == "PEFCT":
+            tipo_anexo = "PEFCF"
+
+        where_clauses: list[str] = []
+        params: list[str] = []
+        extra_filters = 0
+
+        if ejercicio:
+            where_clauses.append("TRIM(COALESCE(ejercicio, '')) = ?")
+            params.append(ejercicio)
+
+        if ente_id:
+            where_clauses.append(f"{normalize_ente_id_sql('ente_id')} = ?")
+            params.append(ente_id)
+            extra_filters += 1
+
+        if tipo_auditoria:
+            tipo_options = _tipo_auditoria_options(tipo_auditoria)
+            if not tipo_options:
+                tipo_options = [tipo_auditoria]
+            placeholders = ", ".join(["?"] * len(tipo_options))
+            where_clauses.append(
+                f"TRIM(COALESCE(tipo_auditoria, '')) IN ({placeholders})"
+            )
+            params.extend(tipo_options)
+            extra_filters += 1
+
+        if fuente:
+            where_clauses.append(
+                "LOWER(TRIM(COALESCE(fuente_financiamiento, ''))) = LOWER(TRIM(COALESCE(?, '')))"
+            )
+            params.append(fuente)
+            extra_filters += 1
+
+        if periodo:
+            where_clauses.append(
+                "LOWER(TRIM(COALESCE(periodo_cedula, ''))) = LOWER(TRIM(COALESCE(?, '')))"
+            )
+            params.append(periodo)
+            extra_filters += 1
+
+        if oficio:
+            where_clauses.append(
+                "LOWER(TRIM(COALESCE(oficio, ''))) = LOWER(TRIM(COALESCE(?, '')))"
+            )
+            params.append(oficio)
+            extra_filters += 1
+
+        if estado_raw:
+            estado = _normalize_observacion_estado(estado_raw)
+            if estado not in OBSERVACION_ESTADOS_VALIDOS:
+                raise ValueError("Estado inválido para filtrar observaciones.")
+            if estado == "Emitido":
+                where_clauses.append(
+                    "LOWER(TRIM(COALESCE(estado, ''))) IN ('emitido', 'e')"
+                )
+            elif estado == "Pendiente":
+                where_clauses.append(
+                    "LOWER(TRIM(COALESCE(estado, ''))) IN ('pendiente', 'p')"
+                )
+            else:
+                where_clauses.append(
+                    "LOWER(TRIM(COALESCE(estado, ''))) IN ('solventado', 's')"
+                )
+            extra_filters += 1
+
+        if tipo_anexo:
+            if tipo_anexo not in {"SA", "PDP", "PRAS", "PEFCF", "R"}:
+                raise ValueError("Tipo de anexo inválido para filtrar observaciones.")
+            where_clauses.append("UPPER(TRIM(COALESCE(tipo_anexo, ''))) = ?")
+            params.append(tipo_anexo)
+            extra_filters += 1
+
+        return (
+            where_clauses,
+            params,
+            {
+                "ejercicio": ejercicio,
+                "ente_id": ente_id,
+                "tipo_auditoria": tipo_auditoria,
+                "fuente": fuente,
+                "periodo": periodo,
+                "oficio": oficio,
+                "estado": estado_raw,
+                "tipo_anexo": tipo_anexo,
+            },
+            extra_filters,
+        )
+
     @app.get("/carga/entes")
     @gabo_required
     def carga_entes_por_ejercicio():
@@ -935,6 +1034,166 @@ def register_gabo_routes(app, deps):
                 "tipo_anexo": tipo_anexo,
             }
         )
+
+    @app.get("/carga/observaciones-admin")
+    @gabo_required
+    def carga_observaciones_admin():
+        user = get_current_user()
+        db = get_db()
+        ejercicios_rows = db.execute(
+            """
+            SELECT DISTINCT TRIM(COALESCE(ejercicio, '')) AS ejercicio
+            FROM entes_detalle
+            WHERE TRIM(COALESCE(ejercicio, '')) != ''
+            ORDER BY CAST(TRIM(COALESCE(ejercicio, '')) AS INTEGER) DESC, ejercicio DESC
+            """
+        ).fetchall()
+        ejercicios = [row["ejercicio"] for row in ejercicios_rows if (row["ejercicio"] or "").strip()]
+        if not ejercicios:
+            ejercicios = [TITULAR_EJERCICIO_FIJO]
+        return render_template(
+            "carga_observaciones_admin.html",
+            user=user,
+            ejercicios=ejercicios,
+            ejercicio_default=ejercicios[0],
+        )
+
+    @app.get("/carga/observaciones-admin/datos")
+    @gabo_required
+    def carga_observaciones_admin_datos():
+        try:
+            where_clauses, params, scope, _ = build_observaciones_admin_scope(request.args)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        if not scope["ejercicio"]:
+            return jsonify({"ok": False, "error": "Selecciona un ejercicio para consultar."}), 400
+
+        where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+        db = get_db()
+        rows = db.execute(
+            f"""
+            SELECT
+                id,
+                TRIM(COALESCE(ejercicio, '')) AS ejercicio,
+                TRIM(COALESCE(ente_id, '')) AS ente_id,
+                TRIM(COALESCE(ente_numero, '')) AS ente_numero,
+                TRIM(COALESCE(ente_nombre, '')) AS ente_nombre,
+                TRIM(COALESCE(tipo_auditoria, '')) AS tipo_auditoria,
+                TRIM(COALESCE(fuente_financiamiento, '')) AS fuente_financiamiento,
+                TRIM(COALESCE(periodo_cedula, '')) AS periodo_cedula,
+                TRIM(COALESCE(oficio, '')) AS oficio,
+                TRIM(COALESCE(fecha_notificacion, '')) AS fecha_notificacion,
+                TRIM(COALESCE(created_at, '')) AS created_at,
+                TRIM(COALESCE(tipo_anexo, '')) AS tipo_anexo,
+                COALESCE(numero_observacion, 0) AS numero_observacion,
+                TRIM(COALESCE(estado, '')) AS estado,
+                COALESCE(reclasificada, 0) AS reclasificada,
+                COALESCE(monto_pdp_emitido, 0) AS monto_pdp_emitido,
+                COALESCE(monto_pdp_solventado, 0) AS monto_pdp_solventado,
+                COALESCE(monto_pdp_pendiente, 0) AS monto_pdp_pendiente,
+                TRIM(COALESCE(pdp_concepto_irregularidad, '')) AS pdp_concepto_irregularidad,
+                TRIM(COALESCE(pdp_subconcepto_irregularidad, '')) AS pdp_subconcepto_irregularidad
+            FROM observaciones
+            WHERE {where_sql}
+            ORDER BY
+                id DESC
+            LIMIT 2500
+            """,
+            params,
+        ).fetchall()
+        payload = []
+        for row in rows:
+            item = dict(row)
+            item["estado"] = _normalize_observacion_estado(item.get("estado", ""))
+            item["reclasificada"] = 1 if int(item.get("reclasificada") or 0) else 0
+            payload.append(item)
+        return jsonify({"ok": True, "rows": payload})
+
+    @app.post("/carga/observaciones-admin/<int:observacion_id>/borrar")
+    @gabo_required
+    def carga_observaciones_admin_borrar(observacion_id: int):
+        db = get_db()
+        found = db.execute(
+            "SELECT id FROM observaciones WHERE id = ? LIMIT 1",
+            (observacion_id,),
+        ).fetchone()
+        if not found:
+            return jsonify({"ok": False, "error": "Observación no encontrada."}), 404
+        db.execute("DELETE FROM observaciones WHERE id = ?", (observacion_id,))
+        db.commit()
+        return jsonify({"ok": True, "deleted": 1, "id": observacion_id})
+
+    @app.post("/carga/observaciones-admin/borrar")
+    @gabo_required
+    def carga_observaciones_admin_borrar_multiples():
+        payload = request.get_json(silent=True) or {}
+        raw_ids = payload.get("ids")
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return jsonify({"ok": False, "error": "No se recibieron observaciones para borrar."}), 400
+
+        ids: list[int] = []
+        for raw_id in raw_ids:
+            try:
+                item_id = int(raw_id)
+            except (TypeError, ValueError):
+                continue
+            if item_id > 0:
+                ids.append(item_id)
+        ids = sorted(set(ids))
+        if not ids:
+            return jsonify({"ok": False, "error": "Lista de observaciones inválida."}), 400
+
+        placeholders = ", ".join(["?"] * len(ids))
+        db = get_db()
+        count_row = db.execute(
+            f"SELECT COUNT(*) AS total FROM observaciones WHERE id IN ({placeholders})",
+            ids,
+        ).fetchone()
+        total = int((count_row["total"] if count_row else 0) or 0)
+        if total <= 0:
+            return jsonify({"ok": False, "error": "No se encontraron observaciones para borrar."}), 404
+
+        db.execute(f"DELETE FROM observaciones WHERE id IN ({placeholders})", ids)
+        db.commit()
+        return jsonify({"ok": True, "deleted": total})
+
+    @app.post("/carga/observaciones-admin/borrar-todo")
+    @gabo_required
+    def carga_observaciones_admin_borrar_todo():
+        payload = request.get_json(silent=True) or {}
+        try:
+            where_clauses, params, scope, extra_filters = build_observaciones_admin_scope(payload)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+        if not scope["ejercicio"]:
+            return jsonify({"ok": False, "error": "Debes seleccionar ejercicio para borrar."}), 400
+        if extra_filters <= 0:
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": (
+                        "Agrega al menos un filtro adicional (ente, tipo, fuente, periodo, oficio, estado o anexo)."
+                    ),
+                }
+            ), 400
+
+        where_sql = " AND ".join(where_clauses)
+        db = get_db()
+        count_row = db.execute(
+            f"SELECT COUNT(*) AS total FROM observaciones WHERE {where_sql}",
+            params,
+        ).fetchone()
+        total = int((count_row["total"] if count_row else 0) or 0)
+        if total <= 0:
+            return jsonify({"ok": True, "deleted": 0})
+
+        db.execute(
+            f"DELETE FROM observaciones WHERE {where_sql}",
+            params,
+        )
+        db.commit()
+        return jsonify({"ok": True, "deleted": total})
 
     @app.route("/carga", methods=["GET", "POST"])
     @gabo_required

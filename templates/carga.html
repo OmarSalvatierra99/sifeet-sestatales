@@ -376,6 +376,21 @@
   <footer class="site-footer">
     © Órgano de Fiscalización Superior del Estado de Tlaxcala · SIFEET Estatales
   </footer>
+  <a
+    class="floating-clear-btn loader-obs-admin-btn"
+    href="{{ url_for('carga_observaciones_admin') }}"
+    target="_blank"
+    rel="noopener"
+    aria-label="Editar o borrar observaciones"
+  >
+    <span class="floating-clear-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25Z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M20.71 7.04a1 1 0 0 0 0-1.41L18.37 3.3a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.84Z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </span>
+    <span>Editar/Borrar obs.</span>
+  </a>
   <script>
     const loaderModeButtons = Array.from(document.querySelectorAll("[data-loader-mode-target]"));
     const loaderModePanels = Array.from(document.querySelectorAll("[data-loader-mode-panel]"));
