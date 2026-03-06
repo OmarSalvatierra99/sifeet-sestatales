@@ -153,6 +153,11 @@
               </tbody>
             </table>
           </div>
+          <div class="chart-card summary-static-chart" id="summaryStaticChartWrap">
+            <h3>Distribucion por anexo (solventadas vs pendientes)</h3>
+            <canvas id="summaryStaticStackedBar" height="250"></canvas>
+            <p class="chart-footnote">Etiqueta E: total emitidas.</p>
+          </div>
         </section>
 
         <section class="panel chart-panel" id="pdpChartSection">
@@ -383,6 +388,7 @@
     const pdpCountDonutCanvas = document.getElementById("pdpCountDonut");
     const pdpStatusBarCanvas = document.getElementById("pdpStatusBar");
     const topPendientesBarCanvas = document.getElementById("topPendientesBar");
+    const summaryStaticStackedBarCanvas = document.getElementById("summaryStaticStackedBar");
     const pdpMontoDonutCanvas = document.getElementById("pdpMontoDonut");
     const catalogoBody = document.getElementById("catalogoBody");
     const catalogoCount = document.getElementById("catalogoCount");
@@ -400,6 +406,7 @@
       let pdpCountDonutChart = null;
       let pdpStatusBarChart = null;
       let topPendientesBarChart = null;
+      let summaryStaticStackedChart = null;
       let pdpMontoDonutChart = null;
       let obsRows = [];
       let obsPage = 1;
@@ -785,6 +792,139 @@
         });
       };
 
+      const summaryEmitidasLabelPlugin = {
+        id: "summaryEmitidasLabelPlugin",
+        afterDatasetsDraw(chart, _args, pluginOptions) {
+          const values = Array.isArray(pluginOptions?.values) ? pluginOptions.values : [];
+          if (!values.length) {
+            return;
+          }
+          const lastMeta = chart.getDatasetMeta(chart.data.datasets.length - 1);
+          if (!lastMeta || !Array.isArray(lastMeta.data) || !lastMeta.data.length) {
+            return;
+          }
+          const { ctx, chartArea } = chart;
+          if (!chartArea) {
+            return;
+          }
+          ctx.save();
+          ctx.fillStyle = "#1f3b2c";
+          ctx.font = "600 11px 'Segoe UI', sans-serif";
+          ctx.textBaseline = "middle";
+          lastMeta.data.forEach((point, index) => {
+            const emitidas = Number(values[index] || 0);
+            const text = `E:${emitidas}`;
+            const width = ctx.measureText(text).width;
+            const x = Math.min(point.x + 8, chartArea.right - width - 4);
+            ctx.fillText(text, x, point.y);
+          });
+          ctx.restore();
+        },
+      };
+
+      const updateSummaryStaticStacked = (rows) => {
+        if (!summaryStaticStackedBarCanvas) {
+          return;
+        }
+        const safeRows = (Array.isArray(rows) ? rows : [])
+          .map((row) => ({
+            tipo_anexo: row.tipo_anexo || "Sin tipo",
+            emitidas: Number(row.emitidas || 0),
+            solventadas: Number(row.solventadas || 0),
+            pendientes: Number(row.pendientes || 0),
+          }))
+          .filter((row) => row.emitidas > 0)
+          .sort((a, b) => String(a.tipo_anexo).localeCompare(String(b.tipo_anexo)));
+        const labels = safeRows.map((row) => row.tipo_anexo);
+        const emitidas = safeRows.map((row) => row.emitidas);
+        const solventadasAbs = safeRows.map((row) => row.solventadas);
+        const pendientesAbs = safeRows.map((row) => row.pendientes);
+        const solventadasPct = safeRows.map((row) => (row.emitidas > 0 ? (row.solventadas * 100) / row.emitidas : 0));
+        const pendientesPct = safeRows.map((row) => (row.emitidas > 0 ? (row.pendientes * 100) / row.emitidas : 0));
+
+        if (summaryStaticStackedChart) {
+          summaryStaticStackedChart.data.labels = labels;
+          summaryStaticStackedChart.data.datasets[0].data = solventadasPct;
+          summaryStaticStackedChart.data.datasets[0].meta_absoluto = solventadasAbs;
+          summaryStaticStackedChart.data.datasets[1].data = pendientesPct;
+          summaryStaticStackedChart.data.datasets[1].meta_absoluto = pendientesAbs;
+          summaryStaticStackedChart.options.plugins.summaryEmitidasLabelPlugin.values = emitidas;
+          summaryStaticStackedChart.update();
+          return;
+        }
+
+        summaryStaticStackedChart = new Chart(summaryStaticStackedBarCanvas, {
+          type: "bar",
+          data: {
+            labels,
+            datasets: [
+              {
+                label: "Solventadas (%)",
+                data: solventadasPct,
+                meta_absoluto: solventadasAbs,
+                backgroundColor: "#4b7a55",
+                borderRadius: 6,
+              },
+              {
+                label: "Pendientes (%)",
+                data: pendientesPct,
+                meta_absoluto: pendientesAbs,
+                backgroundColor: "#b18934",
+                borderRadius: 6,
+              },
+            ],
+          },
+          options: {
+            indexAxis: "y",
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 320, easing: "easeOutQuart" },
+            plugins: {
+              legend: { position: "bottom" },
+              tooltip: {
+                callbacks: {
+                  label: (context) => {
+                    const value = Number(context.raw || 0);
+                    const absolutos = Array.isArray(context.dataset.meta_absoluto)
+                      ? context.dataset.meta_absoluto
+                      : [];
+                    const absoluto = Number(absolutos[context.dataIndex] || 0);
+                    return `${context.dataset.label}: ${value.toFixed(1)}% (${absoluto})`;
+                  },
+                  afterBody: (items) => {
+                    if (!items.length) {
+                      return "";
+                    }
+                    const index = items[0].dataIndex;
+                    const labelsEmitidas = Array.isArray(items[0].chart?.options?.plugins?.summaryEmitidasLabelPlugin?.values)
+                      ? items[0].chart.options.plugins.summaryEmitidasLabelPlugin.values
+                      : [];
+                    return `Emitidas: ${labelsEmitidas[index] || 0}`;
+                  },
+                },
+              },
+              summaryEmitidasLabelPlugin: {
+                values: emitidas,
+              },
+            },
+            scales: {
+              x: {
+                stacked: true,
+                beginAtZero: true,
+                max: 100,
+                ticks: {
+                  callback: (value) => `${value}%`,
+                },
+              },
+              y: {
+                stacked: true,
+              },
+            },
+          },
+          plugins: [summaryEmitidasLabelPlugin],
+        });
+      };
+
       const updateSummaryStatusBar = (filas) => {
         if (!pdpStatusBarCanvas) {
           return;
@@ -929,6 +1069,9 @@
         }
         try {
           const safeRows = Array.isArray(dashboardSummary.tipos) ? dashboardSummary.tipos : [];
+          const topPendientes = Array.isArray(dashboardSummary.top_pendientes)
+            ? dashboardSummary.top_pendientes
+            : [];
           const selectedTipo = summaryTipoAnexo ? summaryTipoAnexo.value : "";
           const isPdpSelected = selectedTipo === "PDP";
           syncPdpWidgetsVisibility();
@@ -940,7 +1083,8 @@
             updateSummaryCountDonut(0, 0);
             updateSummaryStatusBar([]);
             updateSummaryMontoDonut(0, 0);
-            updateTopPendientesBar([]);
+            updateTopPendientesBar(topPendientes);
+            updateSummaryStaticStacked([]);
             return;
           }
 
@@ -956,9 +1100,12 @@
             updateSummaryCountDonut(0, 0);
             updateSummaryStatusBar([]);
             updateSummaryMontoDonut(0, 0);
-            updateTopPendientesBar([]);
+            updateTopPendientesBar(topPendientes);
+            updateSummaryStaticStacked([]);
             return;
           }
+
+          updateSummaryStaticStacked(summaryRows);
 
           const filas = summaryRows
             .map((row) => [
@@ -1004,9 +1151,6 @@
             },
             { solventadas: 0, pendientes: 0 }
           );
-          const topPendientes = Array.isArray(dashboardSummary.top_pendientes)
-            ? dashboardSummary.top_pendientes
-            : [];
           if (isPdpSelected && pdpMontoSummaryBody) {
             const pdpMontos = dashboardSummary.pdp_montos || { emitido: 0, solventado: 0, pendiente: 0 };
             pdpMontoSummaryBody.innerHTML = `
@@ -1034,6 +1178,7 @@
           updateSummaryStatusBar([]);
           updateSummaryMontoDonut(0, 0);
           updateTopPendientesBar([]);
+          updateSummaryStaticStacked([]);
         }
       };
 

@@ -705,19 +705,20 @@ def register_luis_routes(app, deps):
             """,
             scope_params,
         ).fetchone()
+        # Este ranking es intencionalmente estático por ejercicio.
         top_pendientes_rows = db.execute(
-            f"""
+            """
             SELECT
                 TRIM(COALESCE(ente_nombre, 'Sin ente')) AS ente_nombre,
                 COUNT(*) AS pendientes
             FROM observaciones
-            WHERE {scope_sql}
+            WHERE ejercicio = ?
               AND LOWER(TRIM(COALESCE(estado, ''))) = 'pendiente'
             GROUP BY ente_id, ente_nombre
             ORDER BY pendientes DESC, ente_nombre ASC
             LIMIT 5
             """,
-            scope_params,
+            [ejercicio],
         ).fetchall()
 
         def query_distinct(column: str, exclude_key: str):
