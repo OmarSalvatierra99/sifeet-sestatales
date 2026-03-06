@@ -179,6 +179,47 @@
         </section>
       </div>
 
+      <section class="panel pendientes-panel" id="pendientesPeriodoPanel">
+        <div class="panel-header">
+          <h2>Pendientes por periodo</h2>
+          <p>Detalle de pendientes y numerales no solventadas por cédula para el ente seleccionado.</p>
+        </div>
+        <div class="table-wrap" id="pendientesPeriodoWrap">
+          <table class="table-compact pendientes-periodo-table">
+            <thead>
+              <tr>
+                <th rowspan="2">No.</th>
+                <th rowspan="2">Ente fiscalizable</th>
+                <th rowspan="2">Tipo de Auditoria</th>
+                <th rowspan="2">Período cédula</th>
+                <th rowspan="2">Periodo Titular</th>
+                <th colspan="7">PENDIENTES</th>
+                <th colspan="5">Numerales de Observaciones No Solventadas</th>
+              </tr>
+              <tr>
+                <th>R</th>
+                <th>SA</th>
+                <th>PDP</th>
+                <th>PRAS</th>
+                <th>PEFCE</th>
+                <th>Total</th>
+                <th>Monto Daño ($)</th>
+                <th>SA</th>
+                <th>PDP</th>
+                <th>PRAS</th>
+                <th>PEFCF</th>
+                <th>R</th>
+              </tr>
+            </thead>
+            <tbody id="pendientesPeriodoBody">
+              <tr>
+                <td colspan="17" class="muted">Selecciona un ente para ver el resumen de pendientes por periodo.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="panel observaciones-panel">
         <div class="panel-header">
           <h2>Observaciones por ejercicio</h2>
@@ -348,6 +389,9 @@
     const catalogoSearch = document.getElementById("catalogo_search");
     const summarySection = document.getElementById("summarySection");
     const chartSection = document.getElementById("pdpChartSection");
+    const pendientesPeriodoPanel = document.getElementById("pendientesPeriodoPanel");
+    const pendientesPeriodoWrap = document.getElementById("pendientesPeriodoWrap");
+    const pendientesPeriodoBody = document.getElementById("pendientesPeriodoBody");
 
     if (mainEjercicio && obsEnteInput && obsTableBody) {
       const tabButtons = document.querySelectorAll(".tab-button");
@@ -362,12 +406,14 @@
       const obsPageSize = 40;
       let obsTotalRows = 0;
       let obsTotalPages = 1;
-      let dashboardSummary = {
+      const createEmptyDashboardSummary = () => ({
         tipos: [],
         totals: { emitidas: 0, solventadas: 0, pendientes: 0 },
         pdp_montos: { emitido: 0, solventado: 0, pendiente: 0 },
         top_pendientes: [],
-      };
+        pendientes_por_periodo: { requires_ente: true, groups: [] },
+      });
+      let dashboardSummary = createEmptyDashboardSummary();
       const requestControllers = {};
       const responseCache = new Map();
       const cacheTtlMs = 12000;
@@ -400,7 +446,7 @@
         .replaceAll("'", "&#39;");
 
       const setLoadingState = (loading) => {
-        [summarySection, chartSection, obsTableBody.closest(".table-wrap")].forEach((node) => {
+        [summarySection, chartSection, pendientesPeriodoPanel, obsTableBody.closest(".table-wrap")].forEach((node) => {
           if (!node) return;
           node.classList.toggle("is-loading", loading);
         });
@@ -991,11 +1037,112 @@
         }
       };
 
+      const renderPendientesPorPeriodo = () => {
+        if (!pendientesPeriodoBody) {
+          return;
+        }
+        try {
+          const selectedEnte = (obsEnteInput ? obsEnteInput.value : "").trim();
+          const resumen = dashboardSummary.pendientes_por_periodo || { requires_ente: true, groups: [] };
+          const groups = Array.isArray(resumen.groups) ? resumen.groups : [];
+          if (resumen.requires_ente && !selectedEnte) {
+            pendientesPeriodoBody.innerHTML = `
+              <tr>
+                <td colspan="17" class="muted">Selecciona un ente para ver el resumen de pendientes por periodo.</td>
+              </tr>
+            `;
+            return;
+          }
+          if (!groups.length) {
+            pendientesPeriodoBody.innerHTML = `
+              <tr>
+                <td colspan="17" class="muted">Sin resultados para los filtros seleccionados.</td>
+              </tr>
+            `;
+            return;
+          }
+
+          pendientesPeriodoBody.innerHTML = groups.map((group) => {
+            const periodos = Array.isArray(group.periodos) ? group.periodos : [];
+            if (!periodos.length) {
+              return `
+                <tr>
+                  <td>${escapeHtml(group.ente_numero || group.ente_id || "—")}</td>
+                  <td>${escapeHtml(group.ente_nombre || "—")}</td>
+                  <td>${escapeHtml(group.tipo_auditoria || "—")}</td>
+                  <td colspan="14" class="muted">Sin periodos disponibles para este ente.</td>
+                </tr>
+              `;
+            }
+
+            const rowsHtml = periodos.map((periodo, index) => {
+              const pendientes = periodo.pendientes || {};
+              const numerales = periodo.numerales_no_solventadas || {};
+              const montoRow = Number(pendientes.monto_dano || 0);
+              return `
+                <tr>
+                  ${index === 0 ? `<td rowspan="${periodos.length}">${escapeHtml(group.ente_numero || group.ente_id || "—")}</td>` : ""}
+                  ${index === 0 ? `<td rowspan="${periodos.length}">${escapeHtml(group.ente_nombre || "—")}</td>` : ""}
+                  ${index === 0 ? `<td rowspan="${periodos.length}">${escapeHtml(group.tipo_auditoria || "—")}</td>` : ""}
+                  <td>${escapeHtml(periodo.periodo_cedula || "—")}</td>
+                  <td>${escapeHtml(periodo.periodo_titular || "—")}</td>
+                  <td>${Number(pendientes.R || 0)}</td>
+                  <td>${Number(pendientes.SA || 0)}</td>
+                  <td>${Number(pendientes.PDP || 0)}</td>
+                  <td>${Number(pendientes.PRAS || 0)}</td>
+                  <td>${Number(pendientes.PEFCF || 0)}</td>
+                  <td><strong>${Number(pendientes.total || 0)}</strong></td>
+                  <td>${montoRow > 0 ? formatMonto(montoRow) : "-"}</td>
+                  <td>${escapeHtml(numerales.SA || "-")}</td>
+                  <td>${escapeHtml(numerales.PDP || "-")}</td>
+                  <td>${escapeHtml(numerales.PRAS || "-")}</td>
+                  <td>${escapeHtml(numerales.PEFCF || "-")}</td>
+                  <td>${escapeHtml(numerales.R || "-")}</td>
+                </tr>
+              `;
+            }).join("");
+
+            const totales = group.totales || {};
+            const montoTotal = Number(totales.monto_dano || 0);
+            return `
+              ${rowsHtml}
+              <tr class="pendientes-total-row">
+                <td></td>
+                <td><strong>TOTAL</strong></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td><strong>${Number(totales.R || 0)}</strong></td>
+                <td><strong>${Number(totales.SA || 0)}</strong></td>
+                <td><strong>${Number(totales.PDP || 0)}</strong></td>
+                <td><strong>${Number(totales.PRAS || 0)}</strong></td>
+                <td><strong>${Number(totales.PEFCF || 0)}</strong></td>
+                <td><strong>${Number(totales.total || 0)}</strong></td>
+                <td><strong>${montoTotal > 0 ? formatMonto(montoTotal) : "-"}</strong></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+              </tr>
+            `;
+          }).join("");
+        } catch (error) {
+          console.error("Error al renderizar pendientes por periodo:", error);
+          pendientesPeriodoBody.innerHTML = `
+            <tr>
+              <td colspan="17" class="muted">No se pudo renderizar la tabla de pendientes.</td>
+            </tr>
+          `;
+        }
+      };
+
       const renderObservacionesPage = () => {
         if (!obsRows.length) {
           obsTableBody.innerHTML = "<tr><td colspan=\"10\" class=\"muted\">Sin resultados.</td></tr>";
           obsCount.textContent = `${obsTotalRows} observaciones encontradas.`;
           renderPdpSummary();
+          renderPendientesPorPeriodo();
           if (obsPageInfo) {
             obsPageInfo.textContent = `Página ${obsPage} de ${obsTotalPages}`;
           }
@@ -1052,6 +1199,7 @@
           ? `${visibleRows.length} de ${obsTotalRows} observaciones (filtro rápido).`
           : `${obsTotalRows} observaciones encontradas.`;
         renderPdpSummary();
+        renderPendientesPorPeriodo();
         if (obsPageInfo) {
           obsPageInfo.textContent = `Página ${obsPage} de ${obsTotalPages}`;
         }
@@ -1121,14 +1269,10 @@
           obsRows = [];
           obsTotalRows = 0;
           obsTotalPages = 1;
-          dashboardSummary = {
-            tipos: [],
-            totals: { emitidas: 0, solventadas: 0, pendientes: 0 },
-            pdp_montos: { emitido: 0, solventado: 0, pendiente: 0 },
-            top_pendientes: [],
-          };
+          dashboardSummary = createEmptyDashboardSummary();
           obsPage = 1;
           renderPdpSummary();
+          renderPendientesPorPeriodo();
           if (obsPageInfo) {
             obsPageInfo.textContent = "Página 0 de 0";
           }
@@ -1174,12 +1318,7 @@
             `/observaciones-dashboard?${params.toString()}`,
             "observaciones"
           );
-          dashboardSummary = data.summary || {
-            tipos: [],
-            totals: { emitidas: 0, solventadas: 0, pendientes: 0 },
-            pdp_montos: { emitido: 0, solventado: 0, pendiente: 0 },
-            top_pendientes: [],
-          };
+          dashboardSummary = data.summary || createEmptyDashboardSummary();
           updateDynamicFilterOptions(data.filtros || {});
           renderObservaciones(
             data.rows || [],
@@ -1200,13 +1339,9 @@
             return;
           }
           console.error(error);
-          dashboardSummary = {
-            tipos: [],
-            totals: { emitidas: 0, solventadas: 0, pendientes: 0 },
-            pdp_montos: { emitido: 0, solventado: 0, pendiente: 0 },
-            top_pendientes: [],
-          };
+          dashboardSummary = createEmptyDashboardSummary();
           renderPdpSummary();
+          renderPendientesPorPeriodo();
           obsTableBody.innerHTML = "<tr><td colspan=\"10\" class=\"muted\">No se pudo cargar la información.</td></tr>";
           if (obsResponsablesBody) {
             obsResponsablesBody.innerHTML = `

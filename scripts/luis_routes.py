@@ -338,6 +338,10 @@ def register_luis_routes(app, deps):
                     "totals": {"emitidas": 0, "solventadas": 0, "pendientes": 0},
                     "pdp_montos": {"emitido": 0, "solventado": 0, "pendiente": 0},
                     "top_pendientes": [],
+                    "pendientes_por_periodo": {
+                        "requires_ente": True,
+                        "groups": [],
+                    },
                 },
             })
 
@@ -419,6 +423,223 @@ def register_luis_routes(app, deps):
         total_pages = max(1, (total_rows + page_size - 1) // page_size)
         page = min(page, total_pages)
         offset = (page - 1) * page_size
+
+        pendientes_por_periodo = {
+            "requires_ente": True,
+            "groups": [],
+        }
+        if ente_id:
+            anexos_orden = ("R", "SA", "PDP", "PRAS", "PEFCF")
+            anexos_alias = {
+                "PEFCT": "PEFCF",
+                "PEFCE": "PEFCF",
+            }
+
+            def normalize_anexo_pendiente(value: str) -> str:
+                clean = (value or "").strip().upper()
+                if clean in anexos_alias:
+                    return anexos_alias[clean]
+                return clean
+
+            def normalize_numero_observacion(value) -> str:
+                if value is None:
+                    return ""
+                if isinstance(value, int):
+                    return str(value)
+                raw = str(value).strip()
+                if not raw:
+                    return ""
+                try:
+                    parsed = float(raw.replace(",", ""))
+                    if parsed.is_integer():
+                        return str(int(parsed))
+                except ValueError:
+                    pass
+                return raw
+
+            def numero_sort_key(value: str):
+                try:
+                    return (0, int(value))
+                except (TypeError, ValueError):
+                    return (1, value)
+
+            pendientes_rows = db.execute(
+                f"""
+                SELECT
+                    id,
+                    ente_id,
+                    ente_numero,
+                    ente_nombre,
+                    tipo_auditoria,
+                    periodo_cedula,
+                    periodo_titular,
+                    tipo_anexo,
+                    numero_observacion,
+                    estado,
+                    monto_pdp_pendiente,
+                    ente_numero_sort
+                FROM observaciones
+                WHERE {scope_sql}
+                ORDER BY
+                    COALESCE(ente_numero_sort, 0) ASC,
+                    ente_numero ASC,
+                    ente_id ASC,
+                    tipo_auditoria ASC,
+                    periodo_cedula ASC,
+                    tipo_anexo ASC,
+                    numero_observacion ASC
+                """,
+                scope_params,
+            ).fetchall()
+
+            groups_index = {}
+            for row in pendientes_rows:
+                tipo_anexo_row = normalize_anexo_pendiente(row["tipo_anexo"])
+                if tipo_anexo_row not in anexos_orden:
+                    continue
+
+                group_key = (
+                    (row["ente_id"] or "").strip(),
+                    (row["ente_numero"] or "").strip(),
+                    (row["ente_nombre"] or "").strip(),
+                    normalize_tipo_auditoria(row["tipo_auditoria"] or ""),
+                )
+                if group_key not in groups_index:
+                    groups_index[group_key] = {
+                        "ente_id": group_key[0],
+                        "ente_numero": group_key[1],
+                        "ente_nombre": group_key[2] or "—",
+                        "tipo_auditoria": group_key[3] or "—",
+                        "ente_numero_sort": float(row["ente_numero_sort"] or 0),
+                        "period_map": {},
+                    }
+                group_payload = groups_index[group_key]
+
+                periodo_key = (
+                    (row["periodo_cedula"] or "").strip(),
+                    (row["periodo_titular"] or "").strip(),
+                )
+                if periodo_key not in group_payload["period_map"]:
+                    group_payload["period_map"][periodo_key] = {
+                        "periodo_cedula": periodo_key[0] or "—",
+                        "periodo_titular": periodo_key[1] or "—",
+                        "all_by_tipo": {anexo: set() for anexo in anexos_orden},
+                        "has_any_by_tipo": {anexo: False for anexo in anexos_orden},
+                        "pending_by_tipo": {anexo: set() for anexo in anexos_orden},
+                        "pending_without_numero": {anexo: 0 for anexo in anexos_orden},
+                        "pdp_pending_montos": {},
+                        "pdp_pending_sin_numero": 0.0,
+                    }
+                period_payload = group_payload["period_map"][periodo_key]
+                period_payload["has_any_by_tipo"][tipo_anexo_row] = True
+
+                numero_obs = normalize_numero_observacion(row["numero_observacion"])
+                if numero_obs:
+                    period_payload["all_by_tipo"][tipo_anexo_row].add(numero_obs)
+
+                estado_norm = (row["estado"] or "").strip().lower()
+                if estado_norm != "pendiente":
+                    continue
+
+                monto_pendiente = float(row["monto_pdp_pendiente"] or 0)
+                if numero_obs:
+                    period_payload["pending_by_tipo"][tipo_anexo_row].add(numero_obs)
+                else:
+                    period_payload["pending_without_numero"][tipo_anexo_row] += 1
+
+                if tipo_anexo_row == "PDP":
+                    if numero_obs:
+                        current = float(period_payload["pdp_pending_montos"].get(numero_obs, 0))
+                        period_payload["pdp_pending_montos"][numero_obs] = max(current, monto_pendiente)
+                    else:
+                        period_payload["pdp_pending_sin_numero"] += monto_pendiente
+
+            groups_payload = []
+            for group in groups_index.values():
+                period_rows = list(group["period_map"].values())
+                for period_row in period_rows:
+                    inicio_sort, _ = parse_periodo_cedula(ejercicio, period_row["periodo_cedula"])
+                    period_row["periodo_sort"] = inicio_sort or "9999-12-31"
+
+                period_rows.sort(
+                    key=lambda item: (
+                        item["periodo_sort"],
+                        item["periodo_cedula"],
+                        item["periodo_titular"],
+                    )
+                )
+
+                totales_group = {anexo: 0 for anexo in anexos_orden}
+                monto_group = 0.0
+                period_payload_rows = []
+
+                for period_row in period_rows:
+                    pendientes = {}
+                    numerales = {}
+                    total_row = 0
+                    for anexo in anexos_orden:
+                        numeros_pendientes = sorted(period_row["pending_by_tipo"][anexo], key=numero_sort_key)
+                        pendientes_sin_numero = int(period_row["pending_without_numero"][anexo] or 0)
+                        cantidad = len(numeros_pendientes) + pendientes_sin_numero
+                        pendientes[anexo] = cantidad
+                        total_row += cantidad
+
+                        if numeros_pendientes:
+                            joined = ",".join(numeros_pendientes)
+                            if pendientes_sin_numero:
+                                joined = f"{joined},s/n"
+                            numerales[anexo] = joined
+                        elif pendientes_sin_numero:
+                            numerales[anexo] = "s/n"
+                        elif period_row["has_any_by_tipo"][anexo]:
+                            numerales[anexo] = "0"
+                        else:
+                            numerales[anexo] = "-"
+
+                        totales_group[anexo] += cantidad
+
+                    monto_row = float(sum(period_row["pdp_pending_montos"].values()) + period_row["pdp_pending_sin_numero"])
+                    monto_group += monto_row
+                    period_payload_rows.append(
+                        {
+                            "periodo_cedula": period_row["periodo_cedula"],
+                            "periodo_titular": period_row["periodo_titular"],
+                            "pendientes": {
+                                **pendientes,
+                                "total": total_row,
+                                "monto_dano": monto_row,
+                            },
+                            "numerales_no_solventadas": numerales,
+                        }
+                    )
+
+                groups_payload.append(
+                    {
+                        "ente_id": group["ente_id"],
+                        "ente_numero": group["ente_numero"],
+                        "ente_nombre": group["ente_nombre"],
+                        "tipo_auditoria": group["tipo_auditoria"],
+                        "periodos": period_payload_rows,
+                        "totales": {
+                            **totales_group,
+                            "total": sum(totales_group.values()),
+                            "monto_dano": monto_group,
+                        },
+                        "_ente_numero_sort": group["ente_numero_sort"],
+                    }
+                )
+
+            groups_payload.sort(
+                key=lambda item: (
+                    float(item.get("_ente_numero_sort", 0)),
+                    item.get("ente_numero", ""),
+                    item.get("ente_nombre", ""),
+                    item.get("tipo_auditoria", ""),
+                )
+            )
+            for item in groups_payload:
+                item.pop("_ente_numero_sort", None)
+            pendientes_por_periodo["groups"] = groups_payload
 
         rows = db.execute(
             f"""
@@ -587,6 +808,7 @@ def register_luis_routes(app, deps):
                     }
                     for row in top_pendientes_rows
                 ],
+                "pendientes_por_periodo": pendientes_por_periodo,
             },
         }
         dashboard_cache[cache_key] = (now, payload)
