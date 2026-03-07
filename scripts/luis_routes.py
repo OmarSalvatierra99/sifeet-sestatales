@@ -4,7 +4,8 @@ import time
 
 from flask import jsonify, redirect, render_template, request, send_file, url_for
 from openpyxl import Workbook
-from openpyxl.styles import Font
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 
 
 def register_luis_routes(app, deps):
@@ -213,6 +214,233 @@ def register_luis_routes(app, deps):
             "filter_label": filter_labels.get(chosen_key, chosen_key),
             "items": items,
         }
+
+    def build_pendientes_por_periodo_summary(
+        db,
+        ejercicio: str,
+        scope_sql: str,
+        scope_params: list,
+        selected_entes: list[str],
+    ):
+        pendientes_por_periodo = {
+            "requires_ente": True,
+            "groups": [],
+        }
+        if not selected_entes:
+            return pendientes_por_periodo
+
+        anexos_orden = ("R", "SA", "PDP", "PRAS", "PEFCF")
+        anexos_alias = {
+            "PEFCT": "PEFCF",
+            "PEFCE": "PEFCF",
+        }
+
+        def normalize_anexo_pendiente(value: str) -> str:
+            clean = (value or "").strip().upper()
+            if clean in anexos_alias:
+                return anexos_alias[clean]
+            return clean
+
+        def normalize_numero_observacion(value) -> str:
+            if value is None:
+                return ""
+            if isinstance(value, int):
+                return str(value)
+            raw = str(value).strip()
+            if not raw:
+                return ""
+            try:
+                parsed = float(raw.replace(",", ""))
+                if parsed.is_integer():
+                    return str(int(parsed))
+            except ValueError:
+                pass
+            return raw
+
+        def numero_sort_key(value: str):
+            try:
+                return (0, int(value))
+            except (TypeError, ValueError):
+                return (1, value)
+
+        pendientes_rows = db.execute(
+            f"""
+            SELECT
+                id,
+                ente_id,
+                ente_numero,
+                ente_nombre,
+                tipo_auditoria,
+                periodo_cedula,
+                periodo_titular,
+                tipo_anexo,
+                numero_observacion,
+                estado,
+                monto_pdp_pendiente,
+                ente_numero_sort
+            FROM observaciones
+            WHERE {scope_sql}
+            ORDER BY
+                COALESCE(ente_numero_sort, 0) ASC,
+                ente_numero ASC,
+                ente_id ASC,
+                tipo_auditoria ASC,
+                periodo_cedula ASC,
+                tipo_anexo ASC,
+                numero_observacion ASC
+            """,
+            scope_params,
+        ).fetchall()
+
+        groups_index = {}
+        for row in pendientes_rows:
+            tipo_anexo_row = normalize_anexo_pendiente(row["tipo_anexo"])
+            if tipo_anexo_row not in anexos_orden:
+                continue
+
+            group_key = (
+                (row["ente_id"] or "").strip(),
+                (row["ente_numero"] or "").strip(),
+                (row["ente_nombre"] or "").strip(),
+                normalize_tipo_auditoria(row["tipo_auditoria"] or ""),
+            )
+            if group_key not in groups_index:
+                groups_index[group_key] = {
+                    "ente_id": group_key[0],
+                    "ente_numero": group_key[1],
+                    "ente_nombre": group_key[2] or "—",
+                    "tipo_auditoria": group_key[3] or "—",
+                    "ente_numero_sort": float(row["ente_numero_sort"] or 0),
+                    "period_map": {},
+                }
+            group_payload = groups_index[group_key]
+
+            periodo_key = (
+                (row["periodo_cedula"] or "").strip(),
+                (row["periodo_titular"] or "").strip(),
+            )
+            if periodo_key not in group_payload["period_map"]:
+                group_payload["period_map"][periodo_key] = {
+                    "periodo_cedula": periodo_key[0] or "—",
+                    "periodo_titular": periodo_key[1] or "—",
+                    "all_by_tipo": {anexo: set() for anexo in anexos_orden},
+                    "has_any_by_tipo": {anexo: False for anexo in anexos_orden},
+                    "pending_by_tipo": {anexo: set() for anexo in anexos_orden},
+                    "pending_without_numero": {anexo: 0 for anexo in anexos_orden},
+                    "pdp_pending_montos": {},
+                    "pdp_pending_sin_numero": 0.0,
+                }
+            period_payload = group_payload["period_map"][periodo_key]
+            period_payload["has_any_by_tipo"][tipo_anexo_row] = True
+
+            numero_obs = normalize_numero_observacion(row["numero_observacion"])
+            if numero_obs:
+                period_payload["all_by_tipo"][tipo_anexo_row].add(numero_obs)
+
+            estado_norm = (row["estado"] or "").strip().lower()
+            if estado_norm != "pendiente":
+                continue
+
+            monto_pendiente = float(row["monto_pdp_pendiente"] or 0)
+            if numero_obs:
+                period_payload["pending_by_tipo"][tipo_anexo_row].add(numero_obs)
+            else:
+                period_payload["pending_without_numero"][tipo_anexo_row] += 1
+
+            if tipo_anexo_row == "PDP":
+                if numero_obs:
+                    current = float(period_payload["pdp_pending_montos"].get(numero_obs, 0))
+                    period_payload["pdp_pending_montos"][numero_obs] = max(current, monto_pendiente)
+                else:
+                    period_payload["pdp_pending_sin_numero"] += monto_pendiente
+
+        groups_payload = []
+        for group in groups_index.values():
+            period_rows = list(group["period_map"].values())
+            for period_row in period_rows:
+                inicio_sort, _ = parse_periodo_cedula(ejercicio, period_row["periodo_cedula"])
+                period_row["periodo_sort"] = inicio_sort or "9999-12-31"
+
+            period_rows.sort(
+                key=lambda item: (
+                    item["periodo_sort"],
+                    item["periodo_cedula"],
+                    item["periodo_titular"],
+                )
+            )
+
+            totales_group = {anexo: 0 for anexo in anexos_orden}
+            monto_group = 0.0
+            period_payload_rows = []
+
+            for period_row in period_rows:
+                pendientes = {}
+                numerales = {}
+                total_row = 0
+                for anexo in anexos_orden:
+                    numeros_pendientes = sorted(period_row["pending_by_tipo"][anexo], key=numero_sort_key)
+                    pendientes_sin_numero = int(period_row["pending_without_numero"][anexo] or 0)
+                    cantidad = len(numeros_pendientes) + pendientes_sin_numero
+                    pendientes[anexo] = cantidad
+                    total_row += cantidad
+
+                    if numeros_pendientes:
+                        joined = ",".join(numeros_pendientes)
+                        if pendientes_sin_numero:
+                            joined = f"{joined},s/n"
+                        numerales[anexo] = joined
+                    elif pendientes_sin_numero:
+                        numerales[anexo] = "s/n"
+                    elif period_row["has_any_by_tipo"][anexo]:
+                        numerales[anexo] = "0"
+                    else:
+                        numerales[anexo] = "-"
+
+                    totales_group[anexo] += cantidad
+
+                monto_row = float(sum(period_row["pdp_pending_montos"].values()) + period_row["pdp_pending_sin_numero"])
+                monto_group += monto_row
+                period_payload_rows.append(
+                    {
+                        "periodo_cedula": period_row["periodo_cedula"],
+                        "periodo_titular": period_row["periodo_titular"],
+                        "pendientes": {
+                            **pendientes,
+                            "total": total_row,
+                            "monto_dano": monto_row,
+                        },
+                        "numerales_no_solventadas": numerales,
+                    }
+                )
+
+            groups_payload.append(
+                {
+                    "ente_id": group["ente_id"],
+                    "ente_numero": group["ente_numero"],
+                    "ente_nombre": group["ente_nombre"],
+                    "tipo_auditoria": group["tipo_auditoria"],
+                    "periodos": period_payload_rows,
+                    "totales": {
+                        **totales_group,
+                        "total": sum(totales_group.values()),
+                        "monto_dano": monto_group,
+                    },
+                    "_ente_numero_sort": group["ente_numero_sort"],
+                }
+            )
+
+        groups_payload.sort(
+            key=lambda item: (
+                float(item.get("_ente_numero_sort", 0)),
+                item.get("ente_numero", ""),
+                item.get("ente_nombre", ""),
+                item.get("tipo_auditoria", ""),
+            )
+        )
+        for item in groups_payload:
+            item.pop("_ente_numero_sort", None)
+        pendientes_por_periodo["groups"] = groups_payload
+        return pendientes_por_periodo
 
     @app.route("/entes", methods=["GET", "POST"])
     @luis_required
@@ -587,222 +815,13 @@ def register_luis_routes(app, deps):
         page = min(page, total_pages)
         offset = (page - 1) * page_size
 
-        pendientes_por_periodo = {
-            "requires_ente": True,
-            "groups": [],
-        }
-        if selected_entes:
-            anexos_orden = ("R", "SA", "PDP", "PRAS", "PEFCF")
-            anexos_alias = {
-                "PEFCT": "PEFCF",
-                "PEFCE": "PEFCF",
-            }
-
-            def normalize_anexo_pendiente(value: str) -> str:
-                clean = (value or "").strip().upper()
-                if clean in anexos_alias:
-                    return anexos_alias[clean]
-                return clean
-
-            def normalize_numero_observacion(value) -> str:
-                if value is None:
-                    return ""
-                if isinstance(value, int):
-                    return str(value)
-                raw = str(value).strip()
-                if not raw:
-                    return ""
-                try:
-                    parsed = float(raw.replace(",", ""))
-                    if parsed.is_integer():
-                        return str(int(parsed))
-                except ValueError:
-                    pass
-                return raw
-
-            def numero_sort_key(value: str):
-                try:
-                    return (0, int(value))
-                except (TypeError, ValueError):
-                    return (1, value)
-
-            pendientes_rows = db.execute(
-                f"""
-                SELECT
-                    id,
-                    ente_id,
-                    ente_numero,
-                    ente_nombre,
-                    tipo_auditoria,
-                    periodo_cedula,
-                    periodo_titular,
-                    tipo_anexo,
-                    numero_observacion,
-                    estado,
-                    monto_pdp_pendiente,
-                    ente_numero_sort
-                FROM observaciones
-                WHERE {scope_sql}
-                ORDER BY
-                    COALESCE(ente_numero_sort, 0) ASC,
-                    ente_numero ASC,
-                    ente_id ASC,
-                    tipo_auditoria ASC,
-                    periodo_cedula ASC,
-                    tipo_anexo ASC,
-                    numero_observacion ASC
-                """,
-                scope_params,
-            ).fetchall()
-
-            groups_index = {}
-            for row in pendientes_rows:
-                tipo_anexo_row = normalize_anexo_pendiente(row["tipo_anexo"])
-                if tipo_anexo_row not in anexos_orden:
-                    continue
-
-                group_key = (
-                    (row["ente_id"] or "").strip(),
-                    (row["ente_numero"] or "").strip(),
-                    (row["ente_nombre"] or "").strip(),
-                    normalize_tipo_auditoria(row["tipo_auditoria"] or ""),
-                )
-                if group_key not in groups_index:
-                    groups_index[group_key] = {
-                        "ente_id": group_key[0],
-                        "ente_numero": group_key[1],
-                        "ente_nombre": group_key[2] or "—",
-                        "tipo_auditoria": group_key[3] or "—",
-                        "ente_numero_sort": float(row["ente_numero_sort"] or 0),
-                        "period_map": {},
-                    }
-                group_payload = groups_index[group_key]
-
-                periodo_key = (
-                    (row["periodo_cedula"] or "").strip(),
-                    (row["periodo_titular"] or "").strip(),
-                )
-                if periodo_key not in group_payload["period_map"]:
-                    group_payload["period_map"][periodo_key] = {
-                        "periodo_cedula": periodo_key[0] or "—",
-                        "periodo_titular": periodo_key[1] or "—",
-                        "all_by_tipo": {anexo: set() for anexo in anexos_orden},
-                        "has_any_by_tipo": {anexo: False for anexo in anexos_orden},
-                        "pending_by_tipo": {anexo: set() for anexo in anexos_orden},
-                        "pending_without_numero": {anexo: 0 for anexo in anexos_orden},
-                        "pdp_pending_montos": {},
-                        "pdp_pending_sin_numero": 0.0,
-                    }
-                period_payload = group_payload["period_map"][periodo_key]
-                period_payload["has_any_by_tipo"][tipo_anexo_row] = True
-
-                numero_obs = normalize_numero_observacion(row["numero_observacion"])
-                if numero_obs:
-                    period_payload["all_by_tipo"][tipo_anexo_row].add(numero_obs)
-
-                estado_norm = (row["estado"] or "").strip().lower()
-                if estado_norm != "pendiente":
-                    continue
-
-                monto_pendiente = float(row["monto_pdp_pendiente"] or 0)
-                if numero_obs:
-                    period_payload["pending_by_tipo"][tipo_anexo_row].add(numero_obs)
-                else:
-                    period_payload["pending_without_numero"][tipo_anexo_row] += 1
-
-                if tipo_anexo_row == "PDP":
-                    if numero_obs:
-                        current = float(period_payload["pdp_pending_montos"].get(numero_obs, 0))
-                        period_payload["pdp_pending_montos"][numero_obs] = max(current, monto_pendiente)
-                    else:
-                        period_payload["pdp_pending_sin_numero"] += monto_pendiente
-
-            groups_payload = []
-            for group in groups_index.values():
-                period_rows = list(group["period_map"].values())
-                for period_row in period_rows:
-                    inicio_sort, _ = parse_periodo_cedula(ejercicio, period_row["periodo_cedula"])
-                    period_row["periodo_sort"] = inicio_sort or "9999-12-31"
-
-                period_rows.sort(
-                    key=lambda item: (
-                        item["periodo_sort"],
-                        item["periodo_cedula"],
-                        item["periodo_titular"],
-                    )
-                )
-
-                totales_group = {anexo: 0 for anexo in anexos_orden}
-                monto_group = 0.0
-                period_payload_rows = []
-
-                for period_row in period_rows:
-                    pendientes = {}
-                    numerales = {}
-                    total_row = 0
-                    for anexo in anexos_orden:
-                        numeros_pendientes = sorted(period_row["pending_by_tipo"][anexo], key=numero_sort_key)
-                        pendientes_sin_numero = int(period_row["pending_without_numero"][anexo] or 0)
-                        cantidad = len(numeros_pendientes) + pendientes_sin_numero
-                        pendientes[anexo] = cantidad
-                        total_row += cantidad
-
-                        if numeros_pendientes:
-                            joined = ",".join(numeros_pendientes)
-                            if pendientes_sin_numero:
-                                joined = f"{joined},s/n"
-                            numerales[anexo] = joined
-                        elif pendientes_sin_numero:
-                            numerales[anexo] = "s/n"
-                        elif period_row["has_any_by_tipo"][anexo]:
-                            numerales[anexo] = "0"
-                        else:
-                            numerales[anexo] = "-"
-
-                        totales_group[anexo] += cantidad
-
-                    monto_row = float(sum(period_row["pdp_pending_montos"].values()) + period_row["pdp_pending_sin_numero"])
-                    monto_group += monto_row
-                    period_payload_rows.append(
-                        {
-                            "periodo_cedula": period_row["periodo_cedula"],
-                            "periodo_titular": period_row["periodo_titular"],
-                            "pendientes": {
-                                **pendientes,
-                                "total": total_row,
-                                "monto_dano": monto_row,
-                            },
-                            "numerales_no_solventadas": numerales,
-                        }
-                    )
-
-                groups_payload.append(
-                    {
-                        "ente_id": group["ente_id"],
-                        "ente_numero": group["ente_numero"],
-                        "ente_nombre": group["ente_nombre"],
-                        "tipo_auditoria": group["tipo_auditoria"],
-                        "periodos": period_payload_rows,
-                        "totales": {
-                            **totales_group,
-                            "total": sum(totales_group.values()),
-                            "monto_dano": monto_group,
-                        },
-                        "_ente_numero_sort": group["ente_numero_sort"],
-                    }
-                )
-
-            groups_payload.sort(
-                key=lambda item: (
-                    float(item.get("_ente_numero_sort", 0)),
-                    item.get("ente_numero", ""),
-                    item.get("ente_nombre", ""),
-                    item.get("tipo_auditoria", ""),
-                )
-            )
-            for item in groups_payload:
-                item.pop("_ente_numero_sort", None)
-            pendientes_por_periodo["groups"] = groups_payload
+        pendientes_por_periodo = build_pendientes_por_periodo_summary(
+            db,
+            ejercicio,
+            scope_sql,
+            scope_params,
+            selected_entes,
+        )
 
         rows = db.execute(
             f"""
@@ -1591,7 +1610,20 @@ def register_luis_routes(app, deps):
         workbook = Workbook()
         sheet = workbook.active
         sheet.title = "Observaciones"
-    
+        thin_border = Border(
+            left=Side(style="thin", color="D7DFD9"),
+            right=Side(style="thin", color="D7DFD9"),
+            top=Side(style="thin", color="D7DFD9"),
+            bottom=Side(style="thin", color="D7DFD9"),
+        )
+        header_primary_fill = PatternFill("solid", fgColor="1F3B2C")
+        total_fill = PatternFill("solid", fgColor="EDF4EF")
+        zebra_fill = PatternFill("solid", fgColor="F8FAF7")
+        white_bold_font = Font(bold=True, color="FFFFFF")
+        center_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        left_alignment = Alignment(horizontal="left", vertical="center")
+        right_alignment = Alignment(horizontal="right", vertical="center")
+
         headers = [
             "Ente",
             "Tipo auditoria",
@@ -1607,8 +1639,13 @@ def register_luis_routes(app, deps):
         ]
         sheet.append(headers)
         for cell in sheet[1]:
-            cell.font = Font(bold=True)
-    
+            cell.font = white_bold_font
+            cell.alignment = center_alignment
+            cell.border = thin_border
+            cell.fill = header_primary_fill
+        sheet.row_dimensions[1].height = 22
+        sheet.freeze_panes = "A2"
+
         total_observaciones = 0
         total_emitido = 0.0
         total_solventado = 0.0
@@ -1647,14 +1684,34 @@ def register_luis_routes(app, deps):
                     monto_pendiente if (row["tipo_anexo"] or "") == "PDP" else 0,
                 ]
             )
-    
+
         last_data_row = sheet.max_row
         for row_idx in range(2, last_data_row + 1):
+            for col_idx in range(1, 12):
+                cell = sheet.cell(row=row_idx, column=col_idx)
+                cell.border = thin_border
+                if row_idx % 2 == 0:
+                    cell.fill = zebra_fill
+                if col_idx in (1, 2, 6, 8):
+                    cell.alignment = left_alignment
+                elif col_idx in (9, 10, 11):
+                    cell.alignment = right_alignment
+                else:
+                    cell.alignment = center_alignment
             for col in (9, 10, 11):
                 sheet.cell(row=row_idx, column=col).number_format = "#,##0.00"
-    
+        sheet.auto_filter.ref = f"A1:K{max(last_data_row, 1)}"
+
         summary_start = sheet.max_row + 2
-        sheet.cell(row=summary_start, column=1, value="Subtotal / Resumen").font = Font(bold=True)
+        sheet.merge_cells(start_row=summary_start, start_column=1, end_row=summary_start, end_column=11)
+        summary_header = sheet.cell(row=summary_start, column=1, value="Subtotal / Resumen")
+        summary_header.font = white_bold_font
+        summary_header.alignment = left_alignment
+        summary_header.fill = header_primary_fill
+        for col_idx in range(1, 12):
+            cell = sheet.cell(row=summary_start, column=col_idx)
+            cell.border = thin_border
+            cell.fill = header_primary_fill
         summary_rows = [
             ("Total observaciones", total_observaciones),
             ("Observaciones PDP", conteo_pdp),
@@ -1666,19 +1723,41 @@ def register_luis_routes(app, deps):
         ]
         for offset, (label, value) in enumerate(summary_rows, start=1):
             current_row = summary_start + offset
-            sheet.cell(row=current_row, column=1, value=label).font = Font(bold=True)
-            sheet.cell(row=current_row, column=2, value=value)
+            label_cell = sheet.cell(row=current_row, column=1, value=label)
+            value_cell = sheet.cell(row=current_row, column=2, value=value)
+            label_cell.font = Font(bold=True)
+            label_cell.alignment = left_alignment
+            value_cell.alignment = right_alignment
+            for col_idx in range(1, 12):
+                cell = sheet.cell(row=current_row, column=col_idx)
+                cell.border = thin_border
+                cell.fill = total_fill
             if "Monto" in label:
-                sheet.cell(row=current_row, column=2).number_format = "#,##0.00"
-    
-        for column_cells in sheet.columns:
+                value_cell.number_format = "#,##0.00"
+
+        base_widths = {
+            1: 40,
+            2: 22,
+            3: 10,
+            4: 10,
+            5: 14,
+            6: 18,
+            7: 22,
+            8: 30,
+            9: 16,
+            10: 16,
+            11: 16,
+        }
+        for col_idx in range(1, 12):
             max_len = 0
-            for cell in column_cells:
-                val = "" if cell.value is None else str(cell.value)
-                if len(val) > max_len:
-                    max_len = len(val)
-            sheet.column_dimensions[column_cells[0].column_letter].width = min(max(12, max_len + 2), 50)
-    
+            for row_idx in range(1, sheet.max_row + 1):
+                val = sheet.cell(row=row_idx, column=col_idx).value
+                str_val = "" if val is None else str(val)
+                if len(str_val) > max_len:
+                    max_len = len(str_val)
+            width = max(base_widths.get(col_idx, 12), min(max_len + 2, 58))
+            sheet.column_dimensions[get_column_letter(col_idx)].width = width
+
         stream = BytesIO()
         workbook.save(stream)
         stream.seek(0)
@@ -1689,8 +1768,279 @@ def register_luis_routes(app, deps):
             download_name=filename,
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
-    
-    
+
+
+    @app.get("/pendientes-periodo-exportar")
+    @luis_required
+    def pendientes_periodo_exportar():
+        ejercicio = request.args.get("ejercicio", "").strip()
+        selected_filters = parse_selected_filters()
+        if not ejercicio:
+            return jsonify({"error": "ejercicio requerido"}), 400
+
+        selected_entes = selected_values_for_key(selected_filters, "ente_id")
+        if not selected_entes:
+            return jsonify({"error": "selecciona al menos un ente"}), 400
+
+        db = get_db()
+        scope_sql, scope_params = build_observaciones_scope(
+            ejercicio,
+            selected_filters,
+            include_ente=True,
+        )
+        pendientes_por_periodo = build_pendientes_por_periodo_summary(
+            db,
+            ejercicio,
+            scope_sql,
+            scope_params,
+            selected_entes,
+        )
+        groups = pendientes_por_periodo.get("groups", []) or []
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Pendientes por periodo"
+        thin_border = Border(
+            left=Side(style="thin", color="D7DFD9"),
+            right=Side(style="thin", color="D7DFD9"),
+            top=Side(style="thin", color="D7DFD9"),
+            bottom=Side(style="thin", color="D7DFD9"),
+        )
+        header_primary_fill = PatternFill("solid", fgColor="1F3B2C")
+        header_secondary_fill = PatternFill("solid", fgColor="2A503D")
+        total_fill = PatternFill("solid", fgColor="EDF4EF")
+        zebra_fill = PatternFill("solid", fgColor="F8FAF7")
+        white_bold_font = Font(bold=True, color="FFFFFF")
+        center_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        left_alignment = Alignment(horizontal="left", vertical="center")
+        right_alignment = Alignment(horizontal="right", vertical="center")
+
+        sheet.append(
+            [
+                "No.",
+                "Ente fiscalizable",
+                "Tipo de Auditoria",
+                "Período cédula",
+                "Periodo Titular",
+                "PENDIENTES",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "Numerales de Observaciones No Solventadas",
+                "",
+                "",
+                "",
+                "",
+            ]
+        )
+        sheet.append(
+            [
+                "",
+                "",
+                "",
+                "",
+                "",
+                "R",
+                "SA",
+                "PDP",
+                "PRAS",
+                "PEFCE",
+                "Total",
+                "Monto Daño ($)",
+                "SA",
+                "PDP",
+                "PRAS",
+                "PEFCF",
+                "R",
+            ]
+        )
+        sheet.merge_cells("A1:A2")
+        sheet.merge_cells("B1:B2")
+        sheet.merge_cells("C1:C2")
+        sheet.merge_cells("D1:D2")
+        sheet.merge_cells("E1:E2")
+        sheet.merge_cells("F1:L1")
+        sheet.merge_cells("M1:Q1")
+        for row_idx in (1, 2):
+            for cell in sheet[row_idx]:
+                cell.font = white_bold_font
+                cell.alignment = center_alignment
+                cell.border = thin_border
+                cell.fill = header_primary_fill if row_idx == 1 else header_secondary_fill
+        sheet.row_dimensions[1].height = 24
+        sheet.row_dimensions[2].height = 22
+        sheet.freeze_panes = "A3"
+        total_rows: list[int] = []
+
+        if not groups:
+            sheet.append(["Sin resultados para los filtros seleccionados."])
+            sheet.merge_cells(start_row=3, start_column=1, end_row=3, end_column=17)
+            empty_cell = sheet.cell(row=3, column=1)
+            empty_cell.alignment = center_alignment
+            empty_cell.font = Font(italic=True)
+            empty_cell.fill = zebra_fill
+            for col_idx in range(1, 18):
+                sheet.cell(row=3, column=col_idx).border = thin_border
+        else:
+            for group in groups:
+                periodos = group.get("periodos", []) or []
+                if not periodos:
+                    sheet.append(
+                        [
+                            group.get("ente_numero") or group.get("ente_id") or "—",
+                            group.get("ente_nombre") or "—",
+                            group.get("tipo_auditoria") or "—",
+                            "Sin periodos disponibles para este ente.",
+                            "",
+                            "",
+                            "",
+                            "",
+                            "",
+                            "",
+                            "",
+                            "",
+                            "",
+                            "",
+                            "",
+                            "",
+                            "",
+                        ]
+                    )
+                    row_idx = sheet.max_row
+                    for col_idx in range(1, 18):
+                        cell = sheet.cell(row=row_idx, column=col_idx)
+                        cell.border = thin_border
+                        cell.alignment = left_alignment if col_idx in (2, 4, 5) else center_alignment
+                        if col_idx == 12:
+                            cell.alignment = right_alignment
+                    continue
+
+                for index, periodo in enumerate(periodos):
+                    pendientes = periodo.get("pendientes", {}) or {}
+                    numerales = periodo.get("numerales_no_solventadas", {}) or {}
+                    monto_row = float(pendientes.get("monto_dano") or 0)
+                    sheet.append(
+                        [
+                            (group.get("ente_numero") or group.get("ente_id") or "—") if index == 0 else "",
+                            (group.get("ente_nombre") or "—") if index == 0 else "",
+                            (group.get("tipo_auditoria") or "—") if index == 0 else "",
+                            periodo.get("periodo_cedula") or "—",
+                            periodo.get("periodo_titular") or "—",
+                            int(pendientes.get("R") or 0),
+                            int(pendientes.get("SA") or 0),
+                            int(pendientes.get("PDP") or 0),
+                            int(pendientes.get("PRAS") or 0),
+                            int(pendientes.get("PEFCF") or 0),
+                            int(pendientes.get("total") or 0),
+                            monto_row if monto_row > 0 else "-",
+                            numerales.get("SA") or "-",
+                            numerales.get("PDP") or "-",
+                            numerales.get("PRAS") or "-",
+                            numerales.get("PEFCF") or "-",
+                            numerales.get("R") or "-",
+                        ]
+                    )
+                    row_idx = sheet.max_row
+                    for col_idx in range(1, 18):
+                        cell = sheet.cell(row=row_idx, column=col_idx)
+                        cell.border = thin_border
+                        if col_idx in (2, 4, 5):
+                            cell.alignment = left_alignment
+                        elif col_idx == 12:
+                            cell.alignment = right_alignment
+                        else:
+                            cell.alignment = center_alignment
+
+                totales = group.get("totales", {}) or {}
+                monto_total = float(totales.get("monto_dano") or 0)
+                sheet.append(
+                    [
+                        "",
+                        "TOTAL",
+                        "",
+                        "",
+                        "",
+                        int(totales.get("R") or 0),
+                        int(totales.get("SA") or 0),
+                        int(totales.get("PDP") or 0),
+                        int(totales.get("PRAS") or 0),
+                        int(totales.get("PEFCF") or 0),
+                        int(totales.get("total") or 0),
+                        monto_total if monto_total > 0 else "-",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                    ]
+                )
+                total_row_idx = sheet.max_row
+                total_rows.append(total_row_idx)
+                for col_idx in range(1, 18):
+                    cell = sheet.cell(row=total_row_idx, column=col_idx)
+                    cell.font = Font(bold=True)
+                    cell.fill = total_fill
+                    cell.border = thin_border
+                    if col_idx in (2, 4, 5):
+                        cell.alignment = left_alignment
+                    elif col_idx == 12:
+                        cell.alignment = right_alignment
+                    else:
+                        cell.alignment = center_alignment
+
+        for row_idx in range(3, sheet.max_row + 1):
+            monto_cell = sheet.cell(row=row_idx, column=12)
+            if isinstance(monto_cell.value, (int, float)):
+                monto_cell.number_format = "#,##0.00"
+            if groups and row_idx not in total_rows and row_idx % 2 == 0:
+                for col_idx in range(1, 18):
+                    sheet.cell(row=row_idx, column=col_idx).fill = zebra_fill
+
+        base_widths = {
+            1: 8,
+            2: 40,
+            3: 22,
+            4: 18,
+            5: 18,
+            6: 8,
+            7: 8,
+            8: 8,
+            9: 8,
+            10: 8,
+            11: 10,
+            12: 16,
+            13: 16,
+            14: 16,
+            15: 16,
+            16: 16,
+            17: 14,
+        }
+        for col_idx in range(1, 18):
+            max_len = 0
+            for row_idx in range(1, sheet.max_row + 1):
+                val = sheet.cell(row=row_idx, column=col_idx).value
+                str_val = "" if val is None else str(val)
+                if len(str_val) > max_len:
+                    max_len = len(str_val)
+            width = max(base_widths.get(col_idx, 11), min(max_len + 2, 58))
+            sheet.column_dimensions[get_column_letter(col_idx)].width = width
+        sheet.auto_filter.ref = f"A2:Q{sheet.max_row}"
+
+        stream = BytesIO()
+        workbook.save(stream)
+        stream.seek(0)
+        filename = f"pendientes_por_periodo_{ejercicio}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        return send_file(
+            stream,
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+
     @app.get("/observaciones-stats")
     @luis_required
     def observaciones_stats():

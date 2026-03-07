@@ -197,6 +197,11 @@
           <h2>Pendientes por periodo</h2>
           <p>Detalle de pendientes y numerales no solventadas por cédula para el ente seleccionado.</p>
         </div>
+        <div class="obs-export-card">
+          <h3>Exportar pendientes por periodo</h3>
+          <p>Descarga en Excel la misma tabla de pendientes con los filtros activos.</p>
+          <button class="btn-secondary" type="button" id="pendientes_periodo_export">Exportar a Excel</button>
+        </div>
         <div class="table-wrap" id="pendientesPeriodoWrap">
           <table class="table-compact pendientes-periodo-table">
             <thead>
@@ -378,6 +383,7 @@
     const obsClearFab = document.getElementById("obs_clear_fab");
     const activeFiltersToggle = document.getElementById("activeFiltersToggle");
     const obsExport = document.getElementById("obs_export");
+    const pendientesPeriodoExport = document.getElementById("pendientes_periodo_export");
     const obsTableBody = document.getElementById("obsTableBody");
     const obsCount = document.getElementById("obsCount");
     const obsQuickSearch = document.getElementById("obs_quick_search");
@@ -839,6 +845,7 @@
           obsConceptoIrregularidad,
           cedulaResultados,
           obsExport,
+          pendientesPeriodoExport,
           obsPrev,
           obsNext,
           summaryTipoAnexo,
@@ -2065,6 +2072,30 @@
         window.location.href = `/observaciones-exportar?${params.toString()}`;
       };
 
+      const exportPendientesPeriodo = () => {
+        const ejercicio = mainEjercicio.value;
+        if (!ejercicio) {
+          return;
+        }
+        const selectedEnte = getSelectedValues(obsEnteInput);
+        if (!selectedEnte.length) {
+          return;
+        }
+        const params = new URLSearchParams({ ejercicio });
+        appendValuesToParams(params, "ente_id", selectedEnte);
+        const selectedTipoAnexo = getSelectedTipoAnexo();
+        appendValuesToParams(params, "tipo_anexo", selectedTipoAnexo);
+        appendValuesToParams(params, "tipo_auditoria", getSelectedValues(mainTipoAuditoria));
+        appendValuesToParams(params, "estado", getSelectedValues(obsEstado));
+        appendValuesToParams(params, "fuente_financiamiento", getSelectedValues(obsFuente));
+        appendValuesToParams(params, "ramo_33", getSelectedValues(obsRamo));
+        if (!selectedTipoAnexo.length || selectedTipoAnexo.includes("PDP")) {
+          appendValuesToParams(params, "concepto_irregularidad", getSelectedValues(obsConceptoIrregularidad));
+        }
+        appendValuesToParams(params, "periodo_cedula", getSelectedValues(cedulaResultados));
+        window.location.href = `/pendientes-periodo-exportar?${params.toString()}`;
+      };
+
       const loadCatalogo = async () => {
         const ejercicio = mainEjercicio.value;
         if (!ejercicio) {
@@ -2226,6 +2257,9 @@
       }
       if (obsExport) {
         obsExport.addEventListener("click", exportObservaciones);
+      }
+      if (pendientesPeriodoExport) {
+        pendientesPeriodoExport.addEventListener("click", exportPendientesPeriodo);
       }
 
       if (obsPrev) {

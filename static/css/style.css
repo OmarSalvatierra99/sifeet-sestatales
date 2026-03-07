@@ -403,7 +403,7 @@ legend {
   font-size: 0.88rem;
 }
 
-input,
+input:not([type="checkbox"]):not([type="radio"]),
 select,
 textarea {
   border: 1px solid var(--color-border);
@@ -422,18 +422,18 @@ textarea {
   max-width: 100%;
 }
 
-input::placeholder,
+input:not([type="checkbox"]):not([type="radio"])::placeholder,
 textarea::placeholder {
   color: #7b877e;
 }
 
-input:hover,
+input:not([type="checkbox"]):not([type="radio"]):hover,
 select:hover,
 textarea:hover {
   border-color: var(--color-border-strong);
 }
 
-input:focus,
+input:not([type="checkbox"]):not([type="radio"]):focus,
 select:focus,
 textarea:focus {
   outline: none;
@@ -559,6 +559,10 @@ select.is-multi-hidden {
 
 .multi-select-option input[type="checkbox"] {
   accent-color: var(--color-accent);
+  width: 0.9rem;
+  height: 0.9rem;
+  min-height: 0.9rem;
+  padding: 0;
   margin-top: 0.08rem;
   flex: 0 0 auto;
 }
@@ -606,6 +610,10 @@ select.is-multi-hidden {
 
 .chip input {
   accent-color: var(--color-accent);
+  width: 0.9rem;
+  height: 0.9rem;
+  min-height: 0.9rem;
+  padding: 0;
 }
 
 .chip:hover {
@@ -1776,8 +1784,10 @@ tbody tr:hover td {
 }
 
 .loader-checkbox input {
-  width: auto;
-  min-height: 0;
+  width: 0.9rem;
+  height: 0.9rem;
+  min-height: 0.9rem;
+  padding: 0;
   accent-color: var(--color-accent);
 }
 
@@ -2076,8 +2086,10 @@ tbody tr:hover td {
 }
 
 .obs-solventada-toggle input {
-  width: auto;
-  min-height: 0;
+  width: 0.9rem;
+  height: 0.9rem;
+  min-height: 0.9rem;
+  padding: 0;
   accent-color: var(--color-accent);
 }
 
