@@ -11,6 +11,209 @@ def register_luis_routes(app, deps):
     globals().update(deps)
     dashboard_cache: dict[str, tuple[float, dict]] = {}
     dashboard_cache_ttl_seconds = 45
+    filter_order = (
+        "ente_id",
+        "tipo_auditoria",
+        "tipo_anexo",
+        "estado",
+        "fuente_financiamiento",
+        "ramo_33",
+        "concepto_irregularidad",
+        "periodo_cedula",
+    )
+    filter_labels = {
+        "ente_id": "Ente",
+        "tipo_auditoria": "Tipo de auditoria",
+        "tipo_anexo": "Tipo de anexo",
+        "estado": "Estado",
+        "fuente_financiamiento": "Fuente de financiamiento",
+        "ramo_33": "Ramo 33",
+        "concepto_irregularidad": "Concepto de irregularidad",
+        "periodo_cedula": "Cedula de resultados",
+    }
+
+    def parse_multi_values(param_name: str, normalizer=None):
+        values: list[str] = []
+        seen = set()
+        for raw in request.args.getlist(param_name):
+            clean = (raw or "").strip()
+            if not clean:
+                continue
+            if normalizer:
+                clean = normalizer(clean)
+            clean = (clean or "").strip()
+            if not clean or clean in seen:
+                continue
+            seen.add(clean)
+            values.append(clean)
+        return values
+
+    def parse_selected_filters():
+        return {
+            "ente_id": parse_multi_values("ente_id", normalize_ente_id),
+            "tipo_auditoria": parse_multi_values("tipo_auditoria", normalize_tipo_auditoria),
+            "tipo_anexo": parse_multi_values("tipo_anexo"),
+            "estado": parse_multi_values("estado"),
+            "fuente_financiamiento": parse_multi_values("fuente_financiamiento"),
+            "ramo_33": parse_multi_values("ramo_33"),
+            "concepto_irregularidad": parse_multi_values("concepto_irregularidad"),
+            "periodo_cedula": parse_multi_values("periodo_cedula"),
+        }
+
+    def column_sql(column: str, alias: str = "") -> str:
+        return f"{alias}.{column}" if alias else column
+
+    def apply_filter_clause(
+        clauses: list[str],
+        params: list,
+        key: str,
+        values: list[str],
+        alias: str = "",
+    ):
+        if not values:
+            return
+        placeholders = ", ".join(["?"] * len(values))
+        if key == "ente_id":
+            clauses.append(f"{normalize_ente_id_sql(column_sql('ente_id', alias))} IN ({placeholders})")
+            params.extend(values)
+            return
+        if key == "concepto_irregularidad":
+            concepto_col = column_sql("pdp_concepto_irregularidad", alias)
+            subconcepto_col = column_sql("pdp_subconcepto_irregularidad", alias)
+            clauses.append(
+                f"({concepto_col} IN ({placeholders}) OR {subconcepto_col} IN ({placeholders}))"
+            )
+            params.extend(values)
+            params.extend(values)
+            return
+        key_to_column = {
+            "tipo_auditoria": "tipo_auditoria",
+            "tipo_anexo": "tipo_anexo",
+            "estado": "estado",
+            "fuente_financiamiento": "fuente_financiamiento",
+            "ramo_33": "ramo_33",
+            "periodo_cedula": "periodo_cedula",
+        }
+        column = key_to_column.get(key)
+        if not column:
+            return
+        clauses.append(f"{column_sql(column, alias)} IN ({placeholders})")
+        params.extend(values)
+
+    def build_observaciones_scope(
+        ejercicio: str,
+        selected_filters: dict[str, list[str]],
+        *,
+        exclude_key: str = "",
+        include_ente: bool = True,
+        alias: str = "",
+    ):
+        clauses = [f"{column_sql('ejercicio', alias)} = ?"]
+        params: list = [ejercicio]
+        for key in filter_order:
+            if key == exclude_key:
+                continue
+            if key == "ente_id" and not include_ente:
+                continue
+            apply_filter_clause(clauses, params, key, selected_filters.get(key, []), alias)
+        return " AND ".join(clauses), params
+
+    def selected_values_for_key(selected_filters: dict[str, list[str]], key: str):
+        return selected_filters.get(key, []) or []
+
+    def build_multi_filter_comparison(
+        db,
+        ejercicio: str,
+        selected_filters: dict[str, list[str]],
+        entes_catalog: list[dict],
+    ):
+        comparison_priority = (
+            "ente_id",
+            "periodo_cedula",
+            "fuente_financiamiento",
+            "tipo_anexo",
+            "tipo_auditoria",
+            "estado",
+            "concepto_irregularidad",
+        )
+        chosen_key = ""
+        for key in comparison_priority:
+            selected_values = selected_values_for_key(selected_filters, key)
+            if len(selected_values) > 1:
+                chosen_key = key
+                break
+        if not chosen_key:
+            return {
+                "active": False,
+                "filter_key": "",
+                "filter_label": "",
+                "items": [],
+            }
+
+        selected_values = selected_values_for_key(selected_filters, chosen_key)
+        base_where, base_params = build_observaciones_scope(
+            ejercicio,
+            selected_filters,
+            exclude_key=chosen_key,
+            include_ente=True,
+        )
+
+        ente_labels = {}
+        for ente in entes_catalog:
+            ente_id = (ente.get("ente_id") or "").strip()
+            if not ente_id:
+                continue
+            numero = (ente.get("ente_numero") or "").strip()
+            nombre = (ente.get("ente_nombre") or "").strip()
+            if numero:
+                label = f"{numero} - {nombre or ente_id}"
+            else:
+                label = nombre or ente_id
+            ente_labels[ente_id] = label
+
+        items = []
+        for value in selected_values:
+            value_clauses = []
+            value_params: list = []
+            apply_filter_clause(value_clauses, value_params, chosen_key, [value])
+            if not value_clauses:
+                continue
+            metrics_row = db.execute(
+                f"""
+                SELECT
+                    COUNT(*) AS emitidas,
+                    SUM(CASE WHEN LOWER(TRIM(COALESCE(estado, ''))) = 'solventado' THEN 1 ELSE 0 END) AS solventadas,
+                    SUM(CASE WHEN LOWER(TRIM(COALESCE(estado, ''))) = 'pendiente' THEN 1 ELSE 0 END) AS pendientes
+                FROM observaciones
+                WHERE {base_where}
+                  AND {" AND ".join(value_clauses)}
+                """,
+                [*base_params, *value_params],
+            ).fetchone()
+            emitidas = int((metrics_row["emitidas"] or 0) if metrics_row else 0)
+            solventadas = int((metrics_row["solventadas"] or 0) if metrics_row else 0)
+            pendientes = int((metrics_row["pendientes"] or 0) if metrics_row else 0)
+            if chosen_key == "ente_id":
+                label = ente_labels.get(value, value)
+            else:
+                label = value
+            items.append(
+                {
+                    "value": value,
+                    "label": label,
+                    "emitidas": emitidas,
+                    "solventadas": solventadas,
+                    "pendientes": pendientes,
+                }
+            )
+
+        return {
+            "active": len(items) > 1,
+            "filter_key": chosen_key,
+            "filter_label": filter_labels.get(chosen_key, chosen_key),
+            "items": items,
+        }
+
     @app.route("/entes", methods=["GET", "POST"])
     @luis_required
     def entes():
@@ -342,17 +545,17 @@ def register_luis_routes(app, deps):
                         "requires_ente": True,
                         "groups": [],
                     },
+                    "multi_compare": {
+                        "active": False,
+                        "filter_key": "",
+                        "filter_label": "",
+                        "items": [],
+                    },
                 },
             })
 
-        ente_id = normalize_ente_id(request.args.get("ente_id", ""))
-        tipo_anexo = request.args.get("tipo_anexo", "").strip()
-        tipo_auditoria = normalize_tipo_auditoria(request.args.get("tipo_auditoria", ""))
-        estado = request.args.get("estado", "").strip()
-        fuente = request.args.get("fuente_financiamiento", "").strip()
-        ramo_33 = request.args.get("ramo_33", "").strip()
-        concepto_irregularidad = request.args.get("concepto_irregularidad", "").strip()
-        periodo_cedula = request.args.get("periodo_cedula", "").strip()
+        selected_filters = parse_selected_filters()
+        selected_entes = selected_values_for_key(selected_filters, "ente_id")
 
         try:
             page = max(1, int(request.args.get("page", "1")))
@@ -371,51 +574,11 @@ def register_luis_routes(app, deps):
             return jsonify(cached[1])
 
         db = get_db()
-        selected = {
-            "tipo_auditoria": tipo_auditoria,
-            "tipo_anexo": tipo_anexo,
-            "estado": estado,
-            "fuente_financiamiento": fuente,
-            "ramo_33": ramo_33,
-            "concepto_irregularidad": concepto_irregularidad,
-            "periodo_cedula": periodo_cedula,
-        }
-
-        def build_scope(*, exclude_key: str = "", include_ente: bool = True):
-            clauses = ["ejercicio = ?"]
-            params = [ejercicio]
-            if include_ente and ente_id:
-                clauses.append(f"{normalize_ente_id_sql('ente_id')} = ?")
-                params.append(ente_id)
-            for key, value in selected.items():
-                if key == exclude_key or not value:
-                    continue
-                if key == "tipo_auditoria":
-                    clauses.append("tipo_auditoria = ?")
-                    params.append(value)
-                elif key == "tipo_anexo":
-                    clauses.append("tipo_anexo = ?")
-                    params.append(value)
-                elif key == "estado":
-                    clauses.append("estado = ?")
-                    params.append(value)
-                elif key == "fuente_financiamiento":
-                    clauses.append("fuente_financiamiento = ?")
-                    params.append(value)
-                elif key == "ramo_33":
-                    clauses.append("ramo_33 = ?")
-                    params.append(value)
-                elif key == "periodo_cedula":
-                    clauses.append("periodo_cedula = ?")
-                    params.append(value)
-                elif key == "concepto_irregularidad":
-                    clauses.append(
-                        "(pdp_concepto_irregularidad = ? OR pdp_subconcepto_irregularidad = ?)"
-                    )
-                    params.extend([value, value])
-            return " AND ".join(clauses), params
-
-        scope_sql, scope_params = build_scope()
+        scope_sql, scope_params = build_observaciones_scope(
+            ejercicio,
+            selected_filters,
+            include_ente=True,
+        )
         total_rows = db.execute(
             f"SELECT COUNT(*) FROM observaciones WHERE {scope_sql}",
             scope_params,
@@ -428,7 +591,7 @@ def register_luis_routes(app, deps):
             "requires_ente": True,
             "groups": [],
         }
-        if ente_id:
+        if selected_entes:
             anexos_orden = ("R", "SA", "PDP", "PRAS", "PEFCF")
             anexos_alias = {
                 "PEFCT": "PEFCF",
@@ -722,7 +885,12 @@ def register_luis_routes(app, deps):
         ).fetchall()
 
         def query_distinct(column: str, exclude_key: str):
-            where_sql, where_params = build_scope(exclude_key=exclude_key)
+            where_sql, where_params = build_observaciones_scope(
+                ejercicio,
+                selected_filters,
+                exclude_key=exclude_key,
+                include_ente=True,
+            )
             return db.execute(
                 f"""
                 SELECT DISTINCT {column} AS value
@@ -734,7 +902,11 @@ def register_luis_routes(app, deps):
                 where_params,
             ).fetchall()
 
-        entes_where, entes_params = build_scope(include_ente=False)
+        entes_where, entes_params = build_observaciones_scope(
+            ejercicio,
+            selected_filters,
+            include_ente=False,
+        )
         entes = db.execute(
             f"""
             SELECT DISTINCT
@@ -749,7 +921,12 @@ def register_luis_routes(app, deps):
             entes_params,
         ).fetchall()
 
-        concepto_where, concepto_params = build_scope(exclude_key="concepto_irregularidad")
+        concepto_where, concepto_params = build_observaciones_scope(
+            ejercicio,
+            selected_filters,
+            exclude_key="concepto_irregularidad",
+            include_ente=True,
+        )
         conceptos = db.execute(
             f"""
             SELECT DISTINCT concepto
@@ -779,6 +956,12 @@ def register_luis_routes(app, deps):
             "conceptos_irregularidad": [row[0] for row in conceptos],
             "entes": [dict(row) for row in entes],
         }
+        multi_compare = build_multi_filter_comparison(
+            db,
+            ejercicio,
+            selected_filters,
+            filtros["entes"],
+        )
 
         tipos_summary = [dict(row) for row in summary_rows]
         totals = {"emitidas": 0, "solventadas": 0, "pendientes": 0}
@@ -810,6 +993,7 @@ def register_luis_routes(app, deps):
                     for row in top_pendientes_rows
                 ],
                 "pendientes_por_periodo": pendientes_por_periodo,
+                "multi_compare": multi_compare,
             },
         }
         dashboard_cache[cache_key] = (now, payload)
@@ -824,18 +1008,11 @@ def register_luis_routes(app, deps):
     @luis_required
     def observaciones_api():
         ejercicio = request.args.get("ejercicio", "").strip()
-        ente_id = normalize_ente_id(request.args.get("ente_id", ""))
-        tipo_anexo = request.args.get("tipo_anexo", "").strip()
-        tipo_auditoria = normalize_tipo_auditoria(request.args.get("tipo_auditoria", ""))
-        estado = request.args.get("estado", "").strip()
-        fuente = request.args.get("fuente_financiamiento", "").strip()
-        ramo_33 = request.args.get("ramo_33", "").strip()
-        concepto_irregularidad = request.args.get("concepto_irregularidad", "").strip()
+        selected_filters = parse_selected_filters()
         periodo_informe = request.args.get("periodo_informe", "").strip()
         titular = request.args.get("titular", "").strip()
         periodo_admin = request.args.get("periodo_admin", "").strip()
         administrativo = request.args.get("administrativo", "").strip()
-        periodo_cedula = request.args.get("periodo_cedula", "").strip()
         search = request.args.get("search", "").strip()
         if not ejercicio:
             return jsonify([])
@@ -843,32 +1020,14 @@ def register_luis_routes(app, deps):
         db = get_db()
         params = [ejercicio]
         filter_clauses = []
-        if ente_id:
-            filter_clauses.append(f"{normalize_ente_id_sql('observaciones.ente_id')} = ?")
-            params.append(ente_id)
-        if tipo_anexo:
-            filter_clauses.append("observaciones.tipo_anexo = ?")
-            params.append(tipo_anexo)
-        if tipo_auditoria:
-            filter_clauses.append("observaciones.tipo_auditoria = ?")
-            params.append(tipo_auditoria)
-        if estado:
-            filter_clauses.append("observaciones.estado = ?")
-            params.append(estado)
-        if fuente:
-            filter_clauses.append("observaciones.fuente_financiamiento = ?")
-            params.append(fuente)
-        if ramo_33:
-            filter_clauses.append("observaciones.ramo_33 = ?")
-            params.append(ramo_33)
-        if concepto_irregularidad:
-            filter_clauses.append(
-                "(observaciones.pdp_concepto_irregularidad = ? OR observaciones.pdp_subconcepto_irregularidad = ?)"
+        for key in filter_order:
+            apply_filter_clause(
+                filter_clauses,
+                params,
+                key,
+                selected_filters.get(key, []),
+                alias="observaciones",
             )
-            params.extend([concepto_irregularidad, concepto_irregularidad])
-        if periodo_cedula:
-            filter_clauses.append("observaciones.periodo_cedula = ?")
-            params.append(periodo_cedula)
         if search:
             filter_clauses.append(
                 """
@@ -1023,14 +1182,11 @@ def register_luis_routes(app, deps):
     @luis_required
     def observaciones_filtros():
         ejercicio = request.args.get("ejercicio", "").strip()
-        ente_id = normalize_ente_id(request.args.get("ente_id", ""))
-        tipo_auditoria = normalize_tipo_auditoria(request.args.get("tipo_auditoria", ""))
-        tipo_anexo = request.args.get("tipo_anexo", "").strip()
-        estado = request.args.get("estado", "").strip()
-        fuente = request.args.get("fuente_financiamiento", "").strip()
-        ramo_33 = request.args.get("ramo_33", "").strip()
-        concepto_irregularidad = request.args.get("concepto_irregularidad", "").strip()
-        periodo_cedula = request.args.get("periodo_cedula", "").strip()
+        selected_filters = parse_selected_filters()
+        ente_values = selected_values_for_key(selected_filters, "ente_id")
+        tipo_auditoria_values = selected_values_for_key(selected_filters, "tipo_auditoria")
+        ente_id = ente_values[0] if len(ente_values) == 1 else ""
+        tipo_auditoria = tipo_auditoria_values[0] if len(tipo_auditoria_values) == 1 else ""
         titular_seleccionado = request.args.get("titular", "").strip()
         administrativo_seleccionado = request.args.get("administrativo", "").strip()
         include_historial = request.args.get("include_historial", "").strip() == "1"
@@ -1039,51 +1195,14 @@ def register_luis_routes(app, deps):
     
         db = get_db()
         filtros = {}
-        selected = {
-            "tipo_auditoria": tipo_auditoria,
-            "tipo_anexo": tipo_anexo,
-            "estado": estado,
-            "fuente_financiamiento": fuente,
-            "ramo_33": ramo_33,
-            "concepto_irregularidad": concepto_irregularidad,
-            "periodo_cedula": periodo_cedula,
-        }
-    
-        def build_observaciones_scope(exclude_key: str = "", include_ente: bool = True):
-            clauses = ["ejercicio = ?"]
-            params = [ejercicio]
-            if include_ente and ente_id:
-                clauses.append(f"{normalize_ente_id_sql('ente_id')} = ?")
-                params.append(ente_id)
-    
-            for key, value in selected.items():
-                if key == exclude_key or not value:
-                    continue
-                if key == "tipo_auditoria":
-                    clauses.append("tipo_auditoria = ?")
-                    params.append(value)
-                elif key == "tipo_anexo":
-                    clauses.append("tipo_anexo = ?")
-                    params.append(value)
-                elif key == "estado":
-                    clauses.append("estado = ?")
-                    params.append(value)
-                elif key == "fuente_financiamiento":
-                    clauses.append("fuente_financiamiento = ?")
-                    params.append(value)
-                elif key == "ramo_33":
-                    clauses.append("ramo_33 = ?")
-                    params.append(value)
-                elif key == "periodo_cedula":
-                    clauses.append("periodo_cedula = ?")
-                    params.append(value)
-                elif key == "concepto_irregularidad":
-                    clauses.append("(pdp_concepto_irregularidad = ? OR pdp_subconcepto_irregularidad = ?)")
-                    params.extend([value, value])
-            return " AND ".join(clauses), params
     
         def query_distinct(column: str, exclude_key: str):
-            where_sql, where_params = build_observaciones_scope(exclude_key)
+            where_sql, where_params = build_observaciones_scope(
+                ejercicio,
+                selected_filters,
+                exclude_key=exclude_key,
+                include_ente=True,
+            )
             return db.execute(
                 f"""
                 SELECT DISTINCT {column} AS value
@@ -1101,7 +1220,12 @@ def register_luis_routes(app, deps):
         fuentes = query_distinct("fuente_financiamiento", "fuente_financiamiento")
         ramos = query_distinct("ramo_33", "ramo_33")
         cedulas = query_distinct("periodo_cedula", "periodo_cedula")
-        concepto_where, concepto_params = build_observaciones_scope("concepto_irregularidad")
+        concepto_where, concepto_params = build_observaciones_scope(
+            ejercicio,
+            selected_filters,
+            exclude_key="concepto_irregularidad",
+            include_ente=True,
+        )
         conceptos = db.execute(
             f"""
             SELECT DISTINCT concepto
@@ -1120,7 +1244,11 @@ def register_luis_routes(app, deps):
             """,
             concepto_params + concepto_params,
         ).fetchall()
-        entes_where, entes_params = build_observaciones_scope(include_ente=False)
+        entes_where, entes_params = build_observaciones_scope(
+            ejercicio,
+            selected_filters,
+            include_ente=False,
+        )
         entes = db.execute(
             f"""
             SELECT DISTINCT
@@ -1267,36 +1395,16 @@ def register_luis_routes(app, deps):
     @luis_required
     def observaciones_responsables():
         ejercicio = request.args.get("ejercicio", "").strip()
-        ente_id = normalize_ente_id(request.args.get("ente_id", ""))
-        tipo_auditoria = normalize_tipo_auditoria(request.args.get("tipo_auditoria", ""))
-        estado = request.args.get("estado", "").strip()
-        fuente = request.args.get("fuente_financiamiento", "").strip()
-        ramo_33 = request.args.get("ramo_33", "").strip()
-        periodo_cedula = request.args.get("periodo_cedula", "").strip()
-        if not ejercicio or not periodo_cedula:
+        selected_filters = parse_selected_filters()
+        cedulas = selected_values_for_key(selected_filters, "periodo_cedula")
+        if not ejercicio or not cedulas:
             return jsonify([])
     
         db = get_db()
         filter_clauses = ["o.ejercicio = ?"]
         params = [ejercicio]
-        if ente_id:
-            filter_clauses.append(f"{normalize_ente_id_sql('o.ente_id')} = ?")
-            params.append(ente_id)
-        if tipo_auditoria:
-            filter_clauses.append("o.tipo_auditoria = ?")
-            params.append(tipo_auditoria)
-        if estado:
-            filter_clauses.append("o.estado = ?")
-            params.append(estado)
-        if fuente:
-            filter_clauses.append("o.fuente_financiamiento = ?")
-            params.append(fuente)
-        if ramo_33:
-            filter_clauses.append("o.ramo_33 = ?")
-            params.append(ramo_33)
-        if periodo_cedula:
-            filter_clauses.append("o.periodo_cedula = ?")
-            params.append(periodo_cedula)
+        for key in filter_order:
+            apply_filter_clause(filter_clauses, params, key, selected_filters.get(key, []), alias="o")
     
         where_sql = " AND ".join(filter_clauses)
         observaciones_rows = db.execute(
@@ -1430,46 +1538,21 @@ def register_luis_routes(app, deps):
     @luis_required
     def observaciones_exportar():
         ejercicio = request.args.get("ejercicio", "").strip()
-        ente_id = normalize_ente_id(request.args.get("ente_id", ""))
-        tipo_anexo = request.args.get("tipo_anexo", "").strip()
-        tipo_auditoria = normalize_tipo_auditoria(request.args.get("tipo_auditoria", ""))
-        estado = request.args.get("estado", "").strip()
-        fuente = request.args.get("fuente_financiamiento", "").strip()
-        ramo_33 = request.args.get("ramo_33", "").strip()
-        concepto_irregularidad = request.args.get("concepto_irregularidad", "").strip()
-        periodo_cedula = request.args.get("periodo_cedula", "").strip()
+        selected_filters = parse_selected_filters()
         if not ejercicio:
             return jsonify({"error": "ejercicio requerido"}), 400
     
         db = get_db()
         params = [ejercicio]
         filter_clauses = []
-        if ente_id:
-            filter_clauses.append(f"{normalize_ente_id_sql('observaciones.ente_id')} = ?")
-            params.append(ente_id)
-        if tipo_anexo:
-            filter_clauses.append("observaciones.tipo_anexo = ?")
-            params.append(tipo_anexo)
-        if tipo_auditoria:
-            filter_clauses.append("observaciones.tipo_auditoria = ?")
-            params.append(tipo_auditoria)
-        if estado:
-            filter_clauses.append("observaciones.estado = ?")
-            params.append(estado)
-        if fuente:
-            filter_clauses.append("observaciones.fuente_financiamiento = ?")
-            params.append(fuente)
-        if ramo_33:
-            filter_clauses.append("observaciones.ramo_33 = ?")
-            params.append(ramo_33)
-        if concepto_irregularidad:
-            filter_clauses.append(
-                "(observaciones.pdp_concepto_irregularidad = ? OR observaciones.pdp_subconcepto_irregularidad = ?)"
+        for key in filter_order:
+            apply_filter_clause(
+                filter_clauses,
+                params,
+                key,
+                selected_filters.get(key, []),
+                alias="observaciones",
             )
-            params.extend([concepto_irregularidad, concepto_irregularidad])
-        if periodo_cedula:
-            filter_clauses.append("observaciones.periodo_cedula = ?")
-            params.append(periodo_cedula)
     
         filter_sql = ""
         if filter_clauses:

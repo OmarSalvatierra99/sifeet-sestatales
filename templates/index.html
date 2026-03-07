@@ -177,6 +177,14 @@
             <h3>Top 5 entes con más pendientes</h3>
             <canvas id="topPendientesBar" height="240"></canvas>
           </div>
+          <div class="chart-card summary-chart chart-card-wide" id="multiFiltroCompareWrap" style="display: none;">
+            <h3 id="multiFiltroCompareTitle">Comparativo de multifiltro</h3>
+            <canvas id="multiFiltroCompareBar" height="240"></canvas>
+          </div>
+          <div class="chart-card summary-chart chart-card-wide" id="multiFiltroComparePctWrap" style="display: none;">
+            <h3 id="multiFiltroComparePctTitle">Comparativo de multifiltro (% pendientes)</h3>
+            <canvas id="multiFiltroComparePctBar" height="240"></canvas>
+          </div>
           <div class="chart-card summary-chart" id="pdpMontoChartWrap" style="display: none;">
             <h3>Gráfico de pastel (montos PDP: pendiente vs solventado)</h3>
             <canvas id="pdpMontoDonut" height="240"></canvas>
@@ -218,7 +226,7 @@
             </thead>
             <tbody id="pendientesPeriodoBody">
               <tr>
-                <td colspan="17" class="muted">Selecciona un ente para ver el resumen de pendientes por periodo.</td>
+                <td colspan="17" class="muted">Selecciona al menos un ente para ver el resumen de pendientes por periodo.</td>
               </tr>
             </tbody>
           </table>
@@ -251,7 +259,7 @@
               </thead>
               <tbody id="obsResponsablesBody">
                 <tr>
-                  <td colspan="6" class="muted">Selecciona una cédula de resultados para consultar responsables.</td>
+                  <td colspan="7" class="muted">Selecciona una cédula de resultados para consultar responsables.</td>
                 </tr>
               </tbody>
             </table>
@@ -385,6 +393,12 @@
     const obsNext = document.getElementById("obsNext");
     const obsPageInfo = document.getElementById("obsPageInfo");
     const pdpMontoChartWrap = document.getElementById("pdpMontoChartWrap");
+    const multiFiltroCompareWrap = document.getElementById("multiFiltroCompareWrap");
+    const multiFiltroCompareTitle = document.getElementById("multiFiltroCompareTitle");
+    const multiFiltroCompareBarCanvas = document.getElementById("multiFiltroCompareBar");
+    const multiFiltroComparePctWrap = document.getElementById("multiFiltroComparePctWrap");
+    const multiFiltroComparePctTitle = document.getElementById("multiFiltroComparePctTitle");
+    const multiFiltroComparePctBarCanvas = document.getElementById("multiFiltroComparePctBar");
     const pdpCountDonutCanvas = document.getElementById("pdpCountDonut");
     const pdpStatusBarCanvas = document.getElementById("pdpStatusBar");
     const topPendientesBarCanvas = document.getElementById("topPendientesBar");
@@ -408,6 +422,8 @@
       let topPendientesBarChart = null;
       let summaryStaticStackedChart = null;
       let pdpMontoDonutChart = null;
+      let multiFiltroCompareBarChart = null;
+      let multiFiltroComparePctBarChart = null;
       let obsRows = [];
       let obsPage = 1;
       const obsPageSize = 40;
@@ -419,6 +435,7 @@
         pdp_montos: { emitido: 0, solventado: 0, pendiente: 0 },
         top_pendientes: [],
         pendientes_por_periodo: { requires_ente: true, groups: [] },
+        multi_compare: { active: false, filter_key: "", filter_label: "", items: [] },
       });
       let dashboardSummary = createEmptyDashboardSummary();
       const requestControllers = {};
@@ -466,23 +483,242 @@
         }
       };
 
+      const getSelectedValues = (selectEl) => {
+        if (!selectEl) {
+          return [];
+        }
+        if (selectEl.multiple) {
+          return Array.from(selectEl.selectedOptions)
+            .map((option) => option.value)
+            .filter(Boolean);
+        }
+        return selectEl.value ? [selectEl.value] : [];
+      };
+
+      const setSelectedValues = (selectEl, values) => {
+        if (!selectEl) {
+          return;
+        }
+        const safeValues = Array.isArray(values) ? values.filter(Boolean) : [];
+        const valueSet = new Set(safeValues);
+        if (selectEl.multiple) {
+          Array.from(selectEl.options).forEach((option) => {
+            option.selected = valueSet.has(option.value);
+          });
+          return;
+        }
+        const selectedValue = safeValues.find((value) => Array.from(selectEl.options).some((option) => option.value === value));
+        selectEl.value = selectedValue || "";
+      };
+
+      const clearSelectSelection = (selectEl) => {
+        if (!selectEl) {
+          return;
+        }
+        if (selectEl.multiple) {
+          Array.from(selectEl.options).forEach((option) => {
+            option.selected = false;
+          });
+        } else {
+          selectEl.value = "";
+        }
+        const state = multiSelectUIs.get(selectEl);
+        if (state) {
+          const placeholder = selectEl.dataset.multiPlaceholder || "Todos";
+          renderMultiSelectOptions(selectEl, placeholder);
+        }
+      };
+
+      const multiSelectUIs = new Map();
+
+      const closeAllMultiSelectPanels = (exceptSelect = null) => {
+        multiSelectUIs.forEach((state, selectEl) => {
+          if (exceptSelect && selectEl === exceptSelect) {
+            return;
+          }
+          state.container.classList.remove("is-open");
+        });
+      };
+
+      document.addEventListener("click", (event) => {
+        let clickedInside = false;
+        multiSelectUIs.forEach((state) => {
+          if (state.container.contains(event.target)) {
+            clickedInside = true;
+          }
+        });
+        if (!clickedInside) {
+          closeAllMultiSelectPanels();
+        }
+      });
+
+      const getOptionLabelByValue = (selectEl, value) => {
+        const option = Array.from(selectEl?.options || []).find((item) => item.value === value);
+        return option ? (option.textContent || value).trim() : value;
+      };
+
+      const summarizeMultiSelection = (selectEl, placeholder) => {
+        const selected = getSelectedValues(selectEl);
+        if (!selected.length) {
+          return placeholder;
+        }
+        const labels = selected.map((value) => getOptionLabelByValue(selectEl, value));
+        if (labels.length <= 2) {
+          return labels.join(", ");
+        }
+        return `${labels[0]} +${labels.length - 1}`;
+      };
+
+      const syncMultiSelectDisabledState = (selectEl) => {
+        const state = multiSelectUIs.get(selectEl);
+        if (!state) {
+          return;
+        }
+        state.toggle.disabled = Boolean(selectEl.disabled);
+        state.container.classList.toggle("is-disabled", Boolean(selectEl.disabled));
+        if (selectEl.disabled) {
+          state.container.classList.remove("is-open");
+        }
+      };
+
+      const renderMultiSelectOptions = (selectEl, placeholder) => {
+        const state = multiSelectUIs.get(selectEl);
+        if (!state) {
+          return;
+        }
+        const options = Array.from(selectEl.options).filter((option) => option.value);
+        state.panel.innerHTML = "";
+        if (!options.length) {
+          state.panel.innerHTML = `<div class="multi-select-empty">${escapeHtml(placeholder)}</div>`;
+          state.value.textContent = placeholder;
+          return;
+        }
+        options.forEach((option) => {
+          const row = document.createElement("label");
+          row.className = "multi-select-option";
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.checked = option.selected;
+          checkbox.addEventListener("change", () => {
+            option.selected = checkbox.checked;
+            state.value.textContent = summarizeMultiSelection(selectEl, placeholder);
+            selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+          });
+          const text = document.createElement("span");
+          text.textContent = option.textContent || option.value;
+          row.appendChild(checkbox);
+          row.appendChild(text);
+          state.panel.appendChild(row);
+        });
+        state.value.textContent = summarizeMultiSelection(selectEl, placeholder);
+      };
+
+      const ensureMultiSelectUI = (selectEl, placeholder) => {
+        let state = multiSelectUIs.get(selectEl);
+        if (!state) {
+          const container = document.createElement("div");
+          container.className = "multi-select-dropdown";
+          const toggle = document.createElement("button");
+          toggle.type = "button";
+          toggle.className = "multi-select-toggle";
+          const valueNode = document.createElement("span");
+          valueNode.className = "multi-select-value";
+          const arrowNode = document.createElement("span");
+          arrowNode.className = "multi-select-arrow";
+          arrowNode.setAttribute("aria-hidden", "true");
+          arrowNode.textContent = "▾";
+          toggle.appendChild(valueNode);
+          toggle.appendChild(arrowNode);
+          const panel = document.createElement("div");
+          panel.className = "multi-select-panel";
+          container.appendChild(toggle);
+          container.appendChild(panel);
+          selectEl.insertAdjacentElement("afterend", container);
+          toggle.addEventListener("click", (event) => {
+            event.preventDefault();
+            if (toggle.disabled) {
+              return;
+            }
+            const willOpen = !container.classList.contains("is-open");
+            closeAllMultiSelectPanels(selectEl);
+            container.classList.toggle("is-open", willOpen);
+          });
+          panel.addEventListener("click", (event) => {
+            event.stopPropagation();
+          });
+          state = { container, toggle, panel, value: valueNode };
+          multiSelectUIs.set(selectEl, state);
+        }
+        state.container.style.display = "";
+        renderMultiSelectOptions(selectEl, placeholder);
+        syncMultiSelectDisabledState(selectEl);
+      };
+
+      const syncSelectMode = (selectEl, allowMulti, placeholder) => {
+        if (!selectEl) {
+          return;
+        }
+        if (allowMulti) {
+          selectEl.dataset.multiPlaceholder = placeholder;
+          selectEl.classList.add("is-multi-hidden");
+          ensureMultiSelectUI(selectEl, placeholder);
+          return;
+        }
+        delete selectEl.dataset.multiPlaceholder;
+        selectEl.classList.remove("is-multi-hidden");
+        const state = multiSelectUIs.get(selectEl);
+        if (state) {
+          state.container.classList.remove("is-open");
+          state.container.style.display = "none";
+        }
+      };
+
+      const appendValuesToParams = (params, key, values) => {
+        (Array.isArray(values) ? values : [values])
+          .filter(Boolean)
+          .forEach((value) => params.append(key, value));
+      };
+
       const getCurrentFilters = () => ({
         ejercicio: mainEjercicio.value || "",
-        ente_id: obsEnteInput.value || "",
-        tipo_auditoria: mainTipoAuditoria ? mainTipoAuditoria.value : "",
-        tipo_anexo: obsTipoAnexo ? obsTipoAnexo.value : "",
-        estado: obsEstado.value || "",
-        fuente_financiamiento: obsFuente.value || "",
-        ramo_33: obsRamo.value || "",
-        concepto_irregularidad: obsConceptoIrregularidad.value || "",
-        periodo_cedula: cedulaResultados.value || "",
+        ente_id: getSelectedValues(obsEnteInput),
+        tipo_auditoria: getSelectedValues(mainTipoAuditoria),
+        tipo_anexo: getSelectedValues(obsTipoAnexo),
+        estado: getSelectedValues(obsEstado),
+        fuente_financiamiento: getSelectedValues(obsFuente),
+        ramo_33: getSelectedValues(obsRamo),
+        concepto_irregularidad: getSelectedValues(obsConceptoIrregularidad),
+        periodo_cedula: getSelectedValues(cedulaResultados),
         quick_search: obsQuickSearch ? obsQuickSearch.value.trim() : "",
       });
+
+      const getFilterValueLabel = (key, value) => {
+        const selectByKey = {
+          ente_id: obsEnteInput,
+          tipo_auditoria: mainTipoAuditoria,
+          tipo_anexo: obsTipoAnexo,
+          estado: obsEstado,
+          fuente_financiamiento: obsFuente,
+          ramo_33: obsRamo,
+          concepto_irregularidad: obsConceptoIrregularidad,
+          periodo_cedula: cedulaResultados,
+        };
+        const selectEl = selectByKey[key];
+        if (!selectEl) {
+          return value;
+        }
+        const option = Array.from(selectEl.options).find((item) => item.value === value);
+        return option ? (option.textContent || value).trim() : value;
+      };
 
       const syncUrlFromFilters = () => {
         const filters = getCurrentFilters();
         const params = new URLSearchParams();
         Object.entries(filters).forEach(([key, value]) => {
+          if (Array.isArray(value)) {
+            appendValuesToParams(params, key, value);
+            return;
+          }
           if (value) {
             params.set(key, value);
           }
@@ -508,35 +744,88 @@
           concepto_irregularidad: "Concepto",
           periodo_cedula: "Cédula",
         };
-        const rows = Object.entries(filters).filter(([key, value]) => labels[key] && value);
+        const rows = Object.entries(filters).filter(([key, value]) => {
+          if (!labels[key]) {
+            return false;
+          }
+          if (Array.isArray(value)) {
+            return value.length > 0;
+          }
+          return Boolean(value);
+        });
         if (!rows.length) {
           activeFiltersChips.innerHTML = "<span class=\"muted\">Sin filtros activos.</span>";
           return;
         }
-        activeFiltersChips.innerHTML = rows.map(([key, value]) => `
-          <button type="button" class="filter-chip-btn" data-filter-key="${escapeHtml(key)}" title="Quitar filtro">
-            ${escapeHtml(labels[key])}: ${escapeHtml(value)} <span aria-hidden="true">×</span>
-          </button>
-        `).join("");
+        activeFiltersChips.innerHTML = rows.map(([key, value]) => {
+          const values = Array.isArray(value) ? value : [value];
+          const labelsForValue = values.map((item) => getFilterValueLabel(key, item));
+          const displayValue = labelsForValue.length > 2
+            ? `${labelsForValue[0]} +${labelsForValue.length - 1}`
+            : labelsForValue.join(", ");
+          return `
+            <button type="button" class="filter-chip-btn" data-filter-key="${escapeHtml(key)}" title="Quitar filtro">
+              ${escapeHtml(labels[key])}: ${escapeHtml(displayValue)} <span aria-hidden="true">×</span>
+            </button>
+          `;
+        }).join("");
       };
 
-      const applyFiltersFromUrl = () => {
+      const readFiltersFromUrl = () => {
         const params = new URLSearchParams(window.location.search);
-        const get = (key) => params.get(key) || "";
-        if (get("ejercicio")) mainEjercicio.value = get("ejercicio");
-        if (get("ente_id")) obsEnteInput.value = get("ente_id");
-        if (mainTipoAuditoria && get("tipo_auditoria")) mainTipoAuditoria.value = get("tipo_auditoria");
-        if (obsTipoAnexo && get("tipo_anexo")) obsTipoAnexo.value = get("tipo_anexo");
-        if (obsEstado && get("estado")) obsEstado.value = get("estado");
-        if (obsFuente && get("fuente_financiamiento")) obsFuente.value = get("fuente_financiamiento");
-        if (obsRamo && get("ramo_33")) obsRamo.value = get("ramo_33");
-        if (obsConceptoIrregularidad && get("concepto_irregularidad")) obsConceptoIrregularidad.value = get("concepto_irregularidad");
-        if (cedulaResultados && get("periodo_cedula")) cedulaResultados.value = get("periodo_cedula");
-        if (obsQuickSearch && get("quick_search")) obsQuickSearch.value = get("quick_search");
+        const readMany = (key) => params.getAll(key).map((item) => item.trim()).filter(Boolean);
+        const payload = {
+          ejercicio: (params.get("ejercicio") || "").trim(),
+          ente_id: readMany("ente_id"),
+          tipo_auditoria: readMany("tipo_auditoria"),
+          tipo_anexo: readMany("tipo_anexo"),
+          estado: readMany("estado"),
+          fuente_financiamiento: readMany("fuente_financiamiento"),
+          ramo_33: readMany("ramo_33"),
+          concepto_irregularidad: readMany("concepto_irregularidad"),
+          periodo_cedula: readMany("periodo_cedula"),
+          quick_search: (params.get("quick_search") || "").trim(),
+        };
         const pageFromUrl = Number(params.get("page") || "1");
         if (Number.isFinite(pageFromUrl) && pageFromUrl > 0) {
           obsPage = pageFromUrl;
         }
+        return payload;
+      };
+      let pendingUrlFilters = null;
+
+      const applyPendingUrlFilters = () => {
+        if (!pendingUrlFilters) {
+          return false;
+        }
+        const hasSelectionsToApply = [
+          pendingUrlFilters.ente_id,
+          pendingUrlFilters.tipo_auditoria,
+          pendingUrlFilters.tipo_anexo,
+          pendingUrlFilters.estado,
+          pendingUrlFilters.fuente_financiamiento,
+          pendingUrlFilters.ramo_33,
+          pendingUrlFilters.concepto_irregularidad,
+          pendingUrlFilters.periodo_cedula,
+        ].some((values) => Array.isArray(values) && values.length > 0)
+          || Boolean(pendingUrlFilters.quick_search);
+        if (!hasSelectionsToApply) {
+          pendingUrlFilters = null;
+          return false;
+        }
+        setSelectedValues(obsEnteInput, pendingUrlFilters.ente_id);
+        setSelectedValues(mainTipoAuditoria, pendingUrlFilters.tipo_auditoria);
+        setSelectedValues(obsTipoAnexo, pendingUrlFilters.tipo_anexo);
+        setSelectedValues(obsEstado, pendingUrlFilters.estado);
+        setSelectedValues(obsFuente, pendingUrlFilters.fuente_financiamiento);
+        setSelectedValues(obsRamo, pendingUrlFilters.ramo_33);
+        setSelectedValues(obsConceptoIrregularidad, pendingUrlFilters.concepto_irregularidad);
+        setSelectedValues(cedulaResultados, pendingUrlFilters.periodo_cedula);
+        if (obsQuickSearch && pendingUrlFilters.quick_search) {
+          obsQuickSearch.value = pendingUrlFilters.quick_search;
+        }
+        pendingUrlFilters = null;
+        return true;
       };
 
       const setObsEnabled = (enabled) => {
@@ -557,6 +846,7 @@
         ].forEach((el) => {
           if (el) {
             el.disabled = !enabled;
+            syncMultiSelectDisabledState(el);
           }
         });
         if (obsClearFab) {
@@ -570,40 +860,57 @@
         }
       };
 
-      const resetSelect = (selectEl, placeholder) => {
+      const resetSelect = (selectEl, placeholder, allowMulti = false) => {
         if (!selectEl) {
           return;
         }
-        selectEl.innerHTML = `<option value="">${placeholder}</option>`;
+        selectEl.innerHTML = "";
+        if (!allowMulti) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = placeholder;
+          selectEl.appendChild(option);
+        }
       };
 
-      const fillSelectFromValues = (selectEl, values, placeholder, currentValue = "") => {
+      const fillSelectFromValues = (
+        selectEl,
+        values,
+        placeholder,
+        currentValues = [],
+        allowMulti = false,
+      ) => {
         if (!selectEl) {
           return;
         }
-        resetSelect(selectEl, placeholder);
-        values.forEach((value) => {
+        const safeValues = Array.isArray(values) ? values : [];
+        selectEl.multiple = Boolean(allowMulti);
+        selectEl.size = 1;
+        resetSelect(selectEl, placeholder, allowMulti);
+        safeValues.forEach((value) => {
           const option = document.createElement("option");
           option.value = value;
           option.textContent = value;
           selectEl.appendChild(option);
         });
-        if (currentValue && selectEl.querySelector(`option[value="${currentValue}"]`)) {
-          selectEl.value = currentValue;
-        } else {
+        setSelectedValues(selectEl, currentValues);
+        syncSelectMode(selectEl, Boolean(allowMulti), placeholder);
+        syncMultiSelectDisabledState(selectEl);
+        if (!allowMulti && !getSelectedValues(selectEl).length) {
           selectEl.value = "";
         }
       };
 
       const syncConceptoIrregularidadVisibility = () => {
-        const showConcepto = getSelectedTipoAnexo() === "PDP";
+        const selectedTipos = getSelectedTipoAnexo();
+        const showConcepto = !selectedTipos.length || selectedTipos.includes("PDP");
         if (obsConceptoField) {
           obsConceptoField.style.display = showConcepto ? "flex" : "none";
         }
         if (obsConceptoIrregularidad) {
           obsConceptoIrregularidad.disabled = !showConcepto;
           if (!showConcepto) {
-            obsConceptoIrregularidad.value = "";
+            clearSelectSelection(obsConceptoIrregularidad);
           }
         }
       };
@@ -620,10 +927,12 @@
         if (!obsResponsablesBody) {
           return;
         }
+        const selectedCedulas = getSelectedValues(cedulaResultados);
         const obsResponsablesHead = document.getElementById("obsResponsablesHead");
         const baseColumns = [
           { key: "ente", label: "Ente", render: (row) => row.ente_nombre || "—" },
           { key: "tipo_auditoria", label: "Tipo auditoría", render: (row) => row.tipo_auditoria || "—" },
+          { key: "periodo_cedula", label: "Cédula", render: (row) => row.periodo_cedula || "—" },
           { key: "titular", label: "Titular", render: (row) => formatNombreList(row.titulares) },
           { key: "periodo_titular", label: "Periodo titular", render: (row) => formatPeriodoList(row.titulares) },
           { key: "administrativo", label: "Administrativo", render: (row) => formatNombreList(row.administrativos) },
@@ -653,25 +962,35 @@
           }
           return items.map((item) => item.periodo || "—").join("<br>");
         };
-        if (!cedulaResultados.value) {
+        if (!selectedCedulas.length) {
           renderMessage("Selecciona una cédula de resultados para consultar responsables.");
           return;
         }
         const unique = new Map();
         rows.forEach((row) => {
-          const key = [row.ente_id || "", row.ente_nombre || "", row.tipo_auditoria || ""].join("|");
+          const key = [
+            row.ente_id || "",
+            row.ente_nombre || "",
+            row.tipo_auditoria || "",
+            row.periodo_cedula || "",
+          ].join("|");
           if (!unique.has(key)) {
             unique.set(key, row);
           }
         });
         const responsables = Array.from(unique.values());
         if (!responsables.length) {
-          renderMessage("Sin responsables para la cédula seleccionada.");
+          renderMessage("Sin responsables para las cédulas seleccionadas.");
           return;
         }
         const hasTitulares = responsables.some((row) => Array.isArray(row.titulares) && row.titulares.length);
         const hasAdministrativos = responsables.some((row) => Array.isArray(row.administrativos) && row.administrativos.length);
+        const hasMultipleCedulas = selectedCedulas.length > 1
+          || new Set(responsables.map((row) => row.periodo_cedula || "")).size > 1;
         const visibleColumns = baseColumns.filter((column) => {
+          if (column.key === "periodo_cedula") {
+            return hasMultipleCedulas;
+          }
           if (column.key === "titular" || column.key === "periodo_titular") {
             return hasTitulares;
           }
@@ -708,6 +1027,17 @@
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       }).format(Number(value || 0));
+
+      const truncateLabel = (value, maxLength = 34) => {
+        const text = String(value || "").trim();
+        if (!text) {
+          return "—";
+        }
+        if (text.length <= maxLength) {
+          return text;
+        }
+        return `${text.slice(0, Math.max(1, maxLength - 1))}…`;
+      };
 
       const syncPdpWidgetsVisibility = () => {
         const showPdpWidgets = summaryTipoAnexo && summaryTipoAnexo.value === "PDP";
@@ -1000,19 +1330,158 @@
             maintainAspectRatio: false,
             animation: { duration: 320, easing: "easeOutQuart" },
             plugins: { legend: { display: false } },
-            scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
+            scales: {
+              x: { beginAtZero: true, ticks: { precision: 0 } },
+              y: {
+                ticks: {
+                  callback(value) {
+                    return truncateLabel(this.getLabelForValue(value), 36);
+                  },
+                },
+              },
+            },
           },
         });
       };
 
+      const updateMultiFiltroCompareCharts = (multiCompare) => {
+        const items = Array.isArray(multiCompare?.items) ? multiCompare.items : [];
+        const show = Boolean(multiCompare?.active) && items.length > 1;
+        if (multiFiltroCompareWrap) {
+          multiFiltroCompareWrap.style.display = show ? "block" : "none";
+        }
+        if (multiFiltroComparePctWrap) {
+          multiFiltroComparePctWrap.style.display = show ? "block" : "none";
+        }
+        if (!show) {
+          if (multiFiltroCompareBarChart) {
+            multiFiltroCompareBarChart.data.labels = [];
+            multiFiltroCompareBarChart.data.datasets.forEach((dataset) => {
+              dataset.data = [];
+            });
+            multiFiltroCompareBarChart.update();
+          }
+          if (multiFiltroComparePctBarChart) {
+            multiFiltroComparePctBarChart.data.labels = [];
+            multiFiltroComparePctBarChart.data.datasets[0].data = [];
+            multiFiltroComparePctBarChart.update();
+          }
+          return;
+        }
+
+        const labels = items.map((item) => item.label || item.value || "—");
+        const emitidas = items.map((item) => Number(item.emitidas || 0));
+        const solventadas = items.map((item) => Number(item.solventadas || 0));
+        const pendientes = items.map((item) => Number(item.pendientes || 0));
+        const pendientesPct = items.map((item) => {
+          const total = Number(item.emitidas || 0);
+          return total > 0 ? (Number(item.pendientes || 0) * 100) / total : 0;
+        });
+        const filterLabel = multiCompare?.filter_label || "multifiltro";
+        if (multiFiltroCompareTitle) {
+          multiFiltroCompareTitle.textContent = `Comparativo por ${filterLabel}`;
+        }
+        if (multiFiltroComparePctTitle) {
+          multiFiltroComparePctTitle.textContent = `Comparativo por ${filterLabel} (% pendientes)`;
+        }
+
+        if (multiFiltroCompareBarCanvas) {
+          if (multiFiltroCompareBarChart) {
+            multiFiltroCompareBarChart.data.labels = labels;
+            multiFiltroCompareBarChart.data.datasets[0].data = emitidas;
+            multiFiltroCompareBarChart.data.datasets[1].data = solventadas;
+            multiFiltroCompareBarChart.data.datasets[2].data = pendientes;
+            multiFiltroCompareBarChart.update();
+          } else {
+            multiFiltroCompareBarChart = new Chart(multiFiltroCompareBarCanvas, {
+              type: "bar",
+              data: {
+                labels,
+                datasets: [
+                  { label: "Emitidas", data: emitidas, backgroundColor: "#2f5b45", borderRadius: 6 },
+                  { label: "Solventadas", data: solventadas, backgroundColor: "#4b7a55", borderRadius: 6 },
+                  { label: "Pendientes", data: pendientes, backgroundColor: "#b18934", borderRadius: 6 },
+                ],
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 320, easing: "easeOutQuart" },
+                plugins: { legend: { position: "bottom" } },
+                scales: {
+                  x: {
+                    ticks: {
+                      maxRotation: 0,
+                      minRotation: 0,
+                      callback(value) {
+                        return truncateLabel(this.getLabelForValue(value), 28);
+                      },
+                    },
+                  },
+                  y: { beginAtZero: true, ticks: { precision: 0 } },
+                },
+              },
+            });
+          }
+        }
+
+        if (multiFiltroComparePctBarCanvas) {
+          if (multiFiltroComparePctBarChart) {
+            multiFiltroComparePctBarChart.data.labels = labels;
+            multiFiltroComparePctBarChart.data.datasets[0].data = pendientesPct;
+            multiFiltroComparePctBarChart.update();
+          } else {
+            multiFiltroComparePctBarChart = new Chart(multiFiltroComparePctBarCanvas, {
+              type: "bar",
+              data: {
+                labels,
+                datasets: [
+                  { label: "% Pendientes", data: pendientesPct, backgroundColor: "#b18934", borderRadius: 6 },
+                ],
+              },
+              options: {
+                indexAxis: "y",
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 320, easing: "easeOutQuart" },
+                plugins: { legend: { display: false } },
+                scales: {
+                  x: {
+                    beginAtZero: true,
+                    max: 100,
+                    ticks: { callback: (value) => `${value}%` },
+                  },
+                  y: {
+                    ticks: {
+                      callback(value) {
+                        return truncateLabel(this.getLabelForValue(value), 36);
+                      },
+                    },
+                  },
+                },
+              },
+            });
+          }
+        }
+      };
+
+      const shouldEnableMultiFilter = (_values, forceSingle = false) => {
+        if (forceSingle) {
+          return false;
+        }
+        return true;
+      };
+
       const updateDynamicFilterOptions = (filtros) => {
         const safeFiltros = filtros || {};
-        const currentTipoAnexo = obsTipoAnexo ? obsTipoAnexo.value : "";
-        const currentEstado = obsEstado ? obsEstado.value : "";
-        const currentFuente = obsFuente ? obsFuente.value : "";
-        const currentRamo = obsRamo ? obsRamo.value : "";
-        const currentCedula = cedulaResultados ? cedulaResultados.value : "";
-        const currentConcepto = obsConceptoIrregularidad ? obsConceptoIrregularidad.value : "";
+        const currentTipoAnexo = getSelectedValues(obsTipoAnexo);
+        const currentEstado = getSelectedValues(obsEstado);
+        const currentFuente = getSelectedValues(obsFuente);
+        const currentRamo = getSelectedValues(obsRamo);
+        const currentCedula = getSelectedValues(cedulaResultados);
+        const currentConcepto = getSelectedValues(obsConceptoIrregularidad);
+        const currentAuditoria = getSelectedValues(mainTipoAuditoria);
+        const currentEnte = getSelectedValues(obsEnteInput);
         const currentSummaryTipo = summaryTipoAnexo ? summaryTipoAnexo.value : "";
         const tipos = safeFiltros.tipo_anexo || [];
         const estados = safeFiltros.estado || [];
@@ -1023,27 +1492,69 @@
         const auditorias = safeFiltros.tipo_auditoria || [];
         const entes = safeFiltros.entes || [];
 
-        fillSelectFromValues(obsTipoAnexo, tipos, "Todos", currentTipoAnexo);
-        fillSelectFromValues(obsEstado, estados, "Todos", currentEstado);
-        fillSelectFromValues(obsFuente, fuentes, "Todas", currentFuente);
-        fillSelectFromValues(obsRamo, ramos, "Todos", currentRamo);
-        fillSelectFromValues(cedulaResultados, cedulas, "Todos", currentCedula);
-        fillSelectFromValues(obsConceptoIrregularidad, conceptos, "Todos", currentConcepto);
-        fillSelectFromValues(mainTipoAuditoria, auditorias, "Todas", mainTipoAuditoria ? mainTipoAuditoria.value : "");
+        fillSelectFromValues(
+          obsTipoAnexo,
+          tipos,
+          "Todos",
+          currentTipoAnexo,
+          shouldEnableMultiFilter(tipos),
+        );
+        fillSelectFromValues(
+          obsEstado,
+          estados,
+          "Todos",
+          currentEstado,
+          shouldEnableMultiFilter(estados),
+        );
+        fillSelectFromValues(
+          obsFuente,
+          fuentes,
+          "Todas",
+          currentFuente,
+          shouldEnableMultiFilter(fuentes),
+        );
+        fillSelectFromValues(
+          obsRamo,
+          ramos,
+          "Todos",
+          currentRamo,
+          shouldEnableMultiFilter(ramos),
+        );
+        fillSelectFromValues(
+          cedulaResultados,
+          cedulas,
+          "Todos",
+          currentCedula,
+          shouldEnableMultiFilter(cedulas),
+        );
+        fillSelectFromValues(
+          obsConceptoIrregularidad,
+          conceptos,
+          "Todos",
+          currentConcepto,
+          shouldEnableMultiFilter(conceptos),
+        );
+        fillSelectFromValues(
+          mainTipoAuditoria,
+          auditorias,
+          "Todas",
+          currentAuditoria,
+          shouldEnableMultiFilter(auditorias),
+        );
 
-        const currentEnte = obsEnteInput ? obsEnteInput.value : "";
-        resetSelect(obsEnteInput, "Todos los entes");
+        const enteMulti = shouldEnableMultiFilter(entes);
+        obsEnteInput.multiple = enteMulti;
+        obsEnteInput.size = 1;
+        resetSelect(obsEnteInput, "Todos los entes", enteMulti);
         entes.forEach((ente) => {
           const option = document.createElement("option");
           option.value = ente.ente_id || "";
           option.textContent = `${ente.ente_numero || "—"} · ${ente.ente_nombre || "—"}`;
           obsEnteInput.appendChild(option);
         });
-        if (currentEnte && obsEnteInput.querySelector(`option[value="${currentEnte}"]`)) {
-          obsEnteInput.value = currentEnte;
-        } else {
-          obsEnteInput.value = "";
-        }
+        setSelectedValues(obsEnteInput, currentEnte);
+        syncSelectMode(obsEnteInput, enteMulti, "Todos los entes");
+        syncMultiSelectDisabledState(obsEnteInput);
 
         if (summaryTipoAnexo) {
           summaryTipoAnexo.innerHTML = "<option value=\"\">Todos</option>";
@@ -1060,7 +1571,9 @@
           }
         }
 
+        const appliedPendingFilters = applyPendingUrlFilters();
         syncConceptoIrregularidadVisibility();
+        return appliedPendingFilters;
       };
 
       const renderPdpSummary = () => {
@@ -1072,6 +1585,7 @@
           const topPendientes = Array.isArray(dashboardSummary.top_pendientes)
             ? dashboardSummary.top_pendientes
             : [];
+          const multiCompare = dashboardSummary.multi_compare || { active: false, items: [] };
           const selectedTipo = summaryTipoAnexo ? summaryTipoAnexo.value : "";
           const isPdpSelected = selectedTipo === "PDP";
           syncPdpWidgetsVisibility();
@@ -1085,6 +1599,7 @@
             updateSummaryMontoDonut(0, 0);
             updateTopPendientesBar(topPendientes);
             updateSummaryStaticStacked([]);
+            updateMultiFiltroCompareCharts(multiCompare);
             return;
           }
 
@@ -1102,6 +1617,7 @@
             updateSummaryMontoDonut(0, 0);
             updateTopPendientesBar(topPendientes);
             updateSummaryStaticStacked([]);
+            updateMultiFiltroCompareCharts(multiCompare);
             return;
           }
 
@@ -1168,6 +1684,7 @@
           updateSummaryCountDonut(totals.solventadas, totals.pendientes);
           updateSummaryStatusBar(filas);
           updateTopPendientesBar(topPendientes);
+          updateMultiFiltroCompareCharts(multiCompare);
         } catch (error) {
           console.error("Error al renderizar resumen general:", error);
           pdpSummaryBody.innerHTML = "<tr><td colspan=\"4\" class=\"muted\">Sin resultados.</td></tr>";
@@ -1179,6 +1696,7 @@
           updateSummaryMontoDonut(0, 0);
           updateTopPendientesBar([]);
           updateSummaryStaticStacked([]);
+          updateMultiFiltroCompareCharts(null);
         }
       };
 
@@ -1187,13 +1705,13 @@
           return;
         }
         try {
-          const selectedEnte = (obsEnteInput ? obsEnteInput.value : "").trim();
+          const selectedEnte = getSelectedValues(obsEnteInput);
           const resumen = dashboardSummary.pendientes_por_periodo || { requires_ente: true, groups: [] };
           const groups = Array.isArray(resumen.groups) ? resumen.groups : [];
-          if (resumen.requires_ente && !selectedEnte) {
+          if (resumen.requires_ente && !selectedEnte.length) {
             pendientesPeriodoBody.innerHTML = `
               <tr>
-                <td colspan="17" class="muted">Selecciona un ente para ver el resumen de pendientes por periodo.</td>
+                <td colspan="17" class="muted">Selecciona al menos un ente para ver el resumen de pendientes por periodo.</td>
               </tr>
             `;
             return;
@@ -1383,23 +1901,23 @@
       };
 
       const getSelectedTipoAnexo = () => {
-        return obsTipoAnexo ? obsTipoAnexo.value : "";
+        return getSelectedValues(obsTipoAnexo);
       };
 
-      const setTipoAnexoValue = (value) => {
-        const normalized = value || "";
-        if (obsTipoAnexo) {
-          obsTipoAnexo.value = normalized;
-        }
+      const setTipoAnexoValue = (values) => {
+        const normalized = Array.isArray(values)
+          ? values
+          : (values ? [values] : []);
+        setSelectedValues(obsTipoAnexo, normalized);
       };
 
       const loadObservaciones = async () => {
         const ejercicio = mainEjercicio.value;
-        const enteId = obsEnteInput.value.trim();
+        const enteIds = getSelectedValues(obsEnteInput);
         const selectedTipoAnexo = getSelectedTipoAnexo();
         const startTs = performance.now();
         if (summaryTipoAnexo) {
-          summaryTipoAnexo.value = selectedTipoAnexo || "";
+          summaryTipoAnexo.value = selectedTipoAnexo.length === 1 ? selectedTipoAnexo[0] : "";
         }
         if (!ejercicio) {
           obsTableBody.innerHTML = "<tr><td colspan=\"10\" class=\"muted\">Selecciona un ejercicio.</td></tr>";
@@ -1407,7 +1925,7 @@
           if (obsResponsablesBody) {
             obsResponsablesBody.innerHTML = `
               <tr>
-                <td colspan="6" class="muted">Selecciona una cédula de resultados para consultar responsables.</td>
+                <td colspan="7" class="muted">Selecciona una cédula de resultados para consultar responsables.</td>
               </tr>
             `;
           }
@@ -1432,30 +1950,16 @@
         }
         setLoadingState(true);
         const params = new URLSearchParams({ ejercicio });
-        if (enteId) {
-          params.set("ente_id", enteId);
+        appendValuesToParams(params, "ente_id", enteIds);
+        appendValuesToParams(params, "tipo_anexo", selectedTipoAnexo);
+        appendValuesToParams(params, "tipo_auditoria", getSelectedValues(mainTipoAuditoria));
+        appendValuesToParams(params, "estado", getSelectedValues(obsEstado));
+        appendValuesToParams(params, "fuente_financiamiento", getSelectedValues(obsFuente));
+        appendValuesToParams(params, "ramo_33", getSelectedValues(obsRamo));
+        if (!selectedTipoAnexo.length || selectedTipoAnexo.includes("PDP")) {
+          appendValuesToParams(params, "concepto_irregularidad", getSelectedValues(obsConceptoIrregularidad));
         }
-        if (selectedTipoAnexo) {
-          params.set("tipo_anexo", selectedTipoAnexo);
-        }
-        if (mainTipoAuditoria && mainTipoAuditoria.value) {
-          params.set("tipo_auditoria", mainTipoAuditoria.value);
-        }
-        if (obsEstado.value) {
-          params.set("estado", obsEstado.value);
-        }
-        if (obsFuente.value) {
-          params.set("fuente_financiamiento", obsFuente.value);
-        }
-        if (obsRamo.value) {
-          params.set("ramo_33", obsRamo.value);
-        }
-        if (selectedTipoAnexo === "PDP" && obsConceptoIrregularidad.value) {
-          params.set("concepto_irregularidad", obsConceptoIrregularidad.value);
-        }
-        if (cedulaResultados.value) {
-          params.set("periodo_cedula", cedulaResultados.value);
-        }
+        appendValuesToParams(params, "periodo_cedula", getSelectedValues(cedulaResultados));
         params.set("page", String(obsPage || 1));
         params.set("page_size", String(obsPageSize));
         try {
@@ -1464,7 +1968,12 @@
             "observaciones"
           );
           dashboardSummary = data.summary || createEmptyDashboardSummary();
-          updateDynamicFilterOptions(data.filtros || {});
+          const appliedPendingFilters = updateDynamicFilterOptions(data.filtros || {});
+          if (appliedPendingFilters) {
+            obsPage = 1;
+            await loadObservaciones();
+            return;
+          }
           renderObservaciones(
             data.rows || [],
             data.total_rows || 0,
@@ -1491,7 +2000,7 @@
           if (obsResponsablesBody) {
             obsResponsablesBody.innerHTML = `
               <tr>
-                <td colspan="6" class="muted">No se pudo cargar responsables del periodo.</td>
+                <td colspan="7" class="muted">No se pudo cargar responsables del periodo.</td>
               </tr>
             `;
           }
@@ -1501,7 +2010,8 @@
       };
 
       const loadResponsablesPeriodo = async () => {
-        if (!cedulaResultados.value) {
+        const cedulas = getSelectedValues(cedulaResultados);
+        if (!cedulas.length) {
           renderResponsablesPeriodo([]);
           return;
         }
@@ -1511,14 +2021,9 @@
           return;
         }
         const params = new URLSearchParams({ ejercicio });
-        const enteId = obsEnteInput.value.trim();
-        if (enteId) {
-          params.set("ente_id", enteId);
-        }
-        if (mainTipoAuditoria && mainTipoAuditoria.value) {
-          params.set("tipo_auditoria", mainTipoAuditoria.value);
-        }
-        params.set("periodo_cedula", cedulaResultados.value);
+        appendValuesToParams(params, "ente_id", getSelectedValues(obsEnteInput));
+        appendValuesToParams(params, "tipo_auditoria", getSelectedValues(mainTipoAuditoria));
+        appendValuesToParams(params, "periodo_cedula", cedulas);
         try {
           const data = await fetchJsonWithAbort(
             `/observaciones-responsables?${params.toString()}`,
@@ -1533,7 +2038,7 @@
           if (obsResponsablesBody) {
             obsResponsablesBody.innerHTML = `
               <tr>
-                <td colspan="6" class="muted">No se pudo cargar responsables del periodo.</td>
+                <td colspan="7" class="muted">No se pudo cargar responsables del periodo.</td>
               </tr>
             `;
           }
@@ -1546,32 +2051,17 @@
           return;
         }
         const params = new URLSearchParams({ ejercicio });
-        const enteId = obsEnteInput.value.trim();
-        if (enteId) {
-          params.set("ente_id", enteId);
-        }
+        appendValuesToParams(params, "ente_id", getSelectedValues(obsEnteInput));
         const selectedTipoAnexo = getSelectedTipoAnexo();
-        if (selectedTipoAnexo) {
-          params.set("tipo_anexo", selectedTipoAnexo);
+        appendValuesToParams(params, "tipo_anexo", selectedTipoAnexo);
+        appendValuesToParams(params, "tipo_auditoria", getSelectedValues(mainTipoAuditoria));
+        appendValuesToParams(params, "estado", getSelectedValues(obsEstado));
+        appendValuesToParams(params, "fuente_financiamiento", getSelectedValues(obsFuente));
+        appendValuesToParams(params, "ramo_33", getSelectedValues(obsRamo));
+        if (!selectedTipoAnexo.length || selectedTipoAnexo.includes("PDP")) {
+          appendValuesToParams(params, "concepto_irregularidad", getSelectedValues(obsConceptoIrregularidad));
         }
-        if (mainTipoAuditoria && mainTipoAuditoria.value) {
-          params.set("tipo_auditoria", mainTipoAuditoria.value);
-        }
-        if (obsEstado.value) {
-          params.set("estado", obsEstado.value);
-        }
-        if (obsFuente.value) {
-          params.set("fuente_financiamiento", obsFuente.value);
-        }
-        if (obsRamo.value) {
-          params.set("ramo_33", obsRamo.value);
-        }
-        if (selectedTipoAnexo === "PDP" && obsConceptoIrregularidad.value) {
-          params.set("concepto_irregularidad", obsConceptoIrregularidad.value);
-        }
-        if (cedulaResultados.value) {
-          params.set("periodo_cedula", cedulaResultados.value);
-        }
+        appendValuesToParams(params, "periodo_cedula", getSelectedValues(cedulaResultados));
         window.location.href = `/observaciones-exportar?${params.toString()}`;
       };
 
@@ -1651,19 +2141,18 @@
       setTab("observaciones");
 
       const handleEjercicioChange = async () => {
+        closeAllMultiSelectPanels();
         setObsEnabled(Boolean(mainEjercicio.value));
         setCatalogoEnabled(Boolean(mainEjercicio.value));
-        obsEnteInput.value = "";
-        if (mainTipoAuditoria) {
-          mainTipoAuditoria.value = "";
-        }
-        setTipoAnexoValue("");
-        obsEstado.value = "";
-        obsFuente.value = "";
-        obsRamo.value = "";
-        obsConceptoIrregularidad.value = "";
-        cedulaResultados.value = "";
-        if (obsQuickSearch) {
+        clearSelectSelection(obsEnteInput);
+        clearSelectSelection(mainTipoAuditoria);
+        setTipoAnexoValue([]);
+        clearSelectSelection(obsEstado);
+        clearSelectSelection(obsFuente);
+        clearSelectSelection(obsRamo);
+        clearSelectSelection(obsConceptoIrregularidad);
+        clearSelectSelection(cedulaResultados);
+        if (obsQuickSearch && !pendingUrlFilters) {
           obsQuickSearch.value = "";
         }
         syncConceptoIrregularidadVisibility();
@@ -1674,9 +2163,7 @@
 
       mainEjercicio.addEventListener("change", handleEjercicioChange);
       obsEnteInput.addEventListener("change", async () => {
-        if (mainTipoAuditoria) {
-          mainTipoAuditoria.value = "";
-        }
+        clearSelectSelection(mainTipoAuditoria);
         obsPage = 1;
         await loadObservaciones();
       });
@@ -1686,15 +2173,14 @@
           await loadObservaciones();
         });
       }
-      const handleTipoAnexoChange = async (value) => {
-        setTipoAnexoValue(value);
+      const handleTipoAnexoChange = async () => {
         syncConceptoIrregularidadVisibility();
         obsPage = 1;
         await loadObservaciones();
       };
 
       obsTipoAnexo.addEventListener("change", async () => {
-        await handleTipoAnexoChange(obsTipoAnexo.value);
+        await handleTipoAnexoChange();
       });
       obsEnteInput.addEventListener("keyup", (event) => {
         if (event.key === "Enter") {
@@ -1715,19 +2201,18 @@
       });
 
       const clearObservacionesFilters = async () => {
-        obsEnteInput.value = "";
-        if (mainTipoAuditoria) {
-          mainTipoAuditoria.value = "";
-        }
-        setTipoAnexoValue("");
+        closeAllMultiSelectPanels();
+        clearSelectSelection(obsEnteInput);
+        clearSelectSelection(mainTipoAuditoria);
+        setTipoAnexoValue([]);
         if (summaryTipoAnexo) {
           summaryTipoAnexo.value = "";
         }
-        obsEstado.value = "";
-        obsFuente.value = "";
-        obsRamo.value = "";
-        obsConceptoIrregularidad.value = "";
-        cedulaResultados.value = "";
+        clearSelectSelection(obsEstado);
+        clearSelectSelection(obsFuente);
+        clearSelectSelection(obsRamo);
+        clearSelectSelection(obsConceptoIrregularidad);
+        clearSelectSelection(cedulaResultados);
         if (obsQuickSearch) {
           obsQuickSearch.value = "";
         }
@@ -1774,14 +2259,14 @@
           const key = button.dataset.filterKey || "";
           if (key === "ejercicio") return;
           const resetters = {
-            ente_id: () => { obsEnteInput.value = ""; },
-            tipo_auditoria: () => { if (mainTipoAuditoria) mainTipoAuditoria.value = ""; },
-            tipo_anexo: () => setTipoAnexoValue(""),
-            estado: () => { obsEstado.value = ""; },
-            fuente_financiamiento: () => { obsFuente.value = ""; },
-            ramo_33: () => { obsRamo.value = ""; },
-            concepto_irregularidad: () => { obsConceptoIrregularidad.value = ""; },
-            periodo_cedula: () => { cedulaResultados.value = ""; },
+            ente_id: () => { clearSelectSelection(obsEnteInput); },
+            tipo_auditoria: () => { clearSelectSelection(mainTipoAuditoria); },
+            tipo_anexo: () => setTipoAnexoValue([]),
+            estado: () => { clearSelectSelection(obsEstado); },
+            fuente_financiamiento: () => { clearSelectSelection(obsFuente); },
+            ramo_33: () => { clearSelectSelection(obsRamo); },
+            concepto_irregularidad: () => { clearSelectSelection(obsConceptoIrregularidad); },
+            periodo_cedula: () => { clearSelectSelection(cedulaResultados); },
             quick_search: () => { if (obsQuickSearch) obsQuickSearch.value = ""; },
           };
           if (resetters[key]) {
@@ -1809,7 +2294,25 @@
         if (!ejercicios.length) {
           return;
         }
-        applyFiltersFromUrl();
+        const filtersFromUrl = readFiltersFromUrl();
+        const hasPendingFilters = [
+          filtersFromUrl.ente_id,
+          filtersFromUrl.tipo_auditoria,
+          filtersFromUrl.tipo_anexo,
+          filtersFromUrl.estado,
+          filtersFromUrl.fuente_financiamiento,
+          filtersFromUrl.ramo_33,
+          filtersFromUrl.concepto_irregularidad,
+          filtersFromUrl.periodo_cedula,
+        ].some((values) => Array.isArray(values) && values.length > 0)
+          || Boolean(filtersFromUrl.quick_search);
+        pendingUrlFilters = hasPendingFilters ? filtersFromUrl : null;
+        if (filtersFromUrl.ejercicio) {
+          mainEjercicio.value = filtersFromUrl.ejercicio;
+        }
+        if (obsQuickSearch && filtersFromUrl.quick_search) {
+          obsQuickSearch.value = filtersFromUrl.quick_search;
+        }
         const preferred =
           ejercicios.find((item) => Number(item.total_observaciones || 0) > 0)
           || ejercicios[0];
