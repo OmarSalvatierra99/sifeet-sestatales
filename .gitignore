@@ -54,6 +54,7 @@ dist/
 # Backup files
 *~
 *.bak
+backups/
 
 # Temporary files
 /tmp/

@@ -13,6 +13,14 @@ from __future__ import annotations
 
 import argparse
 import sqlite3
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from backup_utils import create_db_backup
 
 
 TARGET_YEARS = ("2023", "2024")
@@ -176,6 +184,9 @@ def main() -> int:
 
     if not args.apply or not inserts:
         return 0
+
+    backup_path = create_db_backup(args.db, label="before_historial_missing_types_fill")
+    print(f"Respaldo creado: {backup_path}")
 
     conn.execute("BEGIN")
     conn.executemany(

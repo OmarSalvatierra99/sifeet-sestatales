@@ -13,6 +13,14 @@ from __future__ import annotations
 
 import argparse
 import sqlite3
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from backup_utils import create_db_backup
 
 
 def normalize_ente_id(value: str) -> str:
@@ -153,6 +161,10 @@ def main() -> int:
 
     if not args.apply:
         return 0
+
+    backup_path = create_db_backup(args.db, label="before_historial_tipo_fix")
+    print("")
+    print(f"Respaldo creado: {backup_path}")
 
     ids = [str(item["id"]) for item in rows]
     id_placeholders = ", ".join(["?"] * len(ids))

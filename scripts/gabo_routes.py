@@ -57,8 +57,6 @@ def register_gabo_routes(app, deps):
     globals().update(deps)
     TITULAR_EJERCICIO_FIJO = "2025"
     OBSERVACION_ESTADOS_VALIDOS = {"Emitido", "Pendiente", "Solventado"}
-    SOLVENTACION_TIPOS = ("PDP", "PEFCF", "PRAS", "R", "SA")
-
     def _tipo_auditoria_options(tipo_auditoria: str) -> list[str]:
         clean = " ".join((tipo_auditoria or "").split())
         if clean == "Financiera y Obra Pública":
@@ -254,54 +252,6 @@ def register_gabo_routes(app, deps):
                 raise ValueError("Los montos PDP no pueden ser negativos.")
             parsed.append(amount)
         return parsed
-
-    def parse_manual_solventacion_details(raw_value: str) -> dict[str, dict]:
-        base = {
-            tipo: {
-                "cantidad": 0,
-                "emitido": 0.0,
-                "solventado": 0.0,
-                "pendiente": 0.0,
-            }
-            for tipo in SOLVENTACION_TIPOS
-        }
-        raw = (raw_value or "").strip()
-        if not raw:
-            return base
-        try:
-            payload = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise ValueError("El detalle de solventación tiene un formato inválido.") from exc
-        if not isinstance(payload, dict):
-            raise ValueError("El detalle de solventación tiene un formato inválido.")
-
-        for raw_tipo, raw_data in payload.items():
-            tipo = str(raw_tipo or "").strip().upper()
-            if tipo == "PEFCT":
-                tipo = "PEFCF"
-            if tipo not in base:
-                continue
-            data = raw_data if isinstance(raw_data, dict) else {}
-            cantidad = parse_non_negative_int(str(data.get("cantidad", "0")), f"Cantidad {tipo}")
-            if cantidad <= 0:
-                continue
-            emitido_raw = str(data.get("emitido", "")).strip()
-            solventado_raw = str(data.get("solventado", "")).strip()
-            if not emitido_raw:
-                raise ValueError(f"Debes capturar monto emitido para {tipo}.")
-            if not solventado_raw:
-                raise ValueError(f"Debes capturar monto solventado para {tipo}.")
-            emitido = parse_non_negative_float(emitido_raw, f"Monto emitido {tipo}")
-            solventado = parse_non_negative_float(solventado_raw, f"Monto solventado {tipo}")
-            if solventado > emitido:
-                raise ValueError(f"En {tipo}, monto solventado no puede ser mayor a emitido.")
-            base[tipo] = {
-                "cantidad": cantidad,
-                "emitido": emitido,
-                "solventado": solventado,
-                "pendiente": emitido - solventado,
-            }
-        return base
 
     def materialize_observaciones_from_manual(
         db,
@@ -1200,6 +1150,8 @@ def register_gabo_routes(app, deps):
     def carga():
         user = get_current_user()
         db = get_db()
+        requested_loader_view = (request.args.get("vista") or "").strip().lower()
+        initial_loader_mode = "titulares" if requested_loader_view == "titulares" else "manual"
         manual_ejercicios_rows = db.execute(
             """
             SELECT DISTINCT TRIM(COALESCE(ejercicio, '')) AS ejercicio
@@ -1264,7 +1216,6 @@ def register_gabo_routes(app, deps):
             "manual_monto_pdp_pendiente": "0",
             "manual_montos_pdp": "",
             "manual_pdp_detalle_json": "",
-            "manual_solventacion_detalle_json": "",
             "titular_ejercicio": TITULAR_EJERCICIO_FIJO,
             "titular_ente_id": "",
             "titular_tipo_auditoria": "Financiera",
@@ -1275,6 +1226,7 @@ def register_gabo_routes(app, deps):
             "titular_cedula_resultados": "",
         }
     
+        action = ""
         if request.method == "POST":
             action = (request.form.get("action") or "").strip()
             form_data.update(
@@ -1316,7 +1268,6 @@ def register_gabo_routes(app, deps):
                     "manual_monto_pdp_pendiente": (request.form.get("manual_monto_pdp_pendiente") or "").strip() or "0",
                     "manual_montos_pdp": (request.form.get("manual_montos_pdp") or "").strip(),
                     "manual_pdp_detalle_json": (request.form.get("manual_pdp_detalle_json") or "").strip(),
-                    "manual_solventacion_detalle_json": (request.form.get("manual_solventacion_detalle_json") or "").strip(),
                     "titular_ejercicio": TITULAR_EJERCICIO_FIJO,
                     "titular_ente_id": (request.form.get("titular_ente_id") or "").strip(),
                     "titular_tipo_auditoria": (request.form.get("titular_tipo_auditoria") or "").strip() or "Financiera",
@@ -1503,9 +1454,7 @@ def register_gabo_routes(app, deps):
                     fecha_notificacion = form_data["manual_fecha_notificacion"]
                     raw_montos_pdp = form_data["manual_montos_pdp"]
                     raw_pdp_detalle_json = form_data["manual_pdp_detalle_json"]
-                    raw_solventacion_detalle_json = form_data["manual_solventacion_detalle_json"]
                     fuentes_detalle_rows = parse_manual_fuentes_detalle(form_data["manual_fuentes_detalle_json"])
-                    is_solventacion = asunto == "Se emiten resultados de solventación del periodo"
                     manual_edit_id = None
                     if manual_id_raw:
                         try:
@@ -1529,72 +1478,8 @@ def register_gabo_routes(app, deps):
                         int(ejercicio)
                     except ValueError as exc:
                         raise ValueError("Ejercicio inválido.") from exc
-                    if is_solventacion:
-                        if not oficio_base:
-                            raise ValueError("Debes seleccionar el oficio de cédula a contestar.")
-                        period_rows = db.execute(
-                            f"""
-                            SELECT DISTINCT
-                                TRIM(COALESCE(periodo_cedula, '')) AS periodo
-                            FROM observaciones
-                            WHERE TRIM(COALESCE(ejercicio, '')) = ?
-                              AND {normalize_ente_id_sql('ente_id')} = ?
-                              AND LOWER(TRIM(COALESCE(oficio, ''))) = LOWER(TRIM(COALESCE(?, '')))
-                              AND TRIM(COALESCE(periodo_cedula, '')) != ''
-                            ORDER BY LOWER(TRIM(COALESCE(periodo_cedula, ''))) ASC
-                            LIMIT 1200
-                            """,
-                            (ejercicio, manual_ente_id, oficio_base),
-                        ).fetchall()
-                        period_options = [
-                            " ".join((row["periodo"] or "").split())
-                            for row in period_rows
-                            if " ".join((row["periodo"] or "").split())
-                        ]
-                        if not period_options:
-                            raise ValueError(
-                                "No se encontraron observaciones de Notificación de Cédula para el oficio base seleccionado."
-                            )
-                        if (
-                            not periodo
-                            or not any(
-                                periodo.lower() == option.lower()
-                                for option in period_options
-                            )
-                        ):
-                            periodo = period_options[0]
-                            form_data["manual_periodo"] = periodo
-
-                        scope_meta_row = db.execute(
-                            f"""
-                            SELECT
-                                TRIM(COALESCE(tipo_auditoria, '')) AS tipo_auditoria,
-                                TRIM(COALESCE(fuente_financiamiento, '')) AS fuente_nombre
-                            FROM observaciones
-                            WHERE TRIM(COALESCE(ejercicio, '')) = ?
-                              AND {normalize_ente_id_sql('ente_id')} = ?
-                              AND LOWER(TRIM(COALESCE(periodo_cedula, ''))) = LOWER(TRIM(COALESCE(?, '')))
-                              AND LOWER(TRIM(COALESCE(oficio, ''))) = LOWER(TRIM(COALESCE(?, '')))
-                            ORDER BY id ASC
-                            LIMIT 1
-                            """,
-                            (ejercicio, manual_ente_id, periodo, oficio_base),
-                        ).fetchone()
-                        if scope_meta_row:
-                            tipo_sugerido = (scope_meta_row["tipo_auditoria"] or "").strip()
-                            if tipo_sugerido in {"Financiera", "Obra Pública"}:
-                                tipo_auditoria = tipo_sugerido
-                                form_data["manual_tipo_auditoria"] = tipo_auditoria
-                            fuente_sugerida = " ".join((scope_meta_row["fuente_nombre"] or "").split())
-                            if fuente_sugerida:
-                                fuente_id_raw = f"__obs__:{fuente_sugerida}"
-                                form_data["manual_fuente_id"] = fuente_id_raw
-                        if not tipo_auditoria:
-                            tipo_auditoria = "Financiera"
-                            form_data["manual_tipo_auditoria"] = tipo_auditoria
-                    else:
-                        if not periodo:
-                            raise ValueError("Debes capturar el periodo.")
+                    if not periodo:
+                        raise ValueError("Debes capturar el periodo.")
 
                     if not tipo_auditoria:
                         raise ValueError("Debes seleccionar el tipo de auditoría.")
@@ -1606,10 +1491,6 @@ def register_gabo_routes(app, deps):
                         asunto == "Notificación de Cédula de Resultados"
                         and len(fuentes_detalle_rows) > 0
                     )
-                    if is_solventacion and not fuente_id_raw:
-                        raise ValueError(
-                            "No se encontró una fuente base en la cédula seleccionada."
-                        )
                     if usa_fuentes_detalle and manual_edit_id:
                         raise ValueError("La edición con múltiples fuentes no está soportada.")
                     if not usa_fuentes_detalle and not fuente_id_raw:
@@ -1806,52 +1687,7 @@ def register_gabo_routes(app, deps):
                             has_detail_amount = any((item.get("monto") is not None) for item in pdp_details)
                             if has_detail_amount:
                                 pdp_amounts = [(item.get("monto") or 0.0) for item in pdp_details]
-                    else:
-                        detalle_solventacion = parse_manual_solventacion_details(raw_solventacion_detalle_json)
-                        cantidad_sa = int(detalle_solventacion["SA"]["cantidad"])
-                        cantidad_pdp = int(detalle_solventacion["PDP"]["cantidad"])
-                        cantidad_pras = int(detalle_solventacion["PRAS"]["cantidad"])
-                        cantidad_pefcf = int(detalle_solventacion["PEFCF"]["cantidad"])
-                        cantidad_r = int(detalle_solventacion["R"]["cantidad"])
-                        monto_pdp_emitido = float(detalle_solventacion["PDP"]["emitido"])
-                        monto_pdp_solventado = float(detalle_solventacion["PDP"]["solventado"])
-                        monto_pdp_pendiente = float(detalle_solventacion["PDP"]["pendiente"])
-                        solventacion_totales_by_anexo = detalle_solventacion
-                        pdp_details = []
-                        pdp_amounts = [monto_pdp_emitido] + [0.0] * (cantidad_pdp - 1) if cantidad_pdp > 0 else []
-
                     tipos_auditoria = [tipo_auditoria]
-                    oficio_scope = oficio_base if is_solventacion else numero_oficio
-                    if is_solventacion:
-                        requested_counts = {
-                            "SA": cantidad_sa,
-                            "PDP": cantidad_pdp,
-                            "PRAS": cantidad_pras,
-                            "PEFCF": cantidad_pefcf,
-                            "R": cantidad_r,
-                        }
-                        total_scope, existing_counts = count_existing_observaciones_by_clave(
-                            db,
-                            ejercicio=ejercicio,
-                            ente_id=manual_ente_id,
-                            periodo=periodo,
-                            oficio=oficio_scope,
-                        )
-                        if total_scope <= 0:
-                            raise ValueError(
-                                "Resultados de Solventación bloqueado: primero debe existir la "
-                                "Notificación de Cédula de Resultados para la misma clave "
-                                "(ejercicio, ente, periodo y oficio base)."
-                            )
-                        for tipo_anexo, requested in requested_counts.items():
-                            if requested <= 0:
-                                continue
-                            available = int(existing_counts.get(tipo_anexo, 0))
-                            if requested > available:
-                                raise ValueError(
-                                    f"En solventación, cantidad {tipo_anexo} ({requested}) excede "
-                                    f"las observaciones cargadas en cédula ({available})."
-                                )
                     if manual_edit_id and len(tipos_auditoria) > 1:
                         raise ValueError(
                             "Para editar una captura existente, selecciona solo 'Financiero'."
@@ -2005,33 +1841,32 @@ def register_gabo_routes(app, deps):
                                         user["username"],
                                     ),
                                 )
-                                if not is_solventacion:
-                                    materialize_observaciones_from_manual(
-                                        db,
-                                        ejercicio=ejercicio,
-                                        ente_id=manual_ente_id,
-                                        ente_numero=(ente_row["ente_numero"] or "").strip(),
-                                        ente_nombre=(ente_row["ente_nombre"] or "").strip(),
-                                        tipo_auditoria=tipos_auditoria[0],
-                                        fuente_nombre=fuente_nombre,
-                                        ramo_33=ramo_33,
-                                        estado=estado,
-                                        periodo_cedula=periodo,
-                                        periodo_titular=periodo_titular,
-                                        oficio=numero_oficio,
-                                        fecha_notificacion=fecha_notificacion,
-                                        cantidad_sa=cantidad_sa,
-                                        cantidad_pdp=cantidad_pdp,
-                                        cantidad_pras=cantidad_pras,
-                                        cantidad_pefcf=cantidad_pefcf,
-                                        cantidad_r=cantidad_r,
-                                        monto_pdp_solventado=monto_pdp_solventado,
-                                        monto_pdp_pendiente=monto_pdp_pendiente,
-                                        pdp_amounts=pdp_amounts,
-                                        pdp_details=pdp_details,
-                                        solventacion_totales_by_anexo=solventacion_totales_by_anexo,
-                                        replace_scope=True,
-                                    )
+                                materialize_observaciones_from_manual(
+                                    db,
+                                    ejercicio=ejercicio,
+                                    ente_id=manual_ente_id,
+                                    ente_numero=(ente_row["ente_numero"] or "").strip(),
+                                    ente_nombre=(ente_row["ente_nombre"] or "").strip(),
+                                    tipo_auditoria=tipos_auditoria[0],
+                                    fuente_nombre=fuente_nombre,
+                                    ramo_33=ramo_33,
+                                    estado=estado,
+                                    periodo_cedula=periodo,
+                                    periodo_titular=periodo_titular,
+                                    oficio=numero_oficio,
+                                    fecha_notificacion=fecha_notificacion,
+                                    cantidad_sa=cantidad_sa,
+                                    cantidad_pdp=cantidad_pdp,
+                                    cantidad_pras=cantidad_pras,
+                                    cantidad_pefcf=cantidad_pefcf,
+                                    cantidad_r=cantidad_r,
+                                    monto_pdp_solventado=monto_pdp_solventado,
+                                    monto_pdp_pendiente=monto_pdp_pendiente,
+                                    pdp_amounts=pdp_amounts,
+                                    pdp_details=pdp_details,
+                                    solventacion_totales_by_anexo=solventacion_totales_by_anexo,
+                                    replace_scope=True,
+                                )
                                 db.commit()
                                 form_data["manual_id"] = str(manual_edit_id)
                                 manual_result = {
@@ -2117,33 +1952,32 @@ def register_gabo_routes(app, deps):
                                         ),
                                     )
                                     inserted_ids.append(int(cursor.lastrowid))
-                                    if not is_solventacion:
-                                        materialize_observaciones_from_manual(
-                                            db,
-                                            ejercicio=ejercicio,
-                                            ente_id=manual_ente_id,
-                                            ente_numero=(ente_row["ente_numero"] or "").strip(),
-                                            ente_nombre=(ente_row["ente_nombre"] or "").strip(),
-                                            tipo_auditoria=tipo_item,
-                                            fuente_nombre=fuente_nombre,
-                                            ramo_33=ramo_33,
-                                            estado=estado,
-                                            periodo_cedula=periodo,
-                                            periodo_titular=periodo_titular,
-                                            oficio=numero_oficio,
-                                            fecha_notificacion=fecha_notificacion,
-                                            cantidad_sa=cantidad_sa,
-                                            cantidad_pdp=cantidad_pdp,
-                                            cantidad_pras=cantidad_pras,
-                                            cantidad_pefcf=cantidad_pefcf,
-                                            cantidad_r=cantidad_r,
-                                            monto_pdp_solventado=monto_pdp_solventado,
-                                            monto_pdp_pendiente=monto_pdp_pendiente,
-                                            pdp_amounts=pdp_amounts_tipo_item,
-                                            pdp_details=pdp_details_tipo_item,
-                                            solventacion_totales_by_anexo=solventacion_totales_by_anexo,
-                                            replace_scope=False,
-                                        )
+                                    materialize_observaciones_from_manual(
+                                        db,
+                                        ejercicio=ejercicio,
+                                        ente_id=manual_ente_id,
+                                        ente_numero=(ente_row["ente_numero"] or "").strip(),
+                                        ente_nombre=(ente_row["ente_nombre"] or "").strip(),
+                                        tipo_auditoria=tipo_item,
+                                        fuente_nombre=fuente_nombre,
+                                        ramo_33=ramo_33,
+                                        estado=estado,
+                                        periodo_cedula=periodo,
+                                        periodo_titular=periodo_titular,
+                                        oficio=numero_oficio,
+                                        fecha_notificacion=fecha_notificacion,
+                                        cantidad_sa=cantidad_sa,
+                                        cantidad_pdp=cantidad_pdp,
+                                        cantidad_pras=cantidad_pras,
+                                        cantidad_pefcf=cantidad_pefcf,
+                                        cantidad_r=cantidad_r,
+                                        monto_pdp_solventado=monto_pdp_solventado,
+                                        monto_pdp_pendiente=monto_pdp_pendiente,
+                                        pdp_amounts=pdp_amounts_tipo_item,
+                                        pdp_details=pdp_details_tipo_item,
+                                        solventacion_totales_by_anexo=solventacion_totales_by_anexo,
+                                        replace_scope=False,
+                                    )
                                 db.commit()
                                 if existing_rows:
                                     existentes = ", ".join(sorted(tipos_existentes))
@@ -2421,6 +2255,11 @@ def register_gabo_routes(app, deps):
                         "stdout": "",
                         "stderr": str(exc),
                     }
+
+        if action == "titular_save" or titular_result is not None:
+            initial_loader_mode = "titulares"
+        elif action in {"manual_save", "manual_check"} or manual_result is not None:
+            initial_loader_mode = "manual"
     
         titular_entes_rows = db.execute(
             """
@@ -2474,6 +2313,7 @@ def register_gabo_routes(app, deps):
             result=script_result,
             manual_result=manual_result,
             titular_result=titular_result,
+            initial_loader_mode=initial_loader_mode,
             form_data=form_data,
             fuentes=fuentes,
             manual_fuentes=manual_fuentes,
@@ -2483,7 +2323,6 @@ def register_gabo_routes(app, deps):
             manual_entes=[dict(row) for row in manual_entes_rows],
             asuntos=[
                 "Notificación de Cédula de Resultados",
-                "Se emiten resultados de solventación del periodo",
             ],
             tipos_responsable=["Titular", "Administrativo", "Ambos"],
         )

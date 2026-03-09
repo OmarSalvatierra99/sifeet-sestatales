@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
 </head>
-<body class="loader-page" data-loader-mode="{% if titular_result %}titulares{% elif form_data.manual_asunto == 'Se emiten resultados de solventación del periodo' %}solventacion{% else %}manual{% endif %}">
+<body class="loader-page" data-loader-mode="{{ initial_loader_mode }}">
   <header class="site-header">
     <div class="header-inner">
       <img src="{{ url_for('static', filename='img/ofs_logo.png') }}" alt="Logo institucional" class="ofs-logo">
@@ -30,42 +30,106 @@
   </header>
 
   <main class="page-content loader-content">
+    {% set principal_tipo = form_data.manual_tipo_auditoria or form_data.titular_tipo_auditoria %}
     <section class="panel loader-mode-panel">
-      <div class="form-grid loader-context-grid" style="margin-bottom:0.85rem;">
-        <div class="field">
-          <label for="principal_ejercicio">Ejercicio (principal)</label>
-          <select id="principal_ejercicio">
-            {% for ejercicio in manual_ejercicios %}
-              <option value="{{ ejercicio }}" {% if form_data.manual_ejercicio == ejercicio %}selected{% endif %}>{{ ejercicio }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="field">
-          <label for="principal_ente_id">Ente (principal)</label>
-          <select id="principal_ente_id" data-selected="{{ form_data.manual_ente_id }}">
-            <option value="">Selecciona un ente</option>
-            {% for ente in manual_entes %}
-              <option value="{{ ente.ente_id }}" {% if form_data.manual_ente_id == ente.ente_id %}selected{% endif %}>
-                {{ ente.ente_numero }} - {{ ente.ente_nombre }}
-              </option>
-            {% endfor %}
-          </select>
-          <p class="helper">Este filtro alimenta Notificación de Cédula, Solventación y Titulares.</p>
-        </div>
+      <div class="panel-header">
+        <h2>Contexto de registro</h2>
+        <p>Usa el mismo contexto base de observaciones-admin, pero enfocado en alta de registros. El estado inicial queda en Emitido y los anexos se capturan por cantidades.</p>
       </div>
-      <div class="loader-mode-toggle" role="tablist" aria-label="Seleccionar módulo de captura">
-        <button type="button" class="loader-mode-btn" data-loader-mode-target="manual" aria-pressed="false">
-          Notificación de Cédula de Resultados
-        </button>
-        <button type="button" class="loader-mode-btn" data-loader-mode-target="solventacion" aria-pressed="false">
-          Resultados de Solventación
-        </button>
-        <button type="button" class="loader-mode-btn" data-loader-mode-target="titulares" aria-pressed="false">
-          Carga de titulares
-        </button>
+      <div class="record-form filters-form loader-principal-form">
+        <div class="form-grid">
+          <div class="field">
+            <label for="principal_ejercicio">Ejercicio</label>
+            <select id="principal_ejercicio">
+              {% for ejercicio in manual_ejercicios %}
+                <option value="{{ ejercicio }}" {% if form_data.manual_ejercicio == ejercicio %}selected{% endif %}>{{ ejercicio }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="principal_ente_id">Ente</label>
+            <select id="principal_ente_id" data-selected="{{ form_data.manual_ente_id }}">
+              <option value="">Selecciona un ente</option>
+              {% for ente in manual_entes %}
+                <option value="{{ ente.ente_id }}" {% if form_data.manual_ente_id == ente.ente_id %}selected{% endif %}>
+                  {{ ente.ente_numero }} - {{ ente.ente_nombre }}
+                </option>
+              {% endfor %}
+            </select>
+            <p class="helper">Este contexto alimenta Notificación de Cédula y Titulares.</p>
+          </div>
+          <div class="field">
+            <label for="principal_tipo_auditoria">Tipo de auditoría</label>
+            <select id="principal_tipo_auditoria" required>
+              <option value="" {% if not principal_tipo %}selected{% endif %}>Selecciona tipo de auditoría</option>
+              <option value="Financiera" {% if principal_tipo == "Financiera" %}selected{% endif %}>Financiera</option>
+              <option value="Obra Pública" {% if principal_tipo == "Obra Pública" %}selected{% endif %}>Obra Pública</option>
+            </select>
+            <p class="helper">Este tipo se comparte con Notificación de Cédula y Titulares.</p>
+          </div>
+          <div class="field">
+            <label for="principal_fuente_id">Fuente de financiamiento</label>
+            <select id="principal_fuente_id" data-selected="{{ form_data.manual_fuente_id }}">
+              <option value="">{% if manual_fuentes %}Selecciona una fuente{% else %}Selecciona un ente primero{% endif %}</option>
+              {% for fuente in manual_fuentes %}
+                <option value="{{ fuente.id }}" {% if form_data.manual_fuente_id == (fuente.id|string) %}selected{% endif %}>
+                  {{ fuente.nombre }}
+                </option>
+              {% endfor %}
+              <option value="__new__" {% if form_data.manual_fuente_id == "__new__" %}selected{% endif %}>+ Agregar nueva fuente...</option>
+            </select>
+            <p class="helper">Se sincroniza con la fuente activa de la cédula.</p>
+          </div>
+          <div id="principal_fuente_nueva_wrap" class="field" style="{% if form_data.manual_fuente_id != '__new__' %}display:none;{% endif %}">
+            <label for="principal_fuente_nueva">Fuente nueva</label>
+            <input id="principal_fuente_nueva" type="text" value="{{ form_data.manual_fuente_nueva }}" placeholder="Nombre de la fuente nueva">
+          </div>
+          <div class="field">
+            <label for="principal_periodo">Periodo</label>
+            <input id="principal_periodo" type="text" value="{{ form_data.manual_periodo }}" placeholder="Ej. 01 de enero al 31 de diciembre">
+            <p class="helper">Ej. 01 de enero al 31 de diciembre</p>
+          </div>
+          <div class="field">
+            <label for="principal_numero_oficio">Oficio</label>
+            <input id="principal_numero_oficio" type="text" value="{{ form_data.manual_numero_oficio }}" placeholder="Número de oficio">
+          </div>
+          <div class="field">
+            <label for="principal_fecha_notificacion">Fecha de notificación</label>
+            <div class="loader-date-inline">
+              <input id="principal_fecha_notificacion" type="date" value="{{ form_data.manual_fecha_notificacion }}">
+            </div>
+            <p class="helper">dd/mm/aaaa</p>
+          </div>
+          <div class="field">
+            <label for="principal_fuentes_objetivo">Fuentes a capturar</label>
+            <input id="principal_fuentes_objetivo" type="number" min="1" step="1" value="{{ form_data.manual_fuentes_objetivo or '1' }}">
+            <p class="helper">Planea cuántas fuentes llevará este oficio.</p>
+          </div>
+          <div class="field">
+            <label>Estado del registro</label>
+            <div class="loader-context-static">Emitido</div>
+            <p class="helper">Se genera así al guardar la notificación.</p>
+          </div>
+          <div class="field">
+            <label>Tipos de anexo</label>
+            <div class="loader-context-static">SA, PDP, PRAS, PEFCF, R</div>
+            <p class="helper">Las cantidades se capturan en el paso 2.</p>
+          </div>
+        </div>
+        <p class="helper loader-principal-sync-note">Puedes ajustar este contexto desde arriba o desde la captura sincronizada; la pantalla sigue siendo de registro, no de edición.</p>
+      </div>
+      <div class="loader-preview-metrics loader-principal-metrics">
+        <span class="loader-obs-chip">Estado inicial: <strong>Emitido</strong></span>
+        <span class="loader-obs-chip">Fuentes guardadas: <strong id="manualFuentesTotal">0</strong></span>
+        <span class="loader-obs-chip">Observaciones programadas: <strong id="manualTotalObservaciones">0</strong></span>
+      </div>
+      <div class="loader-current-mode-card">
+        <span class="loader-current-mode-label">Carga activa</span>
+        <strong>{{ "Carga de titulares" if initial_loader_mode == "titulares" else "Notificación de Cédula de Resultados" }}</strong>
+        <p>{% if initial_loader_mode == "titulares" %}Usa el botón flotante para regresar a la captura de cédula.{% else %}Usa el botón flotante para abrir la carga de titulares como vista independiente.{% endif %}</p>
       </div>
       <div class="status status-info" id="principal_scope_info" hidden>
-        Primero selecciona ejercicio y ente.
+        Primero selecciona ejercicio, ente y tipo de auditoría.
       </div>
       <div class="status status-info" id="wizardToast" hidden></div>
     </section>
@@ -83,82 +147,31 @@
         <input type="hidden" name="manual_id" value="{{ form_data.manual_id }}">
         <input id="manual_ejercicio" name="manual_ejercicio" type="hidden" value="{{ form_data.manual_ejercicio }}">
         <input id="manual_ente_id" name="manual_ente_id" type="hidden" value="{{ form_data.manual_ente_id }}">
-        <div class="loader-stepper" id="manualStepper">
-          <button type="button" class="loader-step-chip is-active" id="manualStep1Chip" data-step-target="1">1. Oficio de Notificación de Cédula de Resultados</button>
-          <button type="button" class="loader-step-chip" id="manualStep2Chip" data-step-target="2">2. Observaciones Emitidas</button>
-        </div>
-
         <section class="loader-step-section is-active" data-step="1">
           <div class="loader-step-head">
-            <h3 id="manualStep1Title">Oficio de Notificación de Cédula de Resultados</h3>
-            <p>Captura los datos generales del oficio antes de entrar al detalle de observaciones.</p>
+            <h3 id="manualStep2Title">Notificación de Cédula de Resultados</h3>
+            <p id="manualStep2Help">1. Oficio de Notificación de Cédula de Resultados / 2. Observaciones Emitidas</p>
           </div>
-          <div class="form-grid loader-context-grid">
-            <input id="manual_asunto" name="manual_asunto" type="hidden" value="{{ form_data.manual_asunto }}">
-            <input id="manual_oficio_base" name="manual_oficio_base" type="hidden" value="{{ form_data.manual_oficio_base }}">
-            <div class="field" id="manual_oficio_base_field" style="display:none;">
-              <label for="manual_oficio_base_selector">Oficio de cédula a contestar</label>
-              <select
-                id="manual_oficio_base_selector"
-                data-selected-oficio="{{ form_data.manual_oficio_base }}"
-                data-selected-periodo="{{ form_data.manual_periodo }}"
-              >
-                <option value="">Selecciona un oficio de cédula</option>
-              </select>
-              <p class="helper" id="manual_oficio_base_hint">Selecciona un oficio base para heredar el periodo.</p>
-            </div>
-            <div class="field" id="manual_numero_oficio_field">
-              <label for="manual_numero_oficio" id="manual_numero_oficio_label">Número de oficio</label>
-              <input
-                id="manual_numero_oficio"
-                name="manual_numero_oficio"
-                type="text"
-                value="{{ form_data.manual_numero_oficio }}"
-                list="manual_oficio_options"
-                required
-              >
-              <datalist id="manual_oficio_options"></datalist>
-            </div>
-            <div class="field" id="manual_periodo_field">
-              <label for="manual_periodo">Periodo</label>
-              <input
-                id="manual_periodo"
-                name="manual_periodo"
-                type="text"
-                value="{{ form_data.manual_periodo }}"
-                list="manual_periodo_options"
-                placeholder="Ej. 01 de enero al 31 de diciembre"
-                required
-              >
-              <datalist id="manual_periodo_options"></datalist>
-              <p class="helper" id="manual_periodo_helper">Ej. 01 de enero al 31 de diciembre</p>
-            </div>
-            <div class="field">
-              <label for="manual_fecha_notificacion">Fecha de notificación</label>
-              <div class="loader-date-inline">
-                <input id="manual_fecha_notificacion" name="manual_fecha_notificacion" type="date" value="{{ form_data.manual_fecha_notificacion }}" required>
-              </div>
-              <p class="helper">dd/mm/aaaa</p>
-            </div>
-          </div>
-          <div class="loader-step-nav">
-            <button type="button" class="btn-secondary" data-step-nav="next">Continuar</button>
-          </div>
-          <p class="helper" id="manual_context_status"></p>
-        </section>
+          <input id="manual_asunto" name="manual_asunto" type="hidden" value="{{ form_data.manual_asunto }}">
+          <input id="manual_oficio_base" name="manual_oficio_base" type="hidden" value="{{ form_data.manual_oficio_base }}">
+          <datalist id="manual_oficio_options"></datalist>
+          <datalist id="manual_periodo_options"></datalist>
 
-        <section class="loader-step-section" data-step="2">
-          <div class="loader-step-head">
-            <h3 id="manualStep2Title">Observaciones Emitidas</h3>
-            <p id="manualStep2Help">Selecciona tipo de auditoría, luego fuente de financiamiento (historial y opción nueva), y captura cantidades por anexo. En PDP captura concepto y monto por observación.</p>
-          </div>
-          <input type="hidden" id="manual_fuentes_detalle_json" name="manual_fuentes_detalle_json" value="{{ form_data.manual_fuentes_detalle_json|e }}">
-          <div
-            class="loader-manual-subsection loader-fuente-subsection"
-            id="manual-cantidades-cedula"
-            style="{% if form_data.manual_asunto != 'Notificación de Cédula de Resultados' %}display:none;{% endif %}"
-          >
-            <div class="form-grid loader-fuente-grid">
+          <div class="loader-manual-subsection">
+            <h3 id="manualStep1Title">1. Oficio de Notificación de Cédula de Resultados</h3>
+            <p class="helper">Ajusta oficio, periodo, fecha y tipo aquí o desde el contexto de registro superior. Todo se mantiene sincronizado.</p>
+            <div class="form-grid loader-context-grid">
+              <div class="field" id="manual_oficio_base_field" style="display:none;">
+                <label for="manual_oficio_base_selector">Oficio de cédula a contestar</label>
+                <select
+                  id="manual_oficio_base_selector"
+                  data-selected-oficio="{{ form_data.manual_oficio_base }}"
+                  data-selected-periodo="{{ form_data.manual_periodo }}"
+                >
+                <option value="">Selecciona un oficio de cédula</option>
+                </select>
+                <p class="helper" id="manual_oficio_base_hint">Selecciona un oficio base para heredar el periodo.</p>
+              </div>
               <div class="field">
                 <label for="manual_tipo_auditoria">Tipo de auditoría</label>
                 <select id="manual_tipo_auditoria" name="manual_tipo_auditoria" required>
@@ -166,7 +179,65 @@
                   <option value="Financiera" {% if form_data.manual_tipo_auditoria == "Financiera" %}selected{% endif %}>Financiera</option>
                   <option value="Obra Pública" {% if form_data.manual_tipo_auditoria == "Obra Pública" %}selected{% endif %}>Obra Pública</option>
                 </select>
+                <p class="helper">Se sincroniza con el contexto superior y con titulares.</p>
               </div>
+              <div class="field" id="manual_numero_oficio_field">
+                <label for="manual_numero_oficio" id="manual_numero_oficio_label">Número de oficio</label>
+                <input
+                  id="manual_numero_oficio"
+                  name="manual_numero_oficio"
+                  type="text"
+                  value="{{ form_data.manual_numero_oficio }}"
+                  list="manual_oficio_options"
+                  placeholder="Número de oficio"
+                  required
+                >
+              </div>
+              <div class="field" id="manual_periodo_field">
+                <label for="manual_periodo">Periodo</label>
+                <input
+                  id="manual_periodo"
+                  name="manual_periodo"
+                  type="text"
+                  value="{{ form_data.manual_periodo }}"
+                  list="manual_periodo_options"
+                  placeholder="Ej. 01 de enero al 31 de diciembre"
+                  required
+                >
+                <p class="helper" id="manual_periodo_helper">Ej. 01 de enero al 31 de diciembre</p>
+              </div>
+              <div class="field">
+                <label for="manual_fecha_notificacion">Fecha de notificación</label>
+                <div class="loader-date-inline">
+                  <input id="manual_fecha_notificacion" name="manual_fecha_notificacion" type="date" value="{{ form_data.manual_fecha_notificacion }}" required>
+                </div>
+                <p class="helper">dd/mm/aaaa</p>
+              </div>
+              <div class="loader-context-review loader-context-review-compact">
+                <p>Resumen listo para registro. Si necesitas cambiar algún dato del oficio, tipo o fuente, ajústalo en el contexto superior o en esta captura sincronizada.</p>
+                <div class="loader-preview-metrics">
+                  <span class="loader-obs-chip">Ejercicio: <strong id="manualContextSummaryEjercicio">-</strong></span>
+                  <span class="loader-obs-chip">Ente: <strong id="manualContextSummaryEnte">-</strong></span>
+                  <span class="loader-obs-chip">Tipo: <strong id="manualContextSummaryTipo">-</strong></span>
+                  <span class="loader-obs-chip">Fuente activa: <strong id="manualContextSummaryFuente">-</strong></span>
+                  <span class="loader-obs-chip">Oficio: <strong id="manualContextSummaryOficio">-</strong></span>
+                  <span class="loader-obs-chip">Periodo: <strong id="manualContextSummaryPeriodo">-</strong></span>
+                  <span class="loader-obs-chip">Fecha: <strong id="manualContextSummaryFecha">-</strong></span>
+                  <span class="loader-obs-chip">Fuentes objetivo: <strong id="manualContextSummaryFuentes">-</strong></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <input type="hidden" id="manual_fuentes_detalle_json" name="manual_fuentes_detalle_json" value="{{ form_data.manual_fuentes_detalle_json|e }}">
+          <div
+            class="loader-manual-subsection loader-fuente-subsection"
+            id="manual-cantidades-cedula"
+            style="{% if form_data.manual_asunto != 'Notificación de Cédula de Resultados' %}display:none;{% endif %}"
+          >
+            <h3>2. Observaciones Emitidas</h3>
+            <p class="helper">Registra cada fuente del oficio y captura las cantidades por tipo de anexo.</p>
+            <div class="form-grid loader-fuente-grid">
               <div class="field">
                 <label for="manual_fuentes_objetivo">Fuentes a capturar</label>
                 <input
@@ -262,18 +333,7 @@
               <div id="manual_pdp_breakdown" class="loader-fuentes-list"></div>
             </div>
           </div>
-          <input type="hidden" id="manual_solventacion_detalle_json" name="manual_solventacion_detalle_json" value="{{ form_data.manual_solventacion_detalle_json|e }}">
           <input type="hidden" id="manual_pdp_detalle_json" name="manual_pdp_detalle_json" value="{{ form_data.manual_pdp_detalle_json|e }}">
-          <div
-            class="loader-manual-subsection"
-            id="manual-observaciones-cargadas"
-            style="{% if form_data.manual_asunto != 'Se emiten resultados de solventación del periodo' %}display:none;{% endif %}"
-          >
-            <p class="helper" id="manual_observaciones_info">Selecciona ejercicio, ente y oficio base para consultar observaciones.</p>
-            <div id="manualObservacionesBody" class="loader-obs-groups" aria-live="polite">
-              <p class="muted">Sin observaciones para mostrar.</p>
-            </div>
-          </div>
           <div class="loader-step-nav">
             <button class="btn-primary" type="submit" name="action" value="manual_save" id="manualSaveBtn">Guardar y concluir</button>
           </div>
@@ -296,15 +356,13 @@
       <form class="record-form loader-manual-form" method="POST" autocomplete="off" id="titularCaptureForm">
         <input id="titular_ejercicio" name="titular_ejercicio" type="hidden" value="{{ form_data.titular_ejercicio }}">
         <input id="titular_ente_id" name="titular_ente_id" type="hidden" value="{{ form_data.titular_ente_id }}">
-        <p class="helper">Ejercicio y ente se toman del filtro principal.</p>
-        <div class="form-grid">
-          <div class="field">
-            <label for="titular_tipo_auditoria">Tipo de auditoría</label>
-            <select id="titular_tipo_auditoria" name="titular_tipo_auditoria" required>
-              {% for option in ["Financiera", "Obra Pública"] %}
-                <option value="{{ option }}" {% if form_data.titular_tipo_auditoria == option %}selected{% endif %}>{{ option }}</option>
-              {% endfor %}
-            </select>
+        <input id="titular_tipo_auditoria" name="titular_tipo_auditoria" type="hidden" value="{{ form_data.titular_tipo_auditoria }}">
+        <div class="loader-context-review loader-context-review-compact">
+          <p>Contexto activo para titulares:</p>
+          <div class="loader-preview-metrics">
+            <span class="loader-obs-chip">Ejercicio: <strong id="titularContextSummaryEjercicio">-</strong></span>
+            <span class="loader-obs-chip">Ente: <strong id="titularContextSummaryEnte">-</strong></span>
+            <span class="loader-obs-chip">Tipo: <strong id="titularContextSummaryTipo">-</strong></span>
           </div>
         </div>
         <div class="loader-titulares-sections">
@@ -377,6 +435,25 @@
     © Órgano de Fiscalización Superior del Estado de Tlaxcala · SIFEET Estatales
   </footer>
   <a
+    class="floating-clear-btn loader-titulares-btn"
+    href="{% if initial_loader_mode == 'titulares' %}{{ url_for('carga') }}{% else %}{{ url_for('carga', vista='titulares') }}{% endif %}"
+    aria-label="{% if initial_loader_mode == 'titulares' %}Regresar a notificación de cédula{% else %}Abrir carga de titulares{% endif %}"
+  >
+    <span class="floating-clear-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        {% if initial_loader_mode == 'titulares' %}
+          <path d="M14.5 5L7.5 12L14.5 19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M8 12H20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        {% else %}
+          <path d="M12 4V20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          <path d="M4 12H20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          <path d="M7.5 7.5H16.5V16.5H7.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        {% endif %}
+      </svg>
+    </span>
+    <span>{% if initial_loader_mode == 'titulares' %}Volver a cédula{% else %}Cargar titulares{% endif %}</span>
+  </a>
+  <a
     class="floating-clear-btn loader-obs-admin-btn"
     href="{{ url_for('carga_observaciones_admin') }}"
     target="_blank"
@@ -394,7 +471,7 @@
   <script>
     const loaderModeButtons = Array.from(document.querySelectorAll("[data-loader-mode-target]"));
     const loaderModePanels = Array.from(document.querySelectorAll("[data-loader-mode-panel]"));
-    const validLoaderModes = new Set(["manual", "solventacion", "titulares"]);
+    const validLoaderModes = new Set(["manual", "titulares"]);
     const wizardToast = document.getElementById("wizardToast");
     const wizardRestoreDraftBtn = document.getElementById("wizardRestoreDraftBtn");
     const wizardClearDraftBtn = document.getElementById("wizardClearDraftBtn");
@@ -434,41 +511,24 @@
       const manualStep2Help = document.getElementById("manualStep2Help");
       const manualStep2ChipEl = document.getElementById("manualStep2Chip");
       const asuntoCedulaMode = "Notificación de Cédula de Resultados";
-      const asuntoSolventacionMode = "Se emiten resultados de solventación del periodo";
       if (manualAsuntoField && mode !== "titulares") {
-        const nextAsunto = mode === "solventacion" ? asuntoSolventacionMode : asuntoCedulaMode;
-        if (manualAsuntoField.value !== nextAsunto) {
-          manualAsuntoField.value = nextAsunto;
+        if (manualAsuntoField.value !== asuntoCedulaMode) {
+          manualAsuntoField.value = asuntoCedulaMode;
           manualAsuntoField.dispatchEvent(new Event("change", { bubbles: true }));
         }
       }
       if (manualPanelTitle && manualStep2Title && manualStep2Help && mode !== "titulares") {
-        if (mode === "solventacion") {
-          manualPanelTitle.textContent = "Oficios de Respuesta a Solventación";
-          if (manualStep1ChipEl) {
-            manualStep1ChipEl.textContent = "1. Oficio de Resultados de Solventación";
-          }
-          if (manualStep1TitleEl) {
-            manualStep1TitleEl.textContent = "Oficio de Resultados de Solventación";
-          }
-          manualStep2Title.textContent = "Observaciones Solventadas";
-          manualStep2Help.textContent = "Observaciones agrupadas por tipo de auditoría y fuente de financiamiento. En PDP puedes registrar solventación parcial por monto.";
-          if (manualStep2ChipEl) {
-            manualStep2ChipEl.textContent = "2. Observaciones Solventadas";
-          }
-        } else {
-          manualPanelTitle.textContent = "Notificación de Cédula de Resultados";
-          if (manualStep1ChipEl) {
-            manualStep1ChipEl.textContent = "1. Oficio de Notificación de Cédula de Resultados";
-          }
-          if (manualStep1TitleEl) {
-            manualStep1TitleEl.textContent = "Oficio de Notificación de Cédula de Resultados";
-          }
-          manualStep2Title.textContent = "Observaciones Emitidas";
-          manualStep2Help.textContent = "Selecciona tipo de auditoría, luego fuente de financiamiento (historial y opción nueva), y captura cantidades por anexo. En PDP captura concepto y monto por observación.";
-          if (manualStep2ChipEl) {
-            manualStep2ChipEl.textContent = "2. Observaciones Emitidas";
-          }
+        manualPanelTitle.textContent = "Notificación de Cédula de Resultados";
+        if (manualStep1ChipEl) {
+          manualStep1ChipEl.textContent = "1. Oficio de Notificación de Cédula de Resultados";
+        }
+        if (manualStep1TitleEl) {
+          manualStep1TitleEl.textContent = "1. Oficio de Notificación de Cédula de Resultados";
+        }
+        manualStep2Title.textContent = "Notificación de Cédula de Resultados";
+        manualStep2Help.textContent = "1. Oficio de Notificación de Cédula de Resultados / 2. Observaciones Emitidas";
+        if (manualStep2ChipEl) {
+          manualStep2ChipEl.textContent = "2. Observaciones Emitidas";
         }
       }
       loaderModeButtons.forEach((button) => {
@@ -478,7 +538,7 @@
       });
       loaderModePanels.forEach((panel) => {
         const panelMode = panel.dataset.loaderModePanel || "";
-        const isActive = panelMode === mode || (panelMode === "manual" && mode === "solventacion");
+        const isActive = panelMode === mode;
         panel.hidden = !isActive;
       });
     };
@@ -489,6 +549,14 @@
 
     const principalEjercicio = document.getElementById("principal_ejercicio");
     const principalEnte = document.getElementById("principal_ente_id");
+    const principalTipoAuditoria = document.getElementById("principal_tipo_auditoria");
+    const principalFuente = document.getElementById("principal_fuente_id");
+    const principalFuenteNuevaWrap = document.getElementById("principal_fuente_nueva_wrap");
+    const principalFuenteNuevaInput = document.getElementById("principal_fuente_nueva");
+    const principalPeriodo = document.getElementById("principal_periodo");
+    const principalNumeroOficio = document.getElementById("principal_numero_oficio");
+    const principalFechaNotificacion = document.getElementById("principal_fecha_notificacion");
+    const principalFuentesObjetivo = document.getElementById("principal_fuentes_objetivo");
     const principalScopeInfo = document.getElementById("principal_scope_info");
     const manualAsunto = document.getElementById("manual_asunto");
     const manualEjercicio = document.getElementById("manual_ejercicio");
@@ -566,7 +634,7 @@
       ? Array.from(manualSolventacionDetalleBlock.querySelectorAll("input[data-solv-field]"))
       : [];
     const asuntoCedula = "Notificación de Cédula de Resultados";
-    const asuntoSolventacion = "Se emiten resultados de solventación del periodo";
+    const asuntoSolventacion = "__disabled_solventacion__";
     const pdpFields = [manualPdpSelector, manualPdpConcepto, manualPdpMonto];
     let pdpDetalleIndex = 0;
     let pdpDetalleState = [];
@@ -580,7 +648,7 @@
     let fuentesDetalleState = [];
     const solventacionTipos = ["PDP", "PEFCF", "PRAS", "R", "SA"];
     const contextDraftKey = "sifeet_manual_context_draft";
-    let wizardStageProgress = { manual: false, solventacion: false, titulares: false };
+    let wizardStageProgress = { manual: false, titulares: false };
     let isRestoringDraft = false;
     const titularCaptureForm = document.getElementById("titularCaptureForm");
     const titularTipoAuditoria = document.getElementById("titular_tipo_auditoria");
@@ -588,6 +656,18 @@
     const titularNombre = document.getElementById("titular_nombre");
     const titularPeriodoAdministrativo = document.getElementById("titular_periodo_administrativo");
     const titularAdministrativo = document.getElementById("titular_administrativo");
+    const titularContextSummaryEjercicio = document.getElementById("titularContextSummaryEjercicio");
+    const titularContextSummaryEnte = document.getElementById("titularContextSummaryEnte");
+    const titularContextSummaryTipo = document.getElementById("titularContextSummaryTipo");
+    const manualContextSummaryEjercicio = document.getElementById("manualContextSummaryEjercicio");
+    const manualContextSummaryEnte = document.getElementById("manualContextSummaryEnte");
+    const manualContextSummaryTipo = document.getElementById("manualContextSummaryTipo");
+    const manualContextSummaryFuente = document.getElementById("manualContextSummaryFuente");
+    const manualContextSummaryOficio = document.getElementById("manualContextSummaryOficio");
+    const manualContextSummaryPeriodo = document.getElementById("manualContextSummaryPeriodo");
+    const manualContextSummaryFecha = document.getElementById("manualContextSummaryFecha");
+    const manualContextSummaryFuentes = document.getElementById("manualContextSummaryFuentes");
+    let isSyncingContextFields = false;
 
     const escapeHtml = (value) => (
       String(value || "")
@@ -667,6 +747,18 @@
       return "";
     };
 
+    const formatFechaForSummary = (rawValue) => {
+      const normalized = normalizeFechaIso(rawValue);
+      if (!normalized) {
+        return "-";
+      }
+      const [year, month, day] = normalized.split("-");
+      if (!year || !month || !day) {
+        return "-";
+      }
+      return `${day}/${month}/${year}`;
+    };
+
     const normalizeEstadoForUi = (value) => {
       const key = String(value || "").trim().toLowerCase();
       if (key === "e" || key === "emitido") return "Emitido";
@@ -698,19 +790,140 @@
     };
 
     const contextFields = [
+      principalTipoAuditoria,
       manualNumeroOficio,
       manualPeriodo,
       manualFechaNotificacion,
     ].filter(Boolean);
 
+    const optionExists = (field, value) => {
+      if (!field) {
+        return false;
+      }
+      const expected = String(value || "").trim();
+      if (!expected) {
+        return true;
+      }
+      return Array.from(field.options || []).some((option) => String(option.value || "").trim() === expected);
+    };
+
+    const setFieldValue = (field, value) => {
+      if (!field) {
+        return false;
+      }
+      const normalized = String(value ?? "");
+      if (field.value === normalized) {
+        return false;
+      }
+      field.value = normalized;
+      return true;
+    };
+
+    const setSelectValueOrPending = (field, value) => {
+      if (!field) {
+        return false;
+      }
+      const normalized = String(value || "").trim();
+      if (!normalized) {
+        delete field.dataset.pendingValue;
+        return setFieldValue(field, "");
+      }
+      if (optionExists(field, normalized)) {
+        delete field.dataset.pendingValue;
+        return setFieldValue(field, normalized);
+      }
+      field.dataset.pendingValue = normalized;
+      return false;
+    };
+
+    const togglePrincipalNuevaFuente = () => {
+      if (!principalFuente || !principalFuenteNuevaWrap || !principalFuenteNuevaInput) {
+        return;
+      }
+      const usingNewSource = (principalFuente.value || "").trim() === "__new__";
+      principalFuenteNuevaWrap.style.display = usingNewSource ? "" : "none";
+      principalFuenteNuevaInput.disabled = !usingNewSource;
+      if (!usingNewSource) {
+        principalFuenteNuevaInput.value = "";
+      }
+    };
+
+    const getSelectedOptionLabel = (field, emptyLabel = "-") => {
+      if (!field) {
+        return emptyLabel;
+      }
+      const selected = field.options && field.selectedIndex >= 0 ? field.options[field.selectedIndex] : null;
+      const label = selected ? String(selected.textContent || "").trim() : "";
+      return label || emptyLabel;
+    };
+
+    const resolvePrincipalFuenteNombre = () => {
+      if (!principalFuente) {
+        return "";
+      }
+      const value = String(principalFuente.value || "").trim();
+      if (!value) {
+        return "";
+      }
+      if (value === "__new__") {
+        return principalFuenteNuevaInput
+          ? String(principalFuenteNuevaInput.value || "").split(/\s+/).filter(Boolean).join(" ")
+          : "";
+      }
+      if (value.startsWith("__obs__:")) {
+        return value.replace("__obs__:", "").split(/\s+/).filter(Boolean).join(" ");
+      }
+      const selected = principalFuente.options[principalFuente.selectedIndex];
+      return selected ? String(selected.textContent || "").split(/\s+/).filter(Boolean).join(" ") : "";
+    };
+
+    const updateContextSummary = () => {
+      const enteLabel = getSelectedOptionLabel(principalEnte);
+      const fuenteLabel = resolvePrincipalFuenteNombre() || "-";
+      if (manualContextSummaryEjercicio) {
+        manualContextSummaryEjercicio.textContent = String(principalEjercicio ? principalEjercicio.value || "-" : "-");
+      }
+      if (manualContextSummaryEnte) {
+        manualContextSummaryEnte.textContent = enteLabel;
+      }
+      if (manualContextSummaryTipo) {
+        manualContextSummaryTipo.textContent = String(principalTipoAuditoria ? principalTipoAuditoria.value || "-" : "-");
+      }
+      if (titularContextSummaryEjercicio) {
+        titularContextSummaryEjercicio.textContent = String(principalEjercicio ? principalEjercicio.value || "-" : "-");
+      }
+      if (titularContextSummaryEnte) {
+        titularContextSummaryEnte.textContent = enteLabel;
+      }
+      if (titularContextSummaryTipo) {
+        titularContextSummaryTipo.textContent = String(principalTipoAuditoria ? principalTipoAuditoria.value || "-" : "-");
+      }
+      if (manualContextSummaryFuente) {
+        manualContextSummaryFuente.textContent = fuenteLabel;
+      }
+      if (manualContextSummaryOficio) {
+        manualContextSummaryOficio.textContent = String(principalNumeroOficio ? principalNumeroOficio.value || "-" : "-");
+      }
+      if (manualContextSummaryPeriodo) {
+        manualContextSummaryPeriodo.textContent = String(principalPeriodo ? principalPeriodo.value || "-" : "-");
+      }
+      if (manualContextSummaryFecha) {
+        manualContextSummaryFecha.textContent = formatFechaForSummary(principalFechaNotificacion ? principalFechaNotificacion.value : "");
+      }
+      if (manualContextSummaryFuentes) {
+        manualContextSummaryFuentes.textContent = String(principalFuentesObjetivo ? principalFuentesObjetivo.value || "-" : "-");
+      }
+    };
+
     const hasPrincipalScope = () => {
       const ejercicio = principalEjercicio ? String(principalEjercicio.value || "").trim() : "";
       const enteId = principalEnte ? String(principalEnte.value || "").trim() : "";
-      return !!(ejercicio && enteId);
+      const tipo = principalTipoAuditoria ? String(principalTipoAuditoria.value || "").trim() : "";
+      return !!(ejercicio && enteId && tipo);
     };
 
     const showPrincipalScopeMessage = () => {
-      showWizardToast("Primero selecciona ejercicio y ente.", "info");
+      showWizardToast("Primero selecciona ejercicio, ente y tipo de auditoría.", "info");
     };
 
     const validateContextStep = ({ showFeedback = true } = {}) => {
@@ -829,16 +1042,29 @@
     };
 
     const syncPrincipalFiltersToForms = ({ syncTitular = true } = {}) => {
+      if (isSyncingContextFields) {
+        return;
+      }
+      isSyncingContextFields = true;
       const ejercicio = principalEjercicio ? String(principalEjercicio.value || "").trim() : "";
       const enteId = principalEnte ? String(principalEnte.value || "").trim() : "";
-      if (manualEjercicio && manualEjercicio.value !== ejercicio) {
-        manualEjercicio.value = ejercicio;
+      const tipoAuditoria = principalTipoAuditoria ? String(principalTipoAuditoria.value || "").trim() : "";
+      const fuenteValue = principalFuente ? String(principalFuente.value || "").trim() : "";
+      const fuenteNueva = principalFuenteNuevaInput ? String(principalFuenteNuevaInput.value || "").trim() : "";
+      const numeroOficio = principalNumeroOficio ? String(principalNumeroOficio.value || "").trim() : "";
+      const periodo = principalPeriodo ? String(principalPeriodo.value || "").trim() : "";
+      const fechaNotificacion = principalFechaNotificacion
+        ? normalizeFechaIso(principalFechaNotificacion.value || "")
+        : "";
+      const fuentesObjetivo = principalFuentesObjetivo
+        ? (String(principalFuentesObjetivo.value || "").trim() || "1")
+        : "1";
+      if (manualEjercicio && setFieldValue(manualEjercicio, ejercicio)) {
         manualEjercicio.dispatchEvent(new Event("change", { bubbles: true }));
       } else if (manualEjercicio) {
         manualEjercicio.dispatchEvent(new Event("change", { bubbles: true }));
       }
-      if (manualEnte && manualEnte.value !== enteId) {
-        manualEnte.value = enteId;
+      if (manualEnte && setFieldValue(manualEnte, enteId)) {
         manualEnte.dispatchEvent(new Event("change", { bubbles: true }));
       } else if (manualEnte) {
         manualEnte.dispatchEvent(new Event("change", { bubbles: true }));
@@ -849,7 +1075,77 @@
       if (syncTitular && titularEnte) {
         titularEnte.value = enteId;
       }
+      if (manualTipoAuditoria && setFieldValue(manualTipoAuditoria, tipoAuditoria)) {
+        manualTipoAuditoria.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (syncTitular && titularTipoAuditoria && setFieldValue(titularTipoAuditoria, tipoAuditoria)) {
+        titularTipoAuditoria.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (manualNumeroOficio && setFieldValue(manualNumeroOficio, numeroOficio)) {
+        manualNumeroOficio.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      if (manualPeriodo && setFieldValue(manualPeriodo, periodo)) {
+        manualPeriodo.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      if (manualFechaNotificacion && setFieldValue(manualFechaNotificacion, fechaNotificacion)) {
+        manualFechaNotificacion.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (manualFuentesObjetivo && setFieldValue(manualFuentesObjetivo, fuentesObjetivo)) {
+        manualFuentesObjetivo.dispatchEvent(new Event("input", { bubbles: true }));
+      } else if (manualFuentesObjetivo) {
+        manualFuentesObjetivo.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      const appliedFuenteNueva = manualFuenteNuevaInput
+        ? setFieldValue(manualFuenteNuevaInput, fuenteValue === "__new__" ? fuenteNueva : "")
+        : false;
+      if (manualFuenteNuevaInput && fuenteValue === "__new__" && appliedFuenteNueva) {
+        manualFuenteNuevaInput.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      const appliedFuente = manualFuente ? setSelectValueOrPending(manualFuente, fuenteValue) : false;
+      if (manualFuente && (appliedFuente || !fuenteValue)) {
+        manualFuente.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      updateContextSummary();
+      isSyncingContextFields = false;
       updateWizardModeAvailability();
+    };
+
+    const syncManualContextToPrincipal = () => {
+      if (isSyncingContextFields) {
+        return;
+      }
+      isSyncingContextFields = true;
+      if (principalTipoAuditoria && manualTipoAuditoria) {
+        setFieldValue(principalTipoAuditoria, manualTipoAuditoria.value || "");
+      }
+      if (titularTipoAuditoria && manualTipoAuditoria) {
+        setFieldValue(titularTipoAuditoria, manualTipoAuditoria.value || "");
+      }
+      if (principalFuente && manualFuente) {
+        setSelectValueOrPending(principalFuente, manualFuente.value || "");
+      }
+      if (principalFuenteNuevaInput && manualFuenteNuevaInput) {
+        const manualFuenteValue = manualFuente ? String(manualFuente.value || "").trim() : "";
+        setFieldValue(
+          principalFuenteNuevaInput,
+          manualFuenteValue === "__new__" ? manualFuenteNuevaInput.value || "" : "",
+        );
+      }
+      if (principalFuentesObjetivo && manualFuentesObjetivo) {
+        setFieldValue(principalFuentesObjetivo, manualFuentesObjetivo.value || "1");
+      }
+      if (principalNumeroOficio && manualNumeroOficio) {
+        setFieldValue(principalNumeroOficio, manualNumeroOficio.value || "");
+      }
+      if (principalPeriodo && manualPeriodo) {
+        setFieldValue(principalPeriodo, manualPeriodo.value || "");
+      }
+      if (principalFechaNotificacion && manualFechaNotificacion) {
+        setFieldValue(principalFechaNotificacion, normalizeFechaIso(manualFechaNotificacion.value || ""));
+      }
+      togglePrincipalNuevaFuente();
+      updateContextSummary();
+      isSyncingContextFields = false;
     };
 
     const loadPrincipalEntes = async (selectedEnteId = "") => {
@@ -978,6 +1274,33 @@
       if (principalEnte) {
         principalEnte.dataset.selected = String(manualFormValues.manual_ente_id || "").trim();
       }
+      if (principalTipoAuditoria) {
+        principalTipoAuditoria.value = String(
+          manualFormValues.manual_tipo_auditoria
+          || titularFormValues.titular_tipo_auditoria
+          || ""
+        ).trim();
+      }
+      if (principalFuente) {
+        principalFuente.dataset.selected = String(manualFormValues.manual_fuente_id || "").trim();
+      }
+      if (principalFuenteNuevaInput) {
+        principalFuenteNuevaInput.value = String(manualFormValues.manual_fuente_nueva || "").trim();
+      }
+      if (principalNumeroOficio) {
+        principalNumeroOficio.value = String(manualFormValues.manual_numero_oficio || "").trim();
+      }
+      if (principalPeriodo) {
+        principalPeriodo.value = String(manualFormValues.manual_periodo || "").trim();
+      }
+      if (principalFechaNotificacion) {
+        principalFechaNotificacion.value = normalizeFechaIso(manualFormValues.manual_fecha_notificacion || "");
+      }
+      if (principalFuentesObjetivo) {
+        principalFuentesObjetivo.value = String(manualFormValues.manual_fuentes_objetivo || "1").trim() || "1";
+      }
+      togglePrincipalNuevaFuente();
+      updateContextSummary();
       if (principalEjercicio && principalEnte) {
         loadPrincipalEntes(principalEnte.dataset.selected || "");
       } else if (manualEjercicio) {
@@ -1000,8 +1323,10 @@
       setLoaderMode(draftMode);
       setManualStep(payload.manual_step || 1);
       setSelectValueWhenReady(manualFuente, manualFormValues.manual_fuente_id || "", 10);
+      setSelectValueWhenReady(principalFuente, manualFormValues.manual_fuente_id || "", 10);
       window.setTimeout(() => {
         isRestoringDraft = false;
+        updateContextSummary();
         updateWizardModeAvailability();
       }, 900);
       showWizardToast("Borrador restaurado correctamente.", "success");
@@ -1205,20 +1530,8 @@
           : "Fuente guardada.";
       }
       if (manualFuente && fuenteValue === "__new__" && fuenteNombre) {
-        const existsOption = Array.from(manualFuente.options || []).some((opt) => (
-          String(opt.textContent || "").trim().toLowerCase() === fuenteNombre.toLowerCase()
-        ));
-        if (!existsOption) {
-          const option = document.createElement("option");
-          option.value = `__obs__:${fuenteNombre}`;
-          option.textContent = fuenteNombre;
-          const newOption = Array.from(manualFuente.options || []).find((opt) => opt.value === "__new__");
-          if (newOption && newOption.parentNode) {
-            newOption.parentNode.insertBefore(option, newOption);
-          } else {
-            manualFuente.appendChild(option);
-          }
-        }
+        ensureCustomFuenteOption(manualFuente, fuenteNombre);
+        ensureCustomFuenteOption(principalFuente, fuenteNombre);
       }
       if (objetivoFuentes > 1 && faltantes > 0) {
         if (manualFuente) {
@@ -1304,20 +1617,8 @@
         }
         fuentesDetalleState.push(payload);
         if (manualFuente && fuenteValue === "__new__" && fuenteNombre) {
-          const existsOption = Array.from(manualFuente.options || []).some((opt) => (
-            String(opt.textContent || "").trim().toLowerCase() === fuenteNombre.toLowerCase()
-          ));
-          if (!existsOption) {
-            const option = document.createElement("option");
-            option.value = `__obs__:${fuenteNombre}`;
-            option.textContent = fuenteNombre;
-            const newOption = Array.from(manualFuente.options || []).find((opt) => opt.value === "__new__");
-            if (newOption && newOption.parentNode) {
-              newOption.parentNode.insertBefore(option, newOption);
-            } else {
-              manualFuente.appendChild(option);
-            }
-          }
+          ensureCustomFuenteOption(manualFuente, fuenteNombre);
+          ensureCustomFuenteOption(principalFuente, fuenteNombre);
         }
       }
       syncFuentesDetalleState();
@@ -2706,7 +3007,7 @@
         if (!hasSolventacionObservacionesBase()) {
           manualSaveBtn.disabled = true;
           manualSaveBtn.title = (
-            "Resultados de Solventación requiere observaciones previas de "
+            "La captura manual requiere observaciones previas de "
             + "Notificación de Cédula con la misma clave (incluye periodo y oficio base)."
           );
           return;
@@ -2776,7 +3077,7 @@
     const validateStage1 = ({ showFeedback = true, toastLevel = "success" } = {}) => {
       if (!validateContextStep({ showFeedback })) {
         if (showFeedback) {
-          showWizardToast("Etapa 1: completa los datos del oficio.", toastLevel);
+          showWizardToast("Completa el contexto del registro antes de guardar.", toastLevel);
         }
         return false;
       }
@@ -2786,7 +3087,7 @@
           if (manualFuentesDetalleFeedback) {
             manualFuentesDetalleFeedback.textContent = "Agrega al menos una fuente de financiamiento.";
           }
-          showWizardToast("Etapa 1: agrega al menos una fuente con observaciones emitidas.", toastLevel);
+          showWizardToast("Agrega al menos una fuente con observaciones emitidas.", toastLevel);
         }
         return false;
       }
@@ -2846,7 +3147,7 @@
               manualPdpMonto.reportValidity();
               manualPdpMonto.setCustomValidity("");
             }
-            showWizardToast("Etapa 1: el detalle PDP tiene campos vacíos o formato inválido.", toastLevel);
+            showWizardToast("Completa concepto y monto en todas las observaciones PDP.", toastLevel);
           }
           return false;
         }
@@ -2897,7 +3198,7 @@
         if (typeof field.checkValidity === "function" && !field.checkValidity()) {
           if (showFeedback && typeof field.reportValidity === "function") {
             field.reportValidity();
-            showWizardToast("Etapa 3: completa la información de titulares.", "success");
+            showWizardToast("Completa la información de titulares.", "success");
           }
           return false;
         }
@@ -2946,7 +3247,7 @@
         }
         loaderModeButtons.forEach((button) => {
           button.disabled = true;
-          button.title = "Primero selecciona ejercicio y ente.";
+          button.title = "Primero selecciona ejercicio, ente y tipo de auditoría.";
         });
         loaderModePanels.forEach((panel) => {
           panel.hidden = true;
@@ -2967,7 +3268,7 @@
         if (mode === "manual") {
           button.title = "Notificación de Cédula de Resultados";
         } else if (mode === "solventacion") {
-          button.title = "Resultados de Solventación";
+          button.title = "Notificación de Cédula de Resultados";
         } else {
           button.title = "Carga de titulares";
         }
@@ -3030,6 +3331,26 @@
       if (manualFuente) {
         manualFuente.disabled = !canShowFuentes;
       }
+      const usingManualNewSource = canShowFuentes && manualFuente && (manualFuente.value || "").trim() === "__new__";
+      if (manualFuenteNuevaWrap) {
+        manualFuenteNuevaWrap.style.display = usingManualNewSource ? "" : "none";
+      }
+      if (manualFuenteNuevaInput) {
+        manualFuenteNuevaInput.disabled = !usingManualNewSource;
+        if (!usingManualNewSource) {
+          manualFuenteNuevaInput.value = "";
+        }
+      }
+      if (!canShowFuentes && principalFuente) {
+        principalFuente.value = "";
+      }
+      if (principalFuente) {
+        principalFuente.disabled = !canShowFuentes;
+      }
+      if (!canShowFuentes && principalFuenteNuevaInput) {
+        principalFuenteNuevaInput.value = "";
+      }
+      togglePrincipalNuevaFuente();
       if (manualAddNewFuenteBtnInline) {
         manualAddNewFuenteBtnInline.disabled = !canShowFuentes;
       }
@@ -3045,6 +3366,7 @@
           manualFuenteTipoHint.textContent = `Fuentes disponibles para ${manualTipoAuditoria ? (manualTipoAuditoria.value || "el tipo seleccionado") : "el tipo seleccionado"} (incluye historial y opción nueva).`;
         }
       }
+      updateContextSummary();
       renderFuentesProgress();
       updateManualSaveState();
       updateWizardModeAvailability();
@@ -3212,7 +3534,7 @@
           showWizardToast(
             mode === "cedula"
               ? "Notificación de Cédula validada en modo borrador."
-              : "Resultados de Solventación validados en modo borrador.",
+              : "Notificación de Cédula validada en modo borrador.",
             "success",
           );
         }
@@ -3224,6 +3546,13 @@
         manualFechaNotificacion.value = normalizedInitialDate;
       }
     }
+    if (principalFechaNotificacion) {
+      const normalizedPrincipalDate = normalizeFechaIso(principalFechaNotificacion.value || "");
+      if (normalizedPrincipalDate) {
+        principalFechaNotificacion.value = normalizedPrincipalDate;
+      }
+    }
+    updateContextSummary();
     if (stepChips.length) {
       stepChips.forEach((chip) => {
         chip.addEventListener("click", () => {
@@ -3293,6 +3622,15 @@
     });
     setManualStep(1);
     updateWizardModeAvailability();
+
+    if (titularTipoAuditoria) {
+      titularTipoAuditoria.addEventListener("change", () => {
+        if (principalTipoAuditoria) {
+          principalTipoAuditoria.value = String(titularTipoAuditoria.value || "").trim();
+        }
+        syncPrincipalFiltersToForms({ syncTitular: false });
+      });
+    }
 
     if (loaderModeButtons.length) {
       loaderModeButtons.forEach((button) => {
@@ -3589,6 +3927,70 @@
         }
       };
 
+      const ensureCustomFuenteOption = (field, fuenteNombre) => {
+        if (!field) {
+          return;
+        }
+        const cleanName = String(fuenteNombre || "").split(/\s+/).filter(Boolean).join(" ");
+        if (!cleanName) {
+          return;
+        }
+        const optionValue = `__obs__:${cleanName}`;
+        const existingOption = Array.from(field.options || []).find((opt) => (
+          String(opt.value || "").trim() === optionValue
+        ));
+        if (existingOption) {
+          existingOption.textContent = cleanName;
+          return;
+        }
+        const option = document.createElement("option");
+        option.value = optionValue;
+        option.textContent = cleanName;
+        const newOption = Array.from(field.options || []).find((opt) => opt.value === NEW_SOURCE_VALUE);
+        if (newOption && newOption.parentNode) {
+          newOption.parentNode.insertBefore(option, newOption);
+        } else {
+          field.appendChild(option);
+        }
+      };
+
+      const buildFuenteSelectMarkup = (rows, emptyLabel) => (
+        `<option value="">${emptyLabel}</option>`
+        + rows.map((row) => `<option value="${row.id}">${row.nombre || ""}</option>`).join("")
+        + `<option value="${NEW_SOURCE_VALUE}">+ Agregar nueva fuente...</option>`
+      );
+
+      const applyFuenteSelectState = (field, rows, emptyLabel, selectedValue = "") => {
+        if (!field) {
+          return;
+        }
+        field.innerHTML = buildFuenteSelectMarkup(rows, emptyLabel);
+        const normalizedSelected = String(
+          selectedValue
+          || field.dataset.pendingValue
+          || field.dataset.selected
+          || ""
+        ).trim();
+        if (normalizedSelected.startsWith("__obs__:")) {
+          ensureCustomFuenteOption(field, normalizedSelected.replace("__obs__:", ""));
+        }
+        if (normalizedSelected && optionExists(field, normalizedSelected)) {
+          field.value = normalizedSelected;
+        } else {
+          field.value = "";
+        }
+        delete field.dataset.pendingValue;
+        delete field.dataset.selected;
+      };
+
+      const syncFuenteControlsState = (rows, emptyLabel, selectedValue = "") => {
+        applyFuenteSelectState(manualFuente, rows, emptyLabel, selectedValue);
+        applyFuenteSelectState(principalFuente, rows, emptyLabel, selectedValue);
+        toggleNuevaFuente();
+        togglePrincipalNuevaFuente();
+        updateContextSummary();
+      };
+
       const loadFuentesByEnte = async (selectedFuenteId = "") => {
         const requestId = ++fuentesFetchId;
         const ejercicio = (manualEjercicio.value || "").trim();
@@ -3600,16 +4002,18 @@
           manualEnte.value = enteId;
         }
         const tipoAuditoria = (manualTipoAuditoria ? (manualTipoAuditoria.value || "").trim() : "");
+        const desiredSelection = String(
+          selectedFuenteId
+          || (manualFuente ? manualFuente.dataset.pendingValue || manualFuente.dataset.selected || manualFuente.value : "")
+          || (principalFuente ? principalFuente.dataset.pendingValue || principalFuente.dataset.selected || principalFuente.value : "")
+          || ""
+        ).trim();
         if (!ejercicio || !enteId) {
-          manualFuente.innerHTML =
-            '<option value="">Selecciona un ente primero</option>' +
-            `<option value="${NEW_SOURCE_VALUE}">+ Agregar nueva fuente...</option>`;
-          manualFuente.value = "";
-          toggleNuevaFuente();
+          syncFuenteControlsState([], "Selecciona un ente primero");
           renderPdpDetalleMenu();
           return;
         }
-        manualFuente.innerHTML = '<option value="">Cargando fuentes...</option>';
+        syncFuenteControlsState([], "Cargando fuentes...");
         try {
           const params = new URLSearchParams({
             ejercicio,
@@ -3627,37 +4031,14 @@
           }
           const rows = await response.json();
           if (!Array.isArray(rows) || !rows.length) {
-            manualFuente.innerHTML =
-              '<option value="">Sin fuentes para este ente</option>' +
-              `<option value="${NEW_SOURCE_VALUE}">+ Agregar nueva fuente...</option>`;
-            manualFuente.value = "";
-            toggleNuevaFuente();
+            syncFuenteControlsState([], "Sin fuentes para este ente", desiredSelection);
             return;
           }
-          manualFuente.innerHTML =
-            '<option value="">Selecciona una fuente</option>' +
-            rows.map((row) => (
-              `<option value="${row.id}">${row.nombre || ""}</option>`
-            )).join("") +
-            `<option value="${NEW_SOURCE_VALUE}">+ Agregar nueva fuente...</option>`;
-          const normalizedSelected = (selectedFuenteId || "").trim();
-          if (
-            normalizedSelected &&
-            (rows.some((row) => String(row.id) === normalizedSelected) || normalizedSelected === NEW_SOURCE_VALUE)
-          ) {
-            manualFuente.value = normalizedSelected;
-          } else {
-            manualFuente.value = "";
-          }
-          toggleNuevaFuente();
+          syncFuenteControlsState(rows, "Selecciona una fuente", desiredSelection);
           loadCurrentFuenteDetalleToInputs({ resetIfMissing: false });
           renderPdpDetalleMenu();
         } catch (error) {
-          manualFuente.innerHTML =
-            '<option value="">No se pudieron cargar fuentes</option>' +
-            `<option value="${NEW_SOURCE_VALUE}">+ Agregar nueva fuente...</option>`;
-          manualFuente.value = "";
-          toggleNuevaFuente();
+          syncFuenteControlsState([], "No se pudieron cargar fuentes", desiredSelection);
           loadCurrentFuenteDetalleToInputs({ resetIfMissing: false });
           renderPdpDetalleMenu();
         }
@@ -3670,6 +4051,50 @@
         principalEnte.addEventListener("change", () => {
           syncPrincipalFiltersToForms({ syncTitular: true });
           updateWizardModeAvailability();
+        });
+      }
+      if (principalTipoAuditoria) {
+        principalTipoAuditoria.addEventListener("change", () => {
+          syncPrincipalFiltersToForms({ syncTitular: true });
+        });
+      }
+      if (principalFuente) {
+        principalFuente.addEventListener("change", () => {
+          syncPrincipalFiltersToForms({ syncTitular: false });
+        });
+      }
+      if (principalFuenteNuevaInput) {
+        principalFuenteNuevaInput.addEventListener("input", () => {
+          syncPrincipalFiltersToForms({ syncTitular: false });
+        });
+      }
+      if (principalNumeroOficio) {
+        principalNumeroOficio.addEventListener("input", () => {
+          syncPrincipalFiltersToForms({ syncTitular: false });
+        });
+      }
+      if (principalPeriodo) {
+        principalPeriodo.addEventListener("input", () => {
+          syncPrincipalFiltersToForms({ syncTitular: false });
+        });
+      }
+      if (principalFechaNotificacion) {
+        principalFechaNotificacion.addEventListener("change", () => {
+          const normalizedDate = normalizeFechaIso(principalFechaNotificacion.value || "");
+          if (normalizedDate) {
+            principalFechaNotificacion.value = normalizedDate;
+          }
+          syncPrincipalFiltersToForms({ syncTitular: false });
+        });
+      }
+      if (principalFuentesObjetivo) {
+        principalFuentesObjetivo.addEventListener("input", () => {
+          syncPrincipalFiltersToForms({ syncTitular: false });
+        });
+        principalFuentesObjetivo.addEventListener("blur", () => {
+          const parsed = Number.parseInt(String(principalFuentesObjetivo.value || "").trim(), 10);
+          principalFuentesObjetivo.value = Number.isFinite(parsed) && parsed > 0 ? String(parsed) : "1";
+          syncPrincipalFiltersToForms({ syncTitular: false });
         });
       }
 
@@ -3693,6 +4118,7 @@
           if (manualFuenteTipoHint) {
             manualFuenteTipoHint.textContent = `Fuentes disponibles para ${manualTipoAuditoria.value || "el tipo seleccionado"}.`;
           }
+          syncManualContextToPrincipal();
           toggleFuentesByTipo();
           loadFuentesByEnte("");
           fetchCedulaScopeOptions();
@@ -3701,15 +4127,36 @@
           }
         });
       }
+      if (manualNumeroOficio) {
+        manualNumeroOficio.addEventListener("input", () => {
+          syncManualContextToPrincipal();
+        });
+      }
+      if (manualPeriodo) {
+        manualPeriodo.addEventListener("input", () => {
+          syncManualContextToPrincipal();
+        });
+      }
+      if (manualFechaNotificacion) {
+        manualFechaNotificacion.addEventListener("change", () => {
+          const normalizedDate = normalizeFechaIso(manualFechaNotificacion.value || "");
+          if (normalizedDate) {
+            manualFechaNotificacion.value = normalizedDate;
+          }
+          syncManualContextToPrincipal();
+        });
+      }
       if (manualFuentesObjetivo) {
         manualFuentesObjetivo.addEventListener("input", () => {
           renderFuentesProgress();
+          syncManualContextToPrincipal();
           toggleFuentesByTipo();
         });
         manualFuentesObjetivo.addEventListener("blur", () => {
           const objetivo = readFuentesObjetivo({ fallback: 1 });
           manualFuentesObjetivo.value = String(objetivo);
           renderFuentesProgress();
+          syncManualContextToPrincipal();
           toggleFuentesByTipo();
         });
       }
@@ -3726,6 +4173,7 @@
             manualFuentesObjetivo.value = String(capturadas);
           }
           renderFuentesProgress();
+          syncManualContextToPrincipal();
           toggleFuentesByTipo();
           if (manualFuentesDetalleFeedback) {
             manualFuentesDetalleFeedback.textContent = "Captura de fuentes finalizada con las fuentes registradas.";
@@ -3734,6 +4182,7 @@
       }
       manualFuente.addEventListener("change", () => {
         toggleNuevaFuente();
+        syncManualContextToPrincipal();
         toggleCantidadesByFuente();
         loadCurrentFuenteDetalleToInputs();
         renderPdpDetalleMenu();
@@ -3744,6 +4193,7 @@
       });
       if (manualFuenteNuevaInput) {
         manualFuenteNuevaInput.addEventListener("input", () => {
+          syncManualContextToPrincipal();
           toggleCantidadesByFuente();
           upsertCurrentFuenteDetalle();
           renderPdpDetalleMenu();
@@ -3933,6 +4383,7 @@
 
       loadFuentesByEnte(manualFuente.value || "");
       toggleNuevaFuente();
+      syncManualContextToPrincipal();
       toggleObservacionesCargadas();
       renderPreviewTable();
     }

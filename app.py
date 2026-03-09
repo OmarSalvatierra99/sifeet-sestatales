@@ -44,7 +44,6 @@ LUIS_USERNAME = "luis"
 GABO_USERNAME = "gabo"
 ASUNTOS_MANUALES = {
     "Notificación de Cédula de Resultados",
-    "Se emiten resultados de solventación del periodo",
 }
 TIPOS_RESPONSABLE = {"Titular", "Administrativo", "Ambos"}
 

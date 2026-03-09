@@ -26,9 +26,16 @@ import difflib
 import json
 import re
 import sqlite3
+import sys
 import unicodedata
 from datetime import date
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from backup_utils import create_db_backup
 
 
 PERIODO_RE = re.compile(
@@ -415,6 +422,10 @@ def main() -> int:
         payloads = iter_payloads(raw)
         for payload in payloads:
             parsed_rows.extend(parse_rows(payload, args.ejercicio, args.tipo_auditoria, conn))
+
+    if parsed_rows and not args.dry_run:
+        backup_path = create_db_backup(args.db, label="before_historial_json_import")
+        print(f"Respaldo creado: {backup_path}")
 
     inserted = 0
     skipped = 0
