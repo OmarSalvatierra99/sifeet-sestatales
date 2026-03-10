@@ -435,8 +435,12 @@
     © Órgano de Fiscalización Superior del Estado de Tlaxcala · SIFEET Estatales
   </footer>
   <a
+    id="loaderOpenTitularesBtn"
     class="floating-clear-btn loader-titulares-btn"
-    href="{% if initial_loader_mode == 'titulares' %}{{ url_for('carga') }}{% else %}{{ url_for('carga', vista='titulares') }}{% endif %}"
+    href="{% if initial_loader_mode == 'titulares' %}{{ url_for('carga') }}{% else %}{{ url_for('carga_titulares') }}{% endif %}"
+    {% if initial_loader_mode != 'titulares' %}
+      data-base-href="{{ url_for('carga_titulares') }}"
+    {% endif %}
     aria-label="{% if initial_loader_mode == 'titulares' %}Regresar a notificación de cédula{% else %}Abrir carga de titulares{% endif %}"
   >
     <span class="floating-clear-icon" aria-hidden="true">
@@ -455,9 +459,7 @@
   </a>
   <a
     class="floating-clear-btn loader-obs-admin-btn"
-    href="{{ url_for('carga_observaciones_admin') }}"
-    target="_blank"
-    rel="noopener"
+    href="{{ url_for('carga_observaciones_admin', return_vista=initial_loader_mode) }}"
     aria-label="Editar o borrar observaciones"
   >
     <span class="floating-clear-icon" aria-hidden="true">
@@ -546,6 +548,7 @@
 
     const titularEjercicio = document.getElementById("titular_ejercicio");
     const titularEnte = document.getElementById("titular_ente_id");
+    const loaderOpenTitularesBtn = document.getElementById("loaderOpenTitularesBtn");
 
     const principalEjercicio = document.getElementById("principal_ejercicio");
     const principalEnte = document.getElementById("principal_ente_id");
@@ -877,6 +880,29 @@
       return selected ? String(selected.textContent || "").split(/\s+/).filter(Boolean).join(" ") : "";
     };
 
+    const updateTitularesOpenLink = () => {
+      if (!loaderOpenTitularesBtn || !loaderOpenTitularesBtn.dataset.baseHref) {
+        return;
+      }
+      const params = new URLSearchParams();
+      const ejercicio = principalEjercicio ? String(principalEjercicio.value || "").trim() : "";
+      const enteId = principalEnte ? String(principalEnte.value || "").trim() : "";
+      const tipoAuditoria = principalTipoAuditoria ? String(principalTipoAuditoria.value || "").trim() : "";
+      if (ejercicio) {
+        params.set("ejercicio", ejercicio);
+      }
+      if (enteId) {
+        params.set("ente_id", enteId);
+      }
+      if (tipoAuditoria) {
+        params.set("tipo_auditoria", tipoAuditoria);
+      }
+      const baseHref = loaderOpenTitularesBtn.dataset.baseHref;
+      loaderOpenTitularesBtn.href = params.toString()
+        ? `${baseHref}?${params.toString()}`
+        : baseHref;
+    };
+
     const updateContextSummary = () => {
       const enteLabel = getSelectedOptionLabel(principalEnte);
       const fuenteLabel = resolvePrincipalFuenteNombre() || "-";
@@ -913,6 +939,7 @@
       if (manualContextSummaryFuentes) {
         manualContextSummaryFuentes.textContent = String(principalFuentesObjetivo ? principalFuentesObjetivo.value || "-" : "-");
       }
+      updateTitularesOpenLink();
     };
 
     const hasPrincipalScope = () => {

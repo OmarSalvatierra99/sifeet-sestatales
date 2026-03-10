@@ -76,6 +76,486 @@ def register_gabo_routes(app, deps):
             return "Solventado"
         return raw
 
+    def _build_titular_form_data(source, *, default_ejercicio: str) -> dict[str, str]:
+        ejercicio = " ".join(
+            (
+                source.get("titular_ejercicio")
+                or source.get("ejercicio")
+                or default_ejercicio
+                or ""
+            ).split()
+        )
+        return {
+            "titular_ejercicio": ejercicio,
+            "titular_ente_id": normalize_ente_id(
+                source.get("titular_ente_id") or source.get("ente_id") or ""
+            ),
+            "titular_tipo_auditoria": normalize_tipo_auditoria(
+                source.get("titular_tipo_auditoria")
+                or source.get("tipo_auditoria")
+                or "Financiera"
+            ) or "Financiera",
+            "titular_periodo_informe": " ".join(
+                (source.get("titular_periodo_informe") or "").split()
+            ),
+            "titular_nombre": " ".join((source.get("titular_nombre") or "").split()),
+            "titular_periodo_administrativo": " ".join(
+                (source.get("titular_periodo_administrativo") or "").split()
+            ),
+            "titular_administrativo": " ".join(
+                (source.get("titular_administrativo") or "").split()
+            ),
+            "titular_cedula_resultados": " ".join(
+                (source.get("titular_cedula_resultados") or "").split()
+            ),
+        }
+
+    def _load_titular_entes(db, ejercicio: str) -> list[dict]:
+        if not ejercicio:
+            return []
+        rows = db.execute(
+            """
+            SELECT
+                TRIM(COALESCE(ente_id, '')) AS ente_id,
+                TRIM(COALESCE(ente_numero, '')) AS ente_numero,
+                TRIM(COALESCE(ente_nombre, '')) AS ente_nombre
+            FROM entes_detalle
+            WHERE TRIM(COALESCE(ejercicio, '')) = ?
+              AND TRIM(COALESCE(ente_id, '')) != ''
+            ORDER BY CAST(COALESCE(NULLIF(ente_numero, ''), '0') AS REAL), ente_numero, ente_nombre
+            """,
+            (ejercicio,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def _get_ente_row_by_ejercicio_id(db, ejercicio: str, ente_id_norm: str):
+        if not ejercicio or not ente_id_norm:
+            return None
+        return db.execute(
+            f"""
+            SELECT
+                TRIM(COALESCE(ente_id, '')) AS ente_id,
+                TRIM(COALESCE(ente_numero, '')) AS ente_numero,
+                TRIM(COALESCE(ente_nombre, '')) AS ente_nombre,
+                TRIM(COALESCE(ente_uid, '')) AS ente_uid
+            FROM entes_detalle
+            WHERE TRIM(COALESCE(ejercicio, '')) = ?
+              AND {normalize_ente_id_sql('ente_id')} = ?
+            LIMIT 1
+            """,
+            (ejercicio, ente_id_norm),
+        ).fetchone()
+
+    def _list_historial_titulares_rows(
+        db,
+        *,
+        ejercicio: str,
+        ente_id_norm: str = "",
+    ) -> list[dict]:
+        if not ejercicio:
+            return []
+
+        where_clauses = ["CAST(h.ejercicio AS TEXT) = ?"]
+        params: list[str] = [ejercicio]
+
+        if ente_id_norm:
+            ente_row = _get_ente_row_by_ejercicio_id(db, ejercicio, ente_id_norm)
+            if not ente_row:
+                return []
+            ente_uid = (ente_row["ente_uid"] or "").strip()
+            ente_nombre = (ente_row["ente_nombre"] or "").strip()
+            if ente_uid:
+                where_clauses.append(
+                    "(TRIM(COALESCE(h.ente_uid, '')) = ? OR TRIM(COALESCE(h.ente, '')) = ?)"
+                )
+                params.extend([ente_uid, ente_nombre])
+            else:
+                where_clauses.append("TRIM(COALESCE(h.ente, '')) = ?")
+                params.append(ente_nombre)
+
+        where_sql = " AND ".join(where_clauses)
+        rows = db.execute(
+            f"""
+            SELECT
+                h.id,
+                CAST(h.ejercicio AS TEXT) AS ejercicio,
+                TRIM(COALESCE(ed.ente_id, '')) AS ente_id,
+                TRIM(COALESCE(ed.ente_numero, '')) AS ente_numero,
+                TRIM(COALESCE(ed.ente_nombre, h.ente, '')) AS ente_nombre,
+                TRIM(COALESCE(h.tipo_auditoria, '')) AS tipo_auditoria,
+                TRIM(COALESCE(h.nombre, '')) AS nombre,
+                TRIM(COALESCE(h.cargo, '')) AS cargo,
+                TRIM(COALESCE(h.fecha_inicio, '')) AS fecha_inicio,
+                TRIM(COALESCE(h.fecha_fin, '')) AS fecha_fin,
+                TRIM(COALESCE(h.tipo_registro, '')) AS tipo_registro
+            FROM historial_titulares AS h
+            LEFT JOIN entes_detalle AS ed
+              ON ed.id = (
+                SELECT ed2.id
+                FROM entes_detalle AS ed2
+                WHERE TRIM(COALESCE(ed2.ejercicio, '')) = CAST(h.ejercicio AS TEXT)
+                  AND (
+                    (
+                      TRIM(COALESCE(h.ente_uid, '')) != ''
+                      AND TRIM(COALESCE(ed2.ente_uid, '')) = TRIM(COALESCE(h.ente_uid, ''))
+                    )
+                    OR TRIM(COALESCE(ed2.ente_nombre, '')) = TRIM(COALESCE(h.ente, ''))
+                  )
+                ORDER BY
+                  CASE
+                    WHEN TRIM(COALESCE(h.ente_uid, '')) != ''
+                     AND TRIM(COALESCE(ed2.ente_uid, '')) = TRIM(COALESCE(h.ente_uid, ''))
+                    THEN 0
+                    ELSE 1
+                  END,
+                  CAST(COALESCE(NULLIF(ed2.ente_numero, ''), '0') AS REAL),
+                  ed2.id
+                LIMIT 1
+              )
+            WHERE {where_sql}
+            ORDER BY
+              CAST(COALESCE(NULLIF(ed.ente_numero, ''), '0') AS REAL) ASC,
+              ed.ente_numero ASC,
+              ente_nombre ASC,
+              h.tipo_auditoria ASC,
+              h.tipo_registro ASC,
+              h.fecha_inicio DESC,
+              h.id DESC
+            """,
+            params,
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def _upsert_historial_titular(
+        db,
+        *,
+        ejercicio: str,
+        ente_uid: str,
+        ente_nombre: str,
+        tipo_auditoria: str,
+        nombre: str,
+        cargo: str,
+        fecha_inicio: str,
+        fecha_fin: str,
+        tipo_registro: str,
+    ) -> str:
+        if ente_uid:
+            existing = db.execute(
+                """
+                SELECT
+                    id,
+                    TRIM(COALESCE(ente_uid, '')) AS ente_uid,
+                    TRIM(COALESCE(ente, '')) AS ente,
+                    TRIM(COALESCE(tipo_auditoria, '')) AS tipo_auditoria,
+                    TRIM(COALESCE(nombre, '')) AS nombre,
+                    TRIM(COALESCE(cargo, '')) AS cargo
+                FROM historial_titulares
+                WHERE CAST(ejercicio AS TEXT) = ?
+                  AND tipo_auditoria = ?
+                  AND tipo_registro = ?
+                  AND fecha_inicio = ?
+                  AND fecha_fin = ?
+                  AND (
+                    TRIM(COALESCE(ente_uid, '')) = ?
+                    OR TRIM(COALESCE(ente, '')) = ?
+                  )
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (
+                    ejercicio,
+                    tipo_auditoria,
+                    tipo_registro,
+                    fecha_inicio,
+                    fecha_fin,
+                    ente_uid,
+                    ente_nombre,
+                ),
+            ).fetchone()
+        else:
+            existing = db.execute(
+                """
+                SELECT
+                    id,
+                    TRIM(COALESCE(ente_uid, '')) AS ente_uid,
+                    TRIM(COALESCE(ente, '')) AS ente,
+                    TRIM(COALESCE(tipo_auditoria, '')) AS tipo_auditoria,
+                    TRIM(COALESCE(nombre, '')) AS nombre,
+                    TRIM(COALESCE(cargo, '')) AS cargo
+                FROM historial_titulares
+                WHERE CAST(ejercicio AS TEXT) = ?
+                  AND tipo_auditoria = ?
+                  AND tipo_registro = ?
+                  AND fecha_inicio = ?
+                  AND fecha_fin = ?
+                  AND TRIM(COALESCE(ente, '')) = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (
+                    ejercicio,
+                    tipo_auditoria,
+                    tipo_registro,
+                    fecha_inicio,
+                    fecha_fin,
+                    ente_nombre,
+                ),
+            ).fetchone()
+
+        if existing:
+            changed = (
+                (existing["ente_uid"] or "").strip() != (ente_uid or "").strip()
+                or (existing["ente"] or "").strip() != ente_nombre
+                or (existing["tipo_auditoria"] or "").strip() != tipo_auditoria
+                or (existing["nombre"] or "").strip() != nombre
+                or (existing["cargo"] or "").strip() != cargo
+            )
+            db.execute(
+                """
+                UPDATE historial_titulares
+                SET ente_uid = ?,
+                    ente = ?,
+                    tipo_auditoria = ?,
+                    nombre = ?,
+                    cargo = ?
+                WHERE id = ?
+                """,
+                (
+                    ente_uid or None,
+                    ente_nombre,
+                    tipo_auditoria,
+                    nombre,
+                    cargo,
+                    existing["id"],
+                ),
+            )
+            return "updated" if changed else "unchanged"
+
+        db.execute(
+            """
+            INSERT INTO historial_titulares (
+                ejercicio, ente_uid, ente, tipo_auditoria, nombre, cargo, fecha_inicio, fecha_fin, tipo_registro
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(ejercicio),
+                ente_uid or None,
+                ente_nombre,
+                tipo_auditoria,
+                nombre,
+                cargo,
+                fecha_inicio,
+                fecha_fin,
+                tipo_registro,
+            ),
+        )
+        return "inserted"
+
+    def _save_titulares_capture(db, user, form_data: dict[str, str]) -> dict[str, object]:
+        titular_ejercicio = " ".join((form_data.get("titular_ejercicio") or "").split())
+        titular_ente_id = normalize_ente_id(form_data.get("titular_ente_id", ""))
+        titular_tipo_auditoria = normalize_tipo_auditoria(
+            form_data.get("titular_tipo_auditoria", "")
+        )
+        titular_periodo_informe = " ".join(
+            (form_data.get("titular_periodo_informe") or "").split()
+        )
+        titular_nombre = " ".join((form_data.get("titular_nombre") or "").split())
+        titular_periodo_administrativo = " ".join(
+            (form_data.get("titular_periodo_administrativo") or "").split()
+        )
+        titular_administrativo = " ".join(
+            (form_data.get("titular_administrativo") or "").split()
+        )
+        titular_cedula_raw = " ".join(
+            (form_data.get("titular_cedula_resultados") or "").split()
+        )
+
+        if not titular_ejercicio:
+            raise ValueError("Titulares: ejercicio requerido.")
+        ejercicio_exists = db.execute(
+            """
+            SELECT 1
+            FROM entes_detalle
+            WHERE TRIM(COALESCE(ejercicio, '')) = ?
+            LIMIT 1
+            """,
+            (titular_ejercicio,),
+        ).fetchone()
+        if not ejercicio_exists:
+            raise ValueError("Titulares: el ejercicio seleccionado no está disponible.")
+        if not titular_ente_id:
+            raise ValueError("Titulares: selecciona un ente.")
+        if titular_tipo_auditoria not in {"Financiera", "Obra Pública"}:
+            raise ValueError("Titulares: tipo de auditoría inválido.")
+        if not titular_periodo_informe:
+            raise ValueError("Titulares: periodo del titular requerido.")
+        if not titular_nombre:
+            raise ValueError("Titulares: nombre del titular requerido.")
+        if not titular_periodo_administrativo:
+            raise ValueError("Titulares: periodo del administrativo requerido.")
+        if not titular_administrativo:
+            raise ValueError("Titulares: nombre del administrativo requerido.")
+
+        titular_inicio, titular_fin = parse_periodo_cedula(
+            titular_ejercicio,
+            titular_periodo_informe,
+        )
+        if not titular_inicio or not titular_fin:
+            raise ValueError(
+                "Titulares: periodo del titular debe usar formato '01 de enero al 31 de diciembre'."
+            )
+        admin_inicio, admin_fin = parse_periodo_cedula(
+            titular_ejercicio,
+            titular_periodo_administrativo,
+        )
+        if not admin_inicio or not admin_fin:
+            raise ValueError(
+                "Titulares: periodo del administrativo debe usar formato '01 de enero al 31 de diciembre'."
+            )
+
+        titular_periodo_informe_key = f"{titular_inicio}|{titular_fin}"
+        if titular_cedula_raw:
+            titular_cedula_periodos, titular_cedula_keys = parse_cedula_periodos(
+                titular_ejercicio,
+                titular_cedula_raw,
+            )
+        else:
+            titular_cedula_periodos = [titular_periodo_informe]
+            titular_cedula_keys = [titular_periodo_informe_key]
+        titular_cedula_resultados = " | ".join(titular_cedula_periodos)
+
+        ente_row = db.execute(
+            f"""
+            SELECT
+                TRIM(COALESCE(ente_nombre, '')) AS ente_nombre,
+                TRIM(COALESCE(ente_uid, '')) AS ente_uid
+            FROM entes_detalle
+            WHERE TRIM(COALESCE(ejercicio, '')) = ?
+              AND {normalize_ente_id_sql('ente_id')} = ?
+            LIMIT 1
+            """,
+            (titular_ejercicio, titular_ente_id),
+        ).fetchone()
+        if not ente_row:
+            raise ValueError("Titulares: el ente seleccionado no existe para ese ejercicio.")
+
+        ente_nombre = (ente_row["ente_nombre"] or "").strip()
+        ente_uid = (ente_row["ente_uid"] or "").strip()
+
+        historial_states = [
+            _upsert_historial_titular(
+                db,
+                ejercicio=titular_ejercicio,
+                ente_uid=ente_uid,
+                ente_nombre=ente_nombre,
+                tipo_auditoria=titular_tipo_auditoria,
+                nombre=titular_nombre,
+                cargo="Titular",
+                fecha_inicio=titular_inicio,
+                fecha_fin=titular_fin,
+                tipo_registro="titular",
+            ),
+            _upsert_historial_titular(
+                db,
+                ejercicio=titular_ejercicio,
+                ente_uid=ente_uid,
+                ente_nombre=ente_nombre,
+                tipo_auditoria=titular_tipo_auditoria,
+                nombre=titular_administrativo,
+                cargo="Director Administrativo",
+                fecha_inicio=admin_inicio,
+                fecha_fin=admin_fin,
+                tipo_registro="director_administrativo",
+            ),
+        ]
+
+        duplicate_capture = db.execute(
+            """
+            SELECT id, created_at
+            FROM cargas_titulares
+            WHERE ejercicio = ?
+              AND ente_id = ?
+              AND tipo_auditoria = ?
+              AND periodo_informe = ?
+              AND titular = ?
+              AND periodo_administrativo = ?
+              AND administrativo = ?
+              AND cedula_resultados = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (
+                titular_ejercicio,
+                titular_ente_id,
+                titular_tipo_auditoria,
+                titular_periodo_informe,
+                titular_nombre,
+                titular_periodo_administrativo,
+                titular_administrativo,
+                titular_cedula_resultados,
+            ),
+        ).fetchone()
+
+        if duplicate_capture and all(state == "unchanged" for state in historial_states):
+            return {
+                "ok": False,
+                "level": "info",
+                "message": (
+                    f"Titulares: ya existe una captura idéntica "
+                    f"(ID {duplicate_capture['id']}, fecha {duplicate_capture['created_at']})."
+                ),
+            }
+
+        if not duplicate_capture:
+            db.execute(
+                """
+                INSERT INTO cargas_titulares (
+                    ejercicio,
+                    ente_id,
+                    ente_nombre,
+                    tipo_auditoria,
+                    periodo_informe,
+                    titular,
+                    periodo_administrativo,
+                    administrativo,
+                    cedula_resultados,
+                    created_by,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    titular_ejercicio,
+                    titular_ente_id,
+                    ente_nombre,
+                    titular_tipo_auditoria,
+                    titular_periodo_informe,
+                    titular_nombre,
+                    titular_periodo_administrativo,
+                    titular_administrativo,
+                    titular_cedula_resultados,
+                    user["username"],
+                    datetime.now().strftime("%Y-%m-%d %H:%M"),
+                ),
+            )
+
+        db.commit()
+
+        if duplicate_capture:
+            return {
+                "ok": True,
+                "level": "success",
+                "message": "Titulares: historial actualizado; la captura idéntica ya existía en bitácora.",
+            }
+
+        return {
+            "ok": True,
+            "level": "success",
+            "message": "Titulares: registro guardado correctamente en historial y bitácora.",
+        }
+
     def fuentes_por_ente(
         db,
         ejercicio: str,
@@ -990,6 +1470,9 @@ def register_gabo_routes(app, deps):
     def carga_observaciones_admin():
         user = get_current_user()
         db = get_db()
+        return_vista = (request.args.get("return_vista") or "").strip().lower()
+        if return_vista not in {"manual", "titulares"}:
+            return_vista = "manual"
         ejercicios_rows = db.execute(
             """
             SELECT DISTINCT TRIM(COALESCE(ejercicio, '')) AS ejercicio
@@ -1006,6 +1489,223 @@ def register_gabo_routes(app, deps):
             user=user,
             ejercicios=ejercicios,
             ejercicio_default=ejercicios[0],
+            return_vista=return_vista,
+        )
+
+    @app.route("/carga/titulares", methods=["GET", "POST"])
+    @gabo_required
+    def carga_titulares():
+        user = get_current_user()
+        db = get_db()
+        ejercicios_rows = db.execute(
+            """
+            SELECT DISTINCT TRIM(COALESCE(ejercicio, '')) AS ejercicio
+            FROM entes_detalle
+            WHERE TRIM(COALESCE(ejercicio, '')) != ''
+            ORDER BY CAST(TRIM(COALESCE(ejercicio, '')) AS INTEGER) DESC, ejercicio DESC
+            """
+        ).fetchall()
+        ejercicios = [row["ejercicio"] for row in ejercicios_rows if (row["ejercicio"] or "").strip()]
+        if not ejercicios:
+            ejercicios = [TITULAR_EJERCICIO_FIJO]
+
+        form_source = request.form if request.method == "POST" else request.args
+        requested_default = (
+            (request.form.get("titular_ejercicio") if request.method == "POST" else request.args.get("ejercicio"))
+            or TITULAR_EJERCICIO_FIJO
+        )
+        default_ejercicio = " ".join((requested_default or "").split())
+        if default_ejercicio not in ejercicios:
+            default_ejercicio = ejercicios[0]
+
+        form_data = _build_titular_form_data(
+            form_source,
+            default_ejercicio=default_ejercicio,
+        )
+        if form_data["titular_ejercicio"] not in ejercicios:
+            form_data["titular_ejercicio"] = default_ejercicio
+
+        titular_result = None
+        if request.method == "POST":
+            try:
+                titular_result = _save_titulares_capture(db, user, form_data)
+            except ValueError as exc:
+                titular_result = {
+                    "ok": False,
+                    "level": "error",
+                    "message": str(exc),
+                }
+
+        entes = _load_titular_entes(db, form_data["titular_ejercicio"])
+
+        return render_template(
+            "carga_titulares.html",
+            user=user,
+            ejercicios=ejercicios,
+            entes=entes,
+            form_data=form_data,
+            titular_result=titular_result,
+        )
+
+    @app.get("/carga/titulares/historial")
+    @gabo_required
+    def carga_titulares_historial():
+        ejercicio = " ".join((request.args.get("ejercicio") or "").split())
+        ente_id = normalize_ente_id(request.args.get("ente_id", ""))
+        if not ejercicio:
+            return jsonify({"ok": False, "error": "Selecciona un ejercicio para consultar."}), 400
+
+        db = get_db()
+        rows = _list_historial_titulares_rows(
+            db,
+            ejercicio=ejercicio,
+            ente_id_norm=ente_id,
+        )
+        return jsonify({"ok": True, "rows": rows})
+
+    @app.post("/carga/titulares/historial/<int:historial_id>/actualizar")
+    @gabo_required
+    def carga_titulares_historial_actualizar(historial_id: int):
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            payload = request.form
+
+        ejercicio = " ".join((payload.get("ejercicio") or "").split())
+        ente_id = normalize_ente_id(payload.get("ente_id", ""))
+        tipo_auditoria = normalize_tipo_auditoria(payload.get("tipo_auditoria", ""))
+        tipo_registro = " ".join((payload.get("tipo_registro") or "").split()).lower()
+        nombre = " ".join((payload.get("nombre") or "").split())
+        cargo = " ".join((payload.get("cargo") or "").split())
+        fecha_inicio_raw = " ".join((payload.get("fecha_inicio") or "").split())
+        fecha_fin_raw = " ".join((payload.get("fecha_fin") or "").split())
+
+        if not ejercicio:
+            return jsonify({"ok": False, "error": "Selecciona un ejercicio."}), 400
+        if not ente_id:
+            return jsonify({"ok": False, "error": "Selecciona un ente."}), 400
+        if tipo_auditoria not in {"Financiera", "Obra Pública"}:
+            return jsonify({"ok": False, "error": "Tipo de auditoría inválido."}), 400
+        if tipo_registro not in {"titular", "director_administrativo"}:
+            return jsonify({"ok": False, "error": "Tipo de registro inválido."}), 400
+        if not nombre:
+            return jsonify({"ok": False, "error": "Captura el nombre del responsable."}), 400
+
+        if not cargo:
+            cargo = "Director Administrativo" if tipo_registro == "director_administrativo" else "Titular"
+
+        fecha_inicio = parse_historial_date(fecha_inicio_raw)
+        fecha_fin = parse_historial_date(fecha_fin_raw)
+        if not fecha_inicio or not fecha_fin:
+            return jsonify({"ok": False, "error": "Captura fechas válidas en formato ISO."}), 400
+        if fecha_inicio > fecha_fin:
+            return jsonify({"ok": False, "error": "La fecha inicial no puede ser mayor que la final."}), 400
+
+        db = get_db()
+        existing_row = db.execute(
+            "SELECT id FROM historial_titulares WHERE id = ? LIMIT 1",
+            (historial_id,),
+        ).fetchone()
+        if not existing_row:
+            return jsonify({"ok": False, "error": "El registro solicitado no existe."}), 404
+
+        ente_row = _get_ente_row_by_ejercicio_id(db, ejercicio, ente_id)
+        if not ente_row:
+            return jsonify({"ok": False, "error": "El ente seleccionado no existe en ese ejercicio."}), 400
+
+        fecha_inicio_iso = fecha_inicio.isoformat()
+        fecha_fin_iso = fecha_fin.isoformat()
+        ente_nombre = (ente_row["ente_nombre"] or "").strip()
+        ente_uid = (ente_row["ente_uid"] or "").strip()
+
+        duplicate_row = db.execute(
+            """
+            SELECT id
+            FROM historial_titulares
+            WHERE id != ?
+              AND CAST(ejercicio AS TEXT) = ?
+              AND TRIM(COALESCE(ente, '')) = ?
+              AND tipo_auditoria = ?
+              AND TRIM(COALESCE(nombre, '')) = ?
+              AND TRIM(COALESCE(cargo, '')) = ?
+              AND fecha_inicio = ?
+              AND fecha_fin = ?
+              AND tipo_registro = ?
+            LIMIT 1
+            """,
+            (
+                historial_id,
+                ejercicio,
+                ente_nombre,
+                tipo_auditoria,
+                nombre,
+                cargo,
+                fecha_inicio_iso,
+                fecha_fin_iso,
+                tipo_registro,
+            ),
+        ).fetchone()
+        if duplicate_row:
+            return jsonify({"ok": False, "error": "Ya existe otro registro idéntico en historial."}), 400
+
+        db.execute(
+            """
+            UPDATE historial_titulares
+            SET ejercicio = ?,
+                ente_uid = ?,
+                ente = ?,
+                tipo_auditoria = ?,
+                nombre = ?,
+                cargo = ?,
+                fecha_inicio = ?,
+                fecha_fin = ?,
+                tipo_registro = ?
+            WHERE id = ?
+            """,
+            (
+                int(ejercicio),
+                ente_uid or None,
+                ente_nombre,
+                tipo_auditoria,
+                nombre,
+                cargo,
+                fecha_inicio_iso,
+                fecha_fin_iso,
+                tipo_registro,
+                historial_id,
+            ),
+        )
+        db.commit()
+
+        updated_rows = _list_historial_titulares_rows(
+            db,
+            ejercicio=ejercicio,
+            ente_id_norm=ente_id,
+        )
+        updated_row = next(
+            (item for item in updated_rows if int(item["id"]) == historial_id),
+            None,
+        )
+        if updated_row is None:
+            updated_row = {
+                "id": historial_id,
+                "ejercicio": ejercicio,
+                "ente_id": (ente_row["ente_id"] or "").strip(),
+                "ente_numero": (ente_row["ente_numero"] or "").strip(),
+                "ente_nombre": ente_nombre,
+                "tipo_auditoria": tipo_auditoria,
+                "nombre": nombre,
+                "cargo": cargo,
+                "fecha_inicio": fecha_inicio_iso,
+                "fecha_fin": fecha_fin_iso,
+                "tipo_registro": tipo_registro,
+            }
+
+        return jsonify(
+            {
+                "ok": True,
+                "message": "Historial de titulares actualizado correctamente.",
+                "row": updated_row,
+            }
         )
 
     @app.get("/carga/observaciones-admin/datos")
@@ -1173,7 +1873,7 @@ def register_gabo_routes(app, deps):
         ).fetchall()
         fuentes = [dict(row) for row in fuentes_rows]
     
-        titular_ejercicios = [TITULAR_EJERCICIO_FIJO]
+        titular_ejercicios = manual_ejercicios.copy()
 
         script_result = None
         manual_result = None
@@ -1216,7 +1916,7 @@ def register_gabo_routes(app, deps):
             "manual_monto_pdp_pendiente": "0",
             "manual_montos_pdp": "",
             "manual_pdp_detalle_json": "",
-            "titular_ejercicio": TITULAR_EJERCICIO_FIJO,
+            "titular_ejercicio": manual_ejercicio_default,
             "titular_ente_id": "",
             "titular_tipo_auditoria": "Financiera",
             "titular_periodo_informe": "",
@@ -1268,172 +1968,18 @@ def register_gabo_routes(app, deps):
                     "manual_monto_pdp_pendiente": (request.form.get("manual_monto_pdp_pendiente") or "").strip() or "0",
                     "manual_montos_pdp": (request.form.get("manual_montos_pdp") or "").strip(),
                     "manual_pdp_detalle_json": (request.form.get("manual_pdp_detalle_json") or "").strip(),
-                    "titular_ejercicio": TITULAR_EJERCICIO_FIJO,
-                    "titular_ente_id": (request.form.get("titular_ente_id") or "").strip(),
-                    "titular_tipo_auditoria": (request.form.get("titular_tipo_auditoria") or "").strip() or "Financiera",
-                    "titular_periodo_informe": (request.form.get("titular_periodo_informe") or "").strip(),
-                    "titular_nombre": (request.form.get("titular_nombre") or "").strip(),
-                    "titular_periodo_administrativo": (request.form.get("titular_periodo_administrativo") or "").strip(),
-                    "titular_administrativo": (request.form.get("titular_administrativo") or "").strip(),
-                    "titular_cedula_resultados": (request.form.get("titular_cedula_resultados") or "").strip(),
                 }
+            )
+            form_data.update(
+                _build_titular_form_data(
+                    request.form,
+                    default_ejercicio=form_data["manual_ejercicio"],
+                )
             )
     
             try:
                 if action == "titular_save":
-                    titular_ejercicio = form_data["titular_ejercicio"]
-                    titular_ente_id = form_data["titular_ente_id"]
-                    titular_tipo_auditoria = form_data["titular_tipo_auditoria"]
-                    titular_periodo_informe = " ".join(form_data["titular_periodo_informe"].split())
-                    titular_nombre = form_data["titular_nombre"]
-                    titular_periodo_administrativo = " ".join(form_data["titular_periodo_administrativo"].split())
-                    titular_administrativo = form_data["titular_administrativo"]
-                    titular_periodo_informe_key = normalize_periodo_key(
-                        titular_ejercicio,
-                        titular_periodo_informe,
-                        label="periodo informe",
-                    )
-                    titular_periodo_administrativo_key = normalize_periodo_key(
-                        titular_ejercicio,
-                        titular_periodo_administrativo,
-                        label="periodo administrativo",
-                    )
-                    titular_cedula_raw = " ".join((form_data["titular_cedula_resultados"] or "").split())
-                    if titular_cedula_raw:
-                        titular_cedula_periodos, titular_cedula_keys = parse_cedula_periodos(
-                            titular_ejercicio,
-                            titular_cedula_raw,
-                        )
-                    else:
-                        titular_cedula_periodos = [titular_periodo_informe] if titular_periodo_informe else []
-                        titular_cedula_keys = [titular_periodo_informe_key] if titular_periodo_informe_key else []
-                    titular_cedula_resultados = " | ".join(titular_cedula_periodos)
-
-                    if not titular_ejercicio:
-                        raise ValueError("Titulares: ejercicio requerido.")
-                    if titular_ejercicio != TITULAR_EJERCICIO_FIJO:
-                        raise ValueError("Titulares: solo se permite ejercicio 2025.")
-                    if not titular_ente_id:
-                        raise ValueError("Titulares: selecciona un ente.")
-                    if titular_tipo_auditoria not in {"Financiera", "Obra Pública"}:
-                        raise ValueError("Titulares: tipo de auditoría inválido.")
-                    if not titular_periodo_informe:
-                        raise ValueError("Titulares: periodo informe requerido.")
-                    if not titular_nombre:
-                        raise ValueError("Titulares: nombre del titular requerido.")
-                    if not titular_periodo_administrativo:
-                        raise ValueError("Titulares: periodo administrativo requerido.")
-                    if not titular_administrativo:
-                        raise ValueError("Titulares: nombre administrativo requerido.")
-
-                    ente_row = db.execute(
-                        """
-                        SELECT ente_nombre
-                        FROM entes_detalle
-                        WHERE ejercicio = ? AND ente_id = ?
-                        LIMIT 1
-                        """,
-                        (titular_ejercicio, titular_ente_id),
-                    ).fetchone()
-                    if not ente_row:
-                        raise ValueError("Titulares: el ente seleccionado no existe para ese ejercicio.")
-
-                    posibles_duplicados = db.execute(
-                        """
-                        SELECT
-                            id,
-                            created_at,
-                            periodo_informe,
-                            periodo_administrativo,
-                            cedula_resultados
-                        FROM cargas_titulares
-                        WHERE ejercicio = ?
-                          AND ente_id = ?
-                          AND tipo_auditoria = ?
-                        ORDER BY id DESC
-                        LIMIT 200
-                        """,
-                        (
-                            titular_ejercicio,
-                            titular_ente_id,
-                            titular_tipo_auditoria,
-                        ),
-                    ).fetchall()
-                    duplicado = None
-                    titular_cedula_key = "|".join(titular_cedula_keys)
-                    for row in posibles_duplicados:
-                        row_periodo_informe_key = normalize_periodo_key(
-                            titular_ejercicio,
-                            row["periodo_informe"],
-                            label="periodo informe",
-                            strict=False,
-                        )
-                        row_periodo_admin_key = normalize_periodo_key(
-                            titular_ejercicio,
-                            row["periodo_administrativo"],
-                            label="periodo administrativo",
-                            strict=False,
-                        )
-                        _, row_cedula_keys = parse_cedula_periodos(
-                            titular_ejercicio,
-                            row["cedula_resultados"],
-                            strict=False,
-                        )
-                        row_cedula_key = "|".join(row_cedula_keys)
-                        if (
-                            row_periodo_informe_key == titular_periodo_informe_key
-                            and row_periodo_admin_key == titular_periodo_administrativo_key
-                            and row_cedula_key == titular_cedula_key
-                        ):
-                            duplicado = row
-                            break
-                    if duplicado:
-                        titular_result = {
-                            "ok": False,
-                            "level": "info",
-                            "message": (
-                                f"Titulares: ya existe un registro con esos periodos "
-                                f"(ID {duplicado['id']}, fecha {duplicado['created_at']})."
-                            ),
-                        }
-                    else:
-                        db.execute(
-                            """
-                            INSERT INTO cargas_titulares (
-                                ejercicio,
-                                ente_id,
-                                ente_nombre,
-                                tipo_auditoria,
-                                periodo_informe,
-                                titular,
-                                periodo_administrativo,
-                                administrativo,
-                                cedula_resultados,
-                                created_by,
-                                created_at
-                            )
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            (
-                                titular_ejercicio,
-                                titular_ente_id,
-                                (ente_row["ente_nombre"] or "").strip(),
-                                titular_tipo_auditoria,
-                                titular_periodo_informe,
-                                titular_nombre,
-                                titular_periodo_administrativo,
-                                titular_administrativo,
-                                titular_cedula_resultados,
-                                user["username"],
-                                datetime.now().strftime("%Y-%m-%d %H:%M"),
-                            ),
-                        )
-                        db.commit()
-                        titular_result = {
-                            "ok": True,
-                            "level": "success",
-                            "message": "Titulares: registro guardado correctamente.",
-                        }
+                    titular_result = _save_titulares_capture(db, user, form_data)
                 elif action in {"manual_check", "manual_save"}:
                     manual_id_raw = form_data["manual_id"]
                     manual_ente_id = form_data["manual_ente_id"]

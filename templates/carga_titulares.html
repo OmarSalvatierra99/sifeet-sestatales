@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SIFEET Estatales · Carga de Titulares</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
+</head>
+<body class="loader-page titulares-standalone-page">
+  <header class="site-header">
+    <div class="header-inner">
+      <img src="{{ url_for('static', filename='img/ofs_logo.png') }}" alt="Logo institucional" class="ofs-logo">
+      <div class="header-text">
+        <p class="eyebrow">Órgano de Fiscalización Superior del Estado de Tlaxcala</p>
+        <h1>SIFEET Estatales</h1>
+        <p class="subtitle">Carga independiente de titulares</p>
+      </div>
+      <div class="header-badge user-badge">
+        <div class="user-meta">
+          <span>Usuario</span>
+          <strong>{{ "Gabo" if user.username == "gabo" else user.username }}</strong>
+        </div>
+        <div class="user-actions">
+          <span class="user-role">Carga</span>
+          <a class="btn-secondary btn-compact" href="{{ url_for('logout') }}">Cerrar sesión</a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="page-content loader-content">
+    <section class="panel loader-card">
+      <div class="panel-header">
+        <h2>Carga de titulares</h2>
+      </div>
+
+      {% if titular_result %}
+        <div class="status {% if titular_result.level == 'info' %}status-info{% elif titular_result.ok %}status-success{% else %}status-error{% endif %}">
+          {{ titular_result.message }}
+        </div>
+      {% endif %}
+
+      <form class="record-form loader-manual-form" method="POST" autocomplete="off" id="titularStandaloneForm">
+        <div class="loader-context-review loader-context-review-compact">
+          <p>Contexto activo para titulares:</p>
+          <div class="loader-preview-metrics">
+            <span class="loader-obs-chip">Ejercicio: <strong id="titularStandaloneSummaryEjercicio">{{ form_data.titular_ejercicio or "-" }}</strong></span>
+            <span class="loader-obs-chip">Ente: <strong id="titularStandaloneSummaryEnte">-</strong></span>
+            <span class="loader-obs-chip">Tipo: <strong id="titularStandaloneSummaryTipo">{{ form_data.titular_tipo_auditoria or "-" }}</strong></span>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="field">
+            <label for="titular_ejercicio">Ejercicio</label>
+            <select id="titular_ejercicio" name="titular_ejercicio" required>
+              {% for ejercicio in ejercicios %}
+                <option value="{{ ejercicio }}" {% if form_data.titular_ejercicio == ejercicio %}selected{% endif %}>{{ ejercicio }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="titular_ente_id">Ente</label>
+            <select id="titular_ente_id" name="titular_ente_id" data-selected="{{ form_data.titular_ente_id }}" required>
+              <option value="">Selecciona un ente</option>
+              {% for ente in entes %}
+                <option value="{{ ente.ente_id }}" {% if form_data.titular_ente_id == ente.ente_id %}selected{% endif %}>
+                  {{ ente.ente_numero }} - {{ ente.ente_nombre }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="titular_tipo_auditoria">Tipo de auditoría</label>
+            <select id="titular_tipo_auditoria" name="titular_tipo_auditoria" required>
+              <option value="Financiera" {% if form_data.titular_tipo_auditoria == "Financiera" %}selected{% endif %}>Financiera</option>
+              <option value="Obra Pública" {% if form_data.titular_tipo_auditoria == "Obra Pública" %}selected{% endif %}>Obra Pública</option>
+            </select>
+            <p class="helper">Usa Obra Pública cuando el contexto sea de obra.</p>
+          </div>
+        </div>
+
+        <div class="loader-titulares-sections">
+          <section class="loader-titulares-block" aria-label="Datos del titular">
+            <h3>Titular</h3>
+            <div class="form-grid">
+              <div class="field">
+                <label for="titular_nombre">Nombre del titular</label>
+                <input id="titular_nombre" name="titular_nombre" type="text" value="{{ form_data.titular_nombre }}" required>
+              </div>
+              <div class="field">
+                <label for="titular_periodo_informe">Periodo del titular</label>
+                <input id="titular_periodo_informe" name="titular_periodo_informe" type="text" value="{{ form_data.titular_periodo_informe }}" placeholder="Ej. 01 de enero al 31 de diciembre" required>
+                <p class="helper">Formato requerido: 01 de enero al 31 de diciembre.</p>
+              </div>
+            </div>
+          </section>
+          <section class="loader-titulares-block" aria-label="Datos del administrativo">
+            <h3>Administrativo</h3>
+            <div class="form-grid">
+              <div class="field">
+                <label for="titular_administrativo">Nombre del administrativo</label>
+                <input id="titular_administrativo" name="titular_administrativo" type="text" value="{{ form_data.titular_administrativo }}" required>
+              </div>
+              <div class="field">
+                <label for="titular_periodo_administrativo">Periodo del administrativo</label>
+                <input id="titular_periodo_administrativo" name="titular_periodo_administrativo" type="text" value="{{ form_data.titular_periodo_administrativo }}" placeholder="Ej. 01 de enero al 31 de diciembre" required>
+                <p class="helper">Formato requerido: 01 de enero al 31 de diciembre.</p>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="loader-step-nav">
+          <button class="btn-primary" type="submit">Guardar titulares</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel loader-card">
+      <div class="panel-header">
+        <h2>Consultar / corregir titulares</h2>
+        <p>Consulta el historial por ejercicio y corrige registros guardados sin salir de esta pantalla.</p>
+      </div>
+
+      <div class="record-form filters-form titular-historial-filters" autocomplete="off">
+        <div class="form-grid">
+          <div class="field">
+            <label for="titular_historial_ejercicio">Ejercicio</label>
+            <select id="titular_historial_ejercicio">
+              {% for ejercicio in ejercicios %}
+                <option value="{{ ejercicio }}" {% if form_data.titular_ejercicio == ejercicio %}selected{% endif %}>{{ ejercicio }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="titular_historial_ente_id">Ente</label>
+            <select id="titular_historial_ente_id">
+              <option value="">Todos los entes</option>
+              {% for ente in entes %}
+                <option value="{{ ente.ente_id }}">
+                  {{ ente.ente_numero }} - {{ ente.ente_nombre }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="loader-step-nav">
+          <button class="btn-secondary" type="button" id="titularHistorialRefreshBtn">Consultar historial</button>
+        </div>
+      </div>
+
+      <div id="titularHistorialStatus" class="status status-info" hidden></div>
+
+      <div class="table-meta">
+        <span id="titularHistorialCount">Selecciona un ejercicio para consultar titulares.</span>
+      </div>
+
+      <div class="loader-obs-table-wrap titular-historial-table-wrap">
+        <table class="loader-obs-table titular-historial-table">
+          <thead>
+            <tr>
+              <th>Ejercicio</th>
+              <th>Ente</th>
+              <th>Tipo</th>
+              <th>Registro</th>
+              <th>Nombre</th>
+              <th>Cargo</th>
+              <th>Periodo</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="titularHistorialTableBody">
+            <tr>
+              <td colspan="8" class="muted">Sin resultados para mostrar.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div id="titularHistorialEditWrap" class="loader-titulares-sections titular-historial-edit-shell" hidden>
+        <section class="loader-titulares-block titular-historial-edit-card" aria-label="Corrección de historial">
+          <div id="titularHistorialEditMeta" class="titular-historial-edit-meta" hidden></div>
+          <div id="titularHistorialEditStatus" class="status status-info" hidden></div>
+
+          <form class="record-form loader-manual-form" autocomplete="off" id="titularHistorialEditForm">
+            <input id="titular_historial_edit_id" type="hidden">
+            <div class="form-grid">
+              <div class="field">
+                <label for="titular_historial_edit_ejercicio">Ejercicio</label>
+                <select id="titular_historial_edit_ejercicio" required>
+                  {% for ejercicio in ejercicios %}
+                    <option value="{{ ejercicio }}">{{ ejercicio }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="field">
+                <label for="titular_historial_edit_ente_id">Ente</label>
+                <select id="titular_historial_edit_ente_id" required>
+                  <option value="">Selecciona un ente</option>
+                  {% for ente in entes %}
+                    <option value="{{ ente.ente_id }}">
+                      {{ ente.ente_numero }} - {{ ente.ente_nombre }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="field">
+                <label for="titular_historial_edit_tipo_auditoria">Tipo de auditoría</label>
+                <select id="titular_historial_edit_tipo_auditoria" required>
+                  <option value="Financiera">Financiera</option>
+                  <option value="Obra Pública">Obra Pública</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="titular_historial_edit_tipo_registro">Tipo de registro</label>
+                <select id="titular_historial_edit_tipo_registro" required>
+                  <option value="titular">Titular</option>
+                  <option value="director_administrativo">Director Administrativo</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="titular_historial_edit_nombre">Nombre</label>
+                <input id="titular_historial_edit_nombre" type="text" required>
+              </div>
+              <div class="field">
+                <label for="titular_historial_edit_cargo">Cargo</label>
+                <input id="titular_historial_edit_cargo" type="text" required>
+              </div>
+              <div class="field">
+                <label for="titular_historial_edit_fecha_inicio">Fecha inicial</label>
+                <input id="titular_historial_edit_fecha_inicio" type="date" required>
+              </div>
+              <div class="field">
+                <label for="titular_historial_edit_fecha_fin">Fecha final</label>
+                <input id="titular_historial_edit_fecha_fin" type="date" required>
+              </div>
+            </div>
+            <div class="loader-step-nav">
+              <button class="btn-primary" type="submit">Guardar corrección</button>
+              <button class="btn-secondary" type="button" id="titularHistorialCancelBtn">Cancelar</button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    © Órgano de Fiscalización Superior del Estado de Tlaxcala · SIFEET Estatales
+  </footer>
+  <a class="floating-clear-btn obs-admin-fab-back" href="{{ url_for('carga') }}" aria-label="Regresar a carga">
+    <span class="floating-clear-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M14.5 5L7.5 12L14.5 19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M8 12H20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <span>Regresar a carga</span>
+  </a>
+
+  <script>
+    const ejercicioInput = document.getElementById("titular_ejercicio");
+    const enteInput = document.getElementById("titular_ente_id");
+    const tipoInput = document.getElementById("titular_tipo_auditoria");
+    const summaryEjercicio = document.getElementById("titularStandaloneSummaryEjercicio");
+    const summaryEnte = document.getElementById("titularStandaloneSummaryEnte");
+    const summaryTipo = document.getElementById("titularStandaloneSummaryTipo");
+    const historialEjercicioInput = document.getElementById("titular_historial_ejercicio");
+    const historialEnteInput = document.getElementById("titular_historial_ente_id");
+    const historialRefreshBtn = document.getElementById("titularHistorialRefreshBtn");
+    const historialStatus = document.getElementById("titularHistorialStatus");
+    const historialCount = document.getElementById("titularHistorialCount");
+    const historialTableBody = document.getElementById("titularHistorialTableBody");
+    const historialEditWrap = document.getElementById("titularHistorialEditWrap");
+    const historialEditMeta = document.getElementById("titularHistorialEditMeta");
+    const historialEditStatus = document.getElementById("titularHistorialEditStatus");
+    const historialEditForm = document.getElementById("titularHistorialEditForm");
+    const historialEditIdInput = document.getElementById("titular_historial_edit_id");
+    const historialEditEjercicioInput = document.getElementById("titular_historial_edit_ejercicio");
+    const historialEditEnteInput = document.getElementById("titular_historial_edit_ente_id");
+    const historialEditTipoAuditoriaInput = document.getElementById("titular_historial_edit_tipo_auditoria");
+    const historialEditTipoRegistroInput = document.getElementById("titular_historial_edit_tipo_registro");
+    const historialEditNombreInput = document.getElementById("titular_historial_edit_nombre");
+    const historialEditCargoInput = document.getElementById("titular_historial_edit_cargo");
+    const historialEditFechaInicioInput = document.getElementById("titular_historial_edit_fecha_inicio");
+    const historialEditFechaFinInput = document.getElementById("titular_historial_edit_fecha_fin");
+    const historialCancelBtn = document.getElementById("titularHistorialCancelBtn");
+
+    let historialRows = [];
+
+    const escapeHtml = (value) => (
+      String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;")
+    );
+
+    const setStatus = (element, message = "", level = "info") => {
+      if (!element) {
+        return;
+      }
+      element.classList.remove("status-info", "status-success", "status-error");
+      if (!message) {
+        element.hidden = true;
+        element.textContent = "";
+        return;
+      }
+      if (level === "success") {
+        element.classList.add("status-success");
+      } else if (level === "error") {
+        element.classList.add("status-error");
+      } else {
+        element.classList.add("status-info");
+      }
+      element.hidden = false;
+      element.textContent = message;
+    };
+
+    const defaultCargoForTipoRegistro = (tipoRegistro) => (
+      String(tipoRegistro || "").trim() === "director_administrativo"
+        ? "Director Administrativo"
+        : "Titular"
+    );
+
+    const formatTipoRegistroLabel = (tipoRegistro) => (
+      String(tipoRegistro || "").trim() === "director_administrativo"
+        ? "Director Administrativo"
+        : "Titular"
+    );
+
+    const buildEnteLabel = (row) => {
+      const numero = String(row && row.ente_numero ? row.ente_numero : "").trim();
+      const nombre = String(row && row.ente_nombre ? row.ente_nombre : "").trim();
+      if (numero && nombre) {
+        return `${numero} - ${nombre}`;
+      }
+      return nombre || numero || "Sin ente vinculado";
+    };
+
+    const fillEnteSelect = (selectElement, rows, { selectedValue = "", emptyLabel = "Selecciona un ente", allowBlank = true } = {}) => {
+      if (!selectElement) {
+        return;
+      }
+      selectElement.innerHTML = "";
+      if (allowBlank) {
+        const blankOption = document.createElement("option");
+        blankOption.value = "";
+        blankOption.textContent = emptyLabel;
+        selectElement.appendChild(blankOption);
+      }
+      rows.forEach((item) => {
+        const option = document.createElement("option");
+        option.value = item.ente_id || "";
+        option.textContent = `${item.ente_numero || ""} - ${item.ente_nombre || ""}`.trim();
+        if (selectedValue && option.value === selectedValue) {
+          option.selected = true;
+        }
+        selectElement.appendChild(option);
+      });
+      if (selectedValue) {
+        selectElement.value = selectedValue;
+      }
+    };
+
+    const loadEntesForSelect = async (selectElement, ejercicio, { selectedValue = "", emptyLabel = "Selecciona un ente", allowBlank = true } = {}) => {
+      if (!selectElement) {
+        return;
+      }
+      const ejercicioValue = String(ejercicio || "").trim();
+      if (!ejercicioValue) {
+        fillEnteSelect(selectElement, [], { selectedValue: "", emptyLabel, allowBlank });
+        return;
+      }
+      try {
+        const response = await fetch(`/carga/entes?ejercicio=${encodeURIComponent(ejercicioValue)}`, {
+          credentials: "same-origin",
+        });
+        const rows = await response.json();
+        fillEnteSelect(selectElement, Array.isArray(rows) ? rows : [], {
+          selectedValue,
+          emptyLabel,
+          allowBlank,
+        });
+      } catch (_error) {
+        fillEnteSelect(selectElement, [], { selectedValue: "", emptyLabel, allowBlank });
+      }
+    };
+
+    const updateSummary = () => {
+      if (summaryEjercicio) {
+        summaryEjercicio.textContent = String(ejercicioInput ? ejercicioInput.value || "-" : "-");
+      }
+      if (summaryTipo) {
+        summaryTipo.textContent = String(tipoInput ? tipoInput.value || "-" : "-");
+      }
+      if (summaryEnte) {
+        const selected = enteInput && enteInput.selectedIndex >= 0
+          ? enteInput.options[enteInput.selectedIndex]
+          : null;
+        summaryEnte.textContent = selected && selected.value
+          ? String(selected.textContent || "").trim()
+          : "-";
+      }
+    };
+
+    const renderHistorialRows = () => {
+      if (!historialTableBody) {
+        return;
+      }
+      if (!historialRows.length) {
+        historialTableBody.innerHTML = `<tr><td colspan="8" class="muted">Sin registros para el filtro seleccionado.</td></tr>`;
+      } else {
+        historialTableBody.innerHTML = historialRows.map((row) => `
+          <tr>
+            <td><span class="titular-historial-year">${escapeHtml(row.ejercicio || "—")}</span></td>
+            <td>
+              <div class="titular-historial-ente-cell">
+                <strong>${escapeHtml(buildEnteLabel(row))}</strong>
+              </div>
+            </td>
+            <td><span class="titular-historial-pill">${escapeHtml(row.tipo_auditoria || "—")}</span></td>
+            <td><span class="titular-historial-pill is-secondary">${escapeHtml(formatTipoRegistroLabel(row.tipo_registro))}</span></td>
+            <td><strong class="titular-historial-name">${escapeHtml(row.nombre || "—")}</strong></td>
+            <td>${escapeHtml(row.cargo || "—")}</td>
+            <td>
+              <div class="titular-historial-period">
+                <span>Inicio: ${escapeHtml(row.fecha_inicio || "—")}</span>
+                <span>Fin: ${escapeHtml(row.fecha_fin || "—")}</span>
+              </div>
+            </td>
+            <td><button class="btn-secondary btn-compact titular-historial-edit-btn" type="button" data-edit-row-id="${escapeHtml(row.id)}">Editar</button></td>
+          </tr>
+        `).join("");
+      }
+
+      if (historialCount) {
+        historialCount.textContent = `${historialRows.length} registros encontrados.`;
+      }
+    };
+
+    const closeHistorialEditor = () => {
+      if (historialEditForm) {
+        historialEditForm.reset();
+      }
+      if (historialEditWrap) {
+        historialEditWrap.hidden = true;
+      }
+      if (historialEditMeta) {
+        historialEditMeta.hidden = true;
+        historialEditMeta.textContent = "";
+      }
+      setStatus(historialEditStatus, "");
+    };
+
+    const openHistorialEditor = async (row, { preserveStatus = false } = {}) => {
+      if (!row || !historialEditWrap) {
+        return;
+      }
+      if (!preserveStatus) {
+        setStatus(historialEditStatus, "");
+      }
+      if (historialEditIdInput) historialEditIdInput.value = String(row.id || "");
+      if (historialEditEjercicioInput) historialEditEjercicioInput.value = String(row.ejercicio || "");
+      if (historialEditTipoAuditoriaInput) historialEditTipoAuditoriaInput.value = String(row.tipo_auditoria || "Financiera");
+      if (historialEditTipoRegistroInput) historialEditTipoRegistroInput.value = String(row.tipo_registro || "titular");
+      if (historialEditNombreInput) historialEditNombreInput.value = String(row.nombre || "");
+      if (historialEditCargoInput) historialEditCargoInput.value = String(row.cargo || defaultCargoForTipoRegistro(row.tipo_registro));
+      if (historialEditFechaInicioInput) historialEditFechaInicioInput.value = String(row.fecha_inicio || "");
+      if (historialEditFechaFinInput) historialEditFechaFinInput.value = String(row.fecha_fin || "");
+      if (historialEditMeta) {
+        historialEditMeta.hidden = false;
+        historialEditMeta.textContent = `${row.ejercicio || "—"} · ${buildEnteLabel(row)} · ${formatTipoRegistroLabel(row.tipo_registro)}`;
+      }
+      await loadEntesForSelect(
+        historialEditEnteInput,
+        historialEditEjercicioInput ? historialEditEjercicioInput.value : "",
+        {
+          selectedValue: String(row.ente_id || ""),
+          emptyLabel: "Selecciona un ente",
+          allowBlank: true,
+        },
+      );
+      historialEditWrap.hidden = false;
+      if (!(row.ente_id || "").trim()) {
+        setStatus(
+          historialEditStatus,
+          "Este registro no tiene ente vinculado; selecciona el ente correcto antes de guardar.",
+          "info",
+        );
+      }
+    };
+
+    const loadHistorialRows = async () => {
+      if (!historialEjercicioInput) {
+        return;
+      }
+      const ejercicio = String(historialEjercicioInput.value || "").trim();
+      const enteId = String(historialEnteInput ? historialEnteInput.value || "" : "").trim();
+      if (!ejercicio) {
+        historialRows = [];
+        renderHistorialRows();
+        setStatus(historialStatus, "Selecciona un ejercicio para consultar.", "info");
+        return;
+      }
+      setStatus(historialStatus, "Consultando historial...", "info");
+      const params = new URLSearchParams();
+      params.set("ejercicio", ejercicio);
+      if (enteId) {
+        params.set("ente_id", enteId);
+      }
+      try {
+        const response = await fetch(`/carga/titulares/historial?${params.toString()}`, {
+          credentials: "same-origin",
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "No se pudo consultar el historial.");
+        }
+        historialRows = Array.isArray(data.rows) ? data.rows : [];
+        renderHistorialRows();
+        setStatus(historialStatus, "", "info");
+      } catch (error) {
+        historialRows = [];
+        renderHistorialRows();
+        setStatus(
+          historialStatus,
+          error instanceof Error ? error.message : "No se pudo consultar el historial.",
+          "error",
+        );
+      }
+    };
+
+    if (ejercicioInput) {
+      ejercicioInput.addEventListener("change", async () => {
+        await loadEntesForSelect(enteInput, ejercicioInput.value, {
+          selectedValue: "",
+          emptyLabel: "Selecciona un ente",
+          allowBlank: true,
+        });
+        updateSummary();
+      });
+    }
+    if (enteInput) {
+      enteInput.addEventListener("change", updateSummary);
+    }
+    if (tipoInput) {
+      tipoInput.addEventListener("change", updateSummary);
+    }
+
+    if (historialEjercicioInput) {
+      historialEjercicioInput.addEventListener("change", async () => {
+        await loadEntesForSelect(historialEnteInput, historialEjercicioInput.value, {
+          selectedValue: "",
+          emptyLabel: "Todos los entes",
+          allowBlank: true,
+        });
+        closeHistorialEditor();
+        await loadHistorialRows();
+      });
+    }
+    if (historialEnteInput) {
+      historialEnteInput.addEventListener("change", async () => {
+        closeHistorialEditor();
+        await loadHistorialRows();
+      });
+    }
+    if (historialRefreshBtn) {
+      historialRefreshBtn.addEventListener("click", async () => {
+        await loadHistorialRows();
+      });
+    }
+    if (historialTableBody) {
+      historialTableBody.addEventListener("click", async (event) => {
+        const editButton = event.target.closest("[data-edit-row-id]");
+        if (!editButton) {
+          return;
+        }
+        const rowId = Number(editButton.dataset.editRowId || 0);
+        if (!rowId) {
+          return;
+        }
+        const row = historialRows.find((item) => Number(item.id) === rowId);
+        if (!row) {
+          return;
+        }
+        await openHistorialEditor(row);
+      });
+    }
+    if (historialEditEjercicioInput) {
+      historialEditEjercicioInput.addEventListener("change", async () => {
+        await loadEntesForSelect(historialEditEnteInput, historialEditEjercicioInput.value, {
+          selectedValue: "",
+          emptyLabel: "Selecciona un ente",
+          allowBlank: true,
+        });
+      });
+    }
+    if (historialEditTipoRegistroInput) {
+      historialEditTipoRegistroInput.addEventListener("change", () => {
+        if (!historialEditCargoInput) {
+          return;
+        }
+        const currentCargo = String(historialEditCargoInput.value || "").trim();
+        if (!currentCargo || currentCargo === "Titular" || currentCargo === "Director Administrativo") {
+          historialEditCargoInput.value = defaultCargoForTipoRegistro(historialEditTipoRegistroInput.value);
+        }
+      });
+    }
+    if (historialCancelBtn) {
+      historialCancelBtn.addEventListener("click", closeHistorialEditor);
+    }
+    if (historialEditForm) {
+      historialEditForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const historialId = Number(historialEditIdInput ? historialEditIdInput.value || 0 : 0);
+        if (!historialId) {
+          setStatus(historialEditStatus, "Selecciona un registro antes de guardar.", "error");
+          return;
+        }
+        const payload = {
+          ejercicio: historialEditEjercicioInput ? historialEditEjercicioInput.value : "",
+          ente_id: historialEditEnteInput ? historialEditEnteInput.value : "",
+          tipo_auditoria: historialEditTipoAuditoriaInput ? historialEditTipoAuditoriaInput.value : "",
+          tipo_registro: historialEditTipoRegistroInput ? historialEditTipoRegistroInput.value : "",
+          nombre: historialEditNombreInput ? historialEditNombreInput.value : "",
+          cargo: historialEditCargoInput ? historialEditCargoInput.value : "",
+          fecha_inicio: historialEditFechaInicioInput ? historialEditFechaInicioInput.value : "",
+          fecha_fin: historialEditFechaFinInput ? historialEditFechaFinInput.value : "",
+        };
+        setStatus(historialEditStatus, "Guardando corrección...", "info");
+        try {
+          const response = await fetch(`/carga/titulares/historial/${historialId}/actualizar`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            credentials: "same-origin",
+            body: JSON.stringify(payload),
+          });
+          const data = await response.json();
+          if (!response.ok || !data.ok) {
+            throw new Error(data.error || "No se pudo guardar la corrección.");
+          }
+
+          await loadHistorialRows();
+          const updatedRow = historialRows.find((item) => Number(item.id) === historialId);
+          if (updatedRow) {
+            await openHistorialEditor(updatedRow, { preserveStatus: true });
+            setStatus(historialEditStatus, data.message || "Registro actualizado.", "success");
+          } else {
+            closeHistorialEditor();
+            setStatus(
+              historialStatus,
+              `${data.message || "Registro actualizado."} El registro ya no coincide con el filtro actual.`,
+              "success",
+            );
+          }
+        } catch (error) {
+          setStatus(
+            historialEditStatus,
+            error instanceof Error ? error.message : "No se pudo guardar la corrección.",
+            "error",
+          );
+        }
+      });
+    }
+
+    updateSummary();
+    loadHistorialRows();
+  </script>
+</body>
+</html>
