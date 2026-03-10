@@ -57,6 +57,20 @@ def register_gabo_routes(app, deps):
     globals().update(deps)
     TITULAR_EJERCICIO_FIJO = "2025"
     OBSERVACION_ESTADOS_VALIDOS = {"Emitido", "Pendiente", "Solventado"}
+    TITULAR_MONTHS_ES = {
+        "01": "enero",
+        "02": "febrero",
+        "03": "marzo",
+        "04": "abril",
+        "05": "mayo",
+        "06": "junio",
+        "07": "julio",
+        "08": "agosto",
+        "09": "septiembre",
+        "10": "octubre",
+        "11": "noviembre",
+        "12": "diciembre",
+    }
     def _tipo_auditoria_options(tipo_auditoria: str) -> list[str]:
         clean = " ".join((tipo_auditoria or "").split())
         if clean == "Financiera y Obra Pública":
@@ -85,7 +99,7 @@ def register_gabo_routes(app, deps):
                 or ""
             ).split()
         )
-        return {
+        form_data = {
             "titular_ejercicio": ejercicio,
             "titular_ente_id": normalize_ente_id(
                 source.get("titular_ente_id") or source.get("ente_id") or ""
@@ -105,10 +119,105 @@ def register_gabo_routes(app, deps):
             "titular_administrativo": " ".join(
                 (source.get("titular_administrativo") or "").split()
             ),
+            "titular_fecha_inicio": " ".join(
+                (source.get("titular_fecha_inicio") or "").split()
+            ),
+            "titular_fecha_fin": " ".join(
+                (source.get("titular_fecha_fin") or "").split()
+            ),
+            "titular_admin_fecha_inicio": " ".join(
+                (source.get("titular_admin_fecha_inicio") or "").split()
+            ),
+            "titular_admin_fecha_fin": " ".join(
+                (source.get("titular_admin_fecha_fin") or "").split()
+            ),
+            "titular_admin_mismo_periodo": (
+                "1" if (source.get("titular_admin_mismo_periodo") or "").strip() else "0"
+            ),
             "titular_cedula_resultados": " ".join(
                 (source.get("titular_cedula_resultados") or "").split()
             ),
         }
+        if form_data["titular_periodo_informe"] and (
+            not form_data["titular_fecha_inicio"] or not form_data["titular_fecha_fin"]
+        ):
+            fecha_inicio, fecha_fin = parse_periodo_cedula(
+                ejercicio,
+                form_data["titular_periodo_informe"],
+            )
+            if fecha_inicio and fecha_fin:
+                form_data["titular_fecha_inicio"] = fecha_inicio
+                form_data["titular_fecha_fin"] = fecha_fin
+        if form_data["titular_periodo_administrativo"] and (
+            not form_data["titular_admin_fecha_inicio"] or not form_data["titular_admin_fecha_fin"]
+        ):
+            fecha_inicio, fecha_fin = parse_periodo_cedula(
+                ejercicio,
+                form_data["titular_periodo_administrativo"],
+            )
+            if fecha_inicio and fecha_fin:
+                form_data["titular_admin_fecha_inicio"] = fecha_inicio
+                form_data["titular_admin_fecha_fin"] = fecha_fin
+        if (
+            form_data["titular_admin_mismo_periodo"] != "1"
+            and form_data["titular_fecha_inicio"]
+            and form_data["titular_fecha_fin"]
+            and form_data["titular_admin_fecha_inicio"] == form_data["titular_fecha_inicio"]
+            and form_data["titular_admin_fecha_fin"] == form_data["titular_fecha_fin"]
+        ):
+            form_data["titular_admin_mismo_periodo"] = "1"
+        return form_data
+
+    def _format_periodo_label_from_dates(fecha_inicio_iso: str, fecha_fin_iso: str) -> str:
+        fecha_inicio = parse_historial_date(fecha_inicio_iso)
+        fecha_fin = parse_historial_date(fecha_fin_iso)
+        if not fecha_inicio or not fecha_fin:
+            return ""
+        mes_inicio = TITULAR_MONTHS_ES.get(fecha_inicio.strftime("%m"), "")
+        mes_fin = TITULAR_MONTHS_ES.get(fecha_fin.strftime("%m"), "")
+        if not mes_inicio or not mes_fin:
+            return ""
+        return (
+            f"{fecha_inicio.day:02d} de {mes_inicio} al "
+            f"{fecha_fin.day:02d} de {mes_fin}"
+        )
+
+    def _resolve_period_range(
+        ejercicio: str,
+        *,
+        fecha_inicio_raw: str,
+        fecha_fin_raw: str,
+        periodo_raw: str,
+        label: str,
+    ) -> tuple[str, str, str]:
+        fecha_inicio_clean = " ".join((fecha_inicio_raw or "").split())
+        fecha_fin_clean = " ".join((fecha_fin_raw or "").split())
+        periodo_clean = " ".join((periodo_raw or "").split())
+        if fecha_inicio_clean or fecha_fin_clean:
+            fecha_inicio = parse_historial_date(fecha_inicio_clean)
+            fecha_fin = parse_historial_date(fecha_fin_clean)
+            if not fecha_inicio or not fecha_fin:
+                raise ValueError(f"Titulares: {label} requiere fecha inicial y final válidas.")
+            if fecha_inicio > fecha_fin:
+                raise ValueError(f"Titulares: {label} no puede tener fecha inicial mayor a la final.")
+            fecha_inicio_iso = fecha_inicio.isoformat()
+            fecha_fin_iso = fecha_fin.isoformat()
+            return (
+                fecha_inicio_iso,
+                fecha_fin_iso,
+                _format_periodo_label_from_dates(fecha_inicio_iso, fecha_fin_iso),
+            )
+        if not periodo_clean:
+            raise ValueError(f"Titulares: {label} requerido.")
+        fecha_inicio_iso, fecha_fin_iso = parse_periodo_cedula(
+            ejercicio,
+            periodo_clean,
+        )
+        if not fecha_inicio_iso or not fecha_fin_iso:
+            raise ValueError(
+                f"Titulares: {label} debe usar formato '01 de enero al 31 de diciembre'."
+            )
+        return fecha_inicio_iso, fecha_fin_iso, periodo_clean
 
     def _load_titular_entes(db, ejercicio: str) -> list[dict]:
         if not ejercicio:
@@ -151,12 +260,17 @@ def register_gabo_routes(app, deps):
         *,
         ejercicio: str,
         ente_id_norm: str = "",
+        tipo_auditoria: str = "",
     ) -> list[dict]:
         if not ejercicio:
             return []
 
         where_clauses = ["CAST(h.ejercicio AS TEXT) = ?"]
         params: list[str] = [ejercicio]
+
+        if tipo_auditoria:
+            where_clauses.append("TRIM(COALESCE(h.tipo_auditoria, '')) = ?")
+            params.append(tipo_auditoria)
 
         if ente_id_norm:
             ente_row = _get_ente_row_by_ejercicio_id(db, ejercicio, ente_id_norm)
@@ -358,15 +472,12 @@ def register_gabo_routes(app, deps):
         titular_tipo_auditoria = normalize_tipo_auditoria(
             form_data.get("titular_tipo_auditoria", "")
         )
-        titular_periodo_informe = " ".join(
-            (form_data.get("titular_periodo_informe") or "").split()
-        )
         titular_nombre = " ".join((form_data.get("titular_nombre") or "").split())
-        titular_periodo_administrativo = " ".join(
-            (form_data.get("titular_periodo_administrativo") or "").split()
-        )
         titular_administrativo = " ".join(
             (form_data.get("titular_administrativo") or "").split()
+        )
+        titular_admin_mismo_periodo = (
+            "1" if (form_data.get("titular_admin_mismo_periodo") or "").strip() else "0"
         )
         titular_cedula_raw = " ".join(
             (form_data.get("titular_cedula_resultados") or "").split()
@@ -389,31 +500,32 @@ def register_gabo_routes(app, deps):
             raise ValueError("Titulares: selecciona un ente.")
         if titular_tipo_auditoria not in {"Financiera", "Obra Pública"}:
             raise ValueError("Titulares: tipo de auditoría inválido.")
-        if not titular_periodo_informe:
-            raise ValueError("Titulares: periodo del titular requerido.")
         if not titular_nombre:
             raise ValueError("Titulares: nombre del titular requerido.")
-        if not titular_periodo_administrativo:
-            raise ValueError("Titulares: periodo del administrativo requerido.")
         if not titular_administrativo:
             raise ValueError("Titulares: nombre del administrativo requerido.")
 
-        titular_inicio, titular_fin = parse_periodo_cedula(
+        titular_inicio, titular_fin, titular_periodo_informe = _resolve_period_range(
             titular_ejercicio,
-            titular_periodo_informe,
+            fecha_inicio_raw=form_data.get("titular_fecha_inicio", ""),
+            fecha_fin_raw=form_data.get("titular_fecha_fin", ""),
+            periodo_raw=form_data.get("titular_periodo_informe", ""),
+            label="periodo del titular",
         )
-        if not titular_inicio or not titular_fin:
-            raise ValueError(
-                "Titulares: periodo del titular debe usar formato '01 de enero al 31 de diciembre'."
-            )
-        admin_inicio, admin_fin = parse_periodo_cedula(
+        admin_fecha_inicio_raw = form_data.get("titular_admin_fecha_inicio", "")
+        admin_fecha_fin_raw = form_data.get("titular_admin_fecha_fin", "")
+        admin_periodo_raw = form_data.get("titular_periodo_administrativo", "")
+        if titular_admin_mismo_periodo == "1":
+            admin_fecha_inicio_raw = titular_inicio
+            admin_fecha_fin_raw = titular_fin
+            admin_periodo_raw = titular_periodo_informe
+        admin_inicio, admin_fin, titular_periodo_administrativo = _resolve_period_range(
             titular_ejercicio,
-            titular_periodo_administrativo,
+            fecha_inicio_raw=admin_fecha_inicio_raw,
+            fecha_fin_raw=admin_fecha_fin_raw,
+            periodo_raw=admin_periodo_raw,
+            label="periodo del administrativo",
         )
-        if not admin_inicio or not admin_fin:
-            raise ValueError(
-                "Titulares: periodo del administrativo debe usar formato '01 de enero al 31 de diciembre'."
-            )
 
         titular_periodo_informe_key = f"{titular_inicio}|{titular_fin}"
         if titular_cedula_raw:
@@ -1529,6 +1641,9 @@ def register_gabo_routes(app, deps):
         if request.method == "POST":
             try:
                 titular_result = _save_titulares_capture(db, user, form_data)
+                if titular_result.get("ok"):
+                    form_data["titular_nombre"] = ""
+                    form_data["titular_administrativo"] = ""
             except ValueError as exc:
                 titular_result = {
                     "ok": False,
@@ -1552,6 +1667,7 @@ def register_gabo_routes(app, deps):
     def carga_titulares_historial():
         ejercicio = " ".join((request.args.get("ejercicio") or "").split())
         ente_id = normalize_ente_id(request.args.get("ente_id", ""))
+        tipo_auditoria = normalize_tipo_auditoria(request.args.get("tipo_auditoria", ""))
         if not ejercicio:
             return jsonify({"ok": False, "error": "Selecciona un ejercicio para consultar."}), 400
 
@@ -1560,6 +1676,7 @@ def register_gabo_routes(app, deps):
             db,
             ejercicio=ejercicio,
             ente_id_norm=ente_id,
+            tipo_auditoria=tipo_auditoria,
         )
         return jsonify({"ok": True, "rows": rows})
 
@@ -1617,33 +1734,66 @@ def register_gabo_routes(app, deps):
         ente_nombre = (ente_row["ente_nombre"] or "").strip()
         ente_uid = (ente_row["ente_uid"] or "").strip()
 
-        duplicate_row = db.execute(
-            """
-            SELECT id
-            FROM historial_titulares
-            WHERE id != ?
-              AND CAST(ejercicio AS TEXT) = ?
-              AND TRIM(COALESCE(ente, '')) = ?
-              AND tipo_auditoria = ?
-              AND TRIM(COALESCE(nombre, '')) = ?
-              AND TRIM(COALESCE(cargo, '')) = ?
-              AND fecha_inicio = ?
-              AND fecha_fin = ?
-              AND tipo_registro = ?
-            LIMIT 1
-            """,
-            (
-                historial_id,
-                ejercicio,
-                ente_nombre,
-                tipo_auditoria,
-                nombre,
-                cargo,
-                fecha_inicio_iso,
-                fecha_fin_iso,
-                tipo_registro,
-            ),
-        ).fetchone()
+        if ente_uid:
+            duplicate_row = db.execute(
+                """
+                SELECT id
+                FROM historial_titulares
+                WHERE id != ?
+                  AND CAST(ejercicio AS TEXT) = ?
+                  AND tipo_auditoria = ?
+                  AND TRIM(COALESCE(nombre, '')) = ?
+                  AND TRIM(COALESCE(cargo, '')) = ?
+                  AND fecha_inicio = ?
+                  AND fecha_fin = ?
+                  AND tipo_registro = ?
+                  AND (
+                    TRIM(COALESCE(ente_uid, '')) = ?
+                    OR TRIM(COALESCE(ente, '')) = ?
+                  )
+                LIMIT 1
+                """,
+                (
+                    historial_id,
+                    ejercicio,
+                    tipo_auditoria,
+                    nombre,
+                    cargo,
+                    fecha_inicio_iso,
+                    fecha_fin_iso,
+                    tipo_registro,
+                    ente_uid,
+                    ente_nombre,
+                ),
+            ).fetchone()
+        else:
+            duplicate_row = db.execute(
+                """
+                SELECT id
+                FROM historial_titulares
+                WHERE id != ?
+                  AND CAST(ejercicio AS TEXT) = ?
+                  AND TRIM(COALESCE(ente, '')) = ?
+                  AND tipo_auditoria = ?
+                  AND TRIM(COALESCE(nombre, '')) = ?
+                  AND TRIM(COALESCE(cargo, '')) = ?
+                  AND fecha_inicio = ?
+                  AND fecha_fin = ?
+                  AND tipo_registro = ?
+                LIMIT 1
+                """,
+                (
+                    historial_id,
+                    ejercicio,
+                    ente_nombre,
+                    tipo_auditoria,
+                    nombre,
+                    cargo,
+                    fecha_inicio_iso,
+                    fecha_fin_iso,
+                    tipo_registro,
+                ),
+            ).fetchone()
         if duplicate_row:
             return jsonify({"ok": False, "error": "Ya existe otro registro idéntico en historial."}), 400
 
@@ -1680,6 +1830,7 @@ def register_gabo_routes(app, deps):
             db,
             ejercicio=ejercicio,
             ente_id_norm=ente_id,
+            tipo_auditoria=tipo_auditoria,
         )
         updated_row = next(
             (item for item in updated_rows if int(item["id"]) == historial_id),
