@@ -31,112 +31,144 @@
 
   <main class="page-content loader-content">
     {% set principal_tipo = form_data.manual_tipo_auditoria or form_data.titular_tipo_auditoria %}
-    <section class="panel loader-mode-panel">
+    <section class="panel loader-mode-panel loader-expediente-panel">
       <div class="panel-header">
-        <h2>Contexto de registro</h2>
-        <p>Usa el mismo contexto base de observaciones-admin, pero enfocado en alta de registros. El estado inicial queda en Emitido y los anexos se capturan por cantidades.</p>
+        <h2>Expediente de cédula</h2>
+        <p>Define el expediente una vez y captura las fuentes sin repetir datos.</p>
       </div>
-      <div class="record-form filters-form loader-principal-form">
-        <div class="form-grid">
-          <div class="field">
-            <label for="principal_ejercicio">Ejercicio</label>
-            <select id="principal_ejercicio">
-              {% for ejercicio in manual_ejercicios %}
-                <option value="{{ ejercicio }}" {% if form_data.manual_ejercicio == ejercicio %}selected{% endif %}>{{ ejercicio }}</option>
-              {% endfor %}
-            </select>
+      <div class="loader-expediente-shell">
+        <div class="record-form filters-form loader-principal-form">
+          <div class="loader-expediente-collection">
+            <section class="loader-expediente-group">
+              <div class="loader-expediente-group-head">
+                <span>Contexto base</span>
+                <p>Ejercicio, ente y alcance.</p>
+              </div>
+              <div class="form-grid loader-expediente-grid">
+                <div class="field">
+                  <label for="principal_ejercicio">Ejercicio</label>
+                  <select id="principal_ejercicio">
+                    {% for ejercicio in manual_ejercicios %}
+                      <option value="{{ ejercicio }}" {% if form_data.manual_ejercicio == ejercicio %}selected{% endif %}>{{ ejercicio }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="principal_ente_id">Ente</label>
+                  <select id="principal_ente_id" data-selected="{{ form_data.manual_ente_id }}">
+                    <option value="">Selecciona un ente</option>
+                    {% for ente in manual_entes %}
+                      <option value="{{ ente.ente_id }}" {% if form_data.manual_ente_id == ente.ente_id %}selected{% endif %}>
+                        {{ ente.ente_numero }} - {{ ente.ente_nombre }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="principal_tipo_auditoria">Alcance del oficio</label>
+                  <select id="principal_tipo_auditoria" required>
+                    <option value="" {% if not principal_tipo %}selected{% endif %}>Selecciona el alcance</option>
+                    <option value="Financiera" {% if principal_tipo == "Financiera" %}selected{% endif %}>Financiera</option>
+                    <option value="Obra Pública" {% if principal_tipo == "Obra Pública" %}selected{% endif %}>Obra Pública</option>
+                    <option value="Financiera y Obra Pública" {% if principal_tipo == "Financiera y Obra Pública" %}selected{% endif %}>Financiera y Obra Pública</option>
+                  </select>
+                  <p class="helper">Usa mixto si el oficio combina Financiera y Obra.</p>
+                </div>
+              </div>
+            </section>
+
+            <section class="loader-expediente-group">
+              <div class="loader-expediente-group-head">
+                <span>Clave del oficio</span>
+                <p>Número, fecha, periodo y meta de captura.</p>
+              </div>
+              <div class="form-grid loader-expediente-grid">
+                <div class="field">
+                  <label for="principal_numero_oficio">Oficio</label>
+                  <input id="principal_numero_oficio" type="text" value="{{ form_data.manual_numero_oficio }}" placeholder="Número de oficio" required>
+                </div>
+                <div class="field">
+                  <label for="principal_fecha_notificacion">Fecha de notificación</label>
+                  <div class="loader-date-inline">
+                    <input id="principal_fecha_notificacion" type="date" value="{{ form_data.manual_fecha_notificacion }}" required>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="principal_periodo">Periodo</label>
+                  <input id="principal_periodo" type="text" value="{{ form_data.manual_periodo }}" placeholder="Ej. 01 de enero al 31 de diciembre" required>
+                  <p class="helper">Mismo periodo para las observaciones emitidas.</p>
+                </div>
+                <div class="field">
+                  <label for="principal_fuentes_objetivo">Fuentes previstas</label>
+                  <input id="principal_fuentes_objetivo" type="number" min="1" step="1" value="{{ form_data.manual_fuentes_objetivo or '1' }}">
+                  <p class="helper">Solo marca la meta inicial.</p>
+                </div>
+              </div>
+            </section>
           </div>
-          <div class="field">
-            <label for="principal_ente_id">Ente</label>
-            <select id="principal_ente_id" data-selected="{{ form_data.manual_ente_id }}">
-              <option value="">Selecciona un ente</option>
-              {% for ente in manual_entes %}
-                <option value="{{ ente.ente_id }}" {% if form_data.manual_ente_id == ente.ente_id %}selected{% endif %}>
-                  {{ ente.ente_numero }} - {{ ente.ente_nombre }}
-                </option>
-              {% endfor %}
-            </select>
-            <p class="helper">Este contexto alimenta Notificación de Cédula y Titulares.</p>
+          <div class="loader-expediente-mini-meta">
+            <span class="loader-obs-chip">Estado <strong>Emitido</strong></span>
+            <span class="loader-obs-chip">Captura <strong>1 fuente por tarjeta</strong></span>
           </div>
-          <div class="field">
-            <label for="principal_tipo_auditoria">Tipo de auditoría</label>
-            <select id="principal_tipo_auditoria" required>
-              <option value="" {% if not principal_tipo %}selected{% endif %}>Selecciona tipo de auditoría</option>
-              <option value="Financiera" {% if principal_tipo == "Financiera" %}selected{% endif %}>Financiera</option>
-              <option value="Obra Pública" {% if principal_tipo == "Obra Pública" %}selected{% endif %}>Obra Pública</option>
-            </select>
-            <p class="helper">Este tipo se comparte con Notificación de Cédula y Titulares.</p>
-          </div>
-          <div class="field">
-            <label for="principal_fuente_id">Fuente de financiamiento</label>
-            <select id="principal_fuente_id" data-selected="{{ form_data.manual_fuente_id }}">
-              <option value="">{% if manual_fuentes %}Selecciona una fuente{% else %}Selecciona un ente primero{% endif %}</option>
-              {% for fuente in manual_fuentes %}
-                <option value="{{ fuente.id }}" {% if form_data.manual_fuente_id == (fuente.id|string) %}selected{% endif %}>
-                  {{ fuente.nombre }}
-                </option>
-              {% endfor %}
-              <option value="__new__" {% if form_data.manual_fuente_id == "__new__" %}selected{% endif %}>+ Agregar nueva fuente...</option>
-            </select>
-            <p class="helper">Se sincroniza con la fuente activa de la cédula.</p>
-          </div>
-          <div id="principal_fuente_nueva_wrap" class="field" style="{% if form_data.manual_fuente_id != '__new__' %}display:none;{% endif %}">
-            <label for="principal_fuente_nueva">Fuente nueva</label>
-            <input id="principal_fuente_nueva" type="text" value="{{ form_data.manual_fuente_nueva }}" placeholder="Nombre de la fuente nueva">
-          </div>
-          <div class="field">
-            <label for="principal_periodo">Periodo</label>
-            <input id="principal_periodo" type="text" value="{{ form_data.manual_periodo }}" placeholder="Ej. 01 de enero al 31 de diciembre">
-            <p class="helper">Ej. 01 de enero al 31 de diciembre</p>
-          </div>
-          <div class="field">
-            <label for="principal_numero_oficio">Oficio</label>
-            <input id="principal_numero_oficio" type="text" value="{{ form_data.manual_numero_oficio }}" placeholder="Número de oficio">
-          </div>
-          <div class="field">
-            <label for="principal_fecha_notificacion">Fecha de notificación</label>
-            <div class="loader-date-inline">
-              <input id="principal_fecha_notificacion" type="date" value="{{ form_data.manual_fecha_notificacion }}">
-            </div>
-            <p class="helper">dd/mm/aaaa</p>
-          </div>
-          <div class="field">
-            <label for="principal_fuentes_objetivo">Fuentes a capturar</label>
-            <input id="principal_fuentes_objetivo" type="number" min="1" step="1" value="{{ form_data.manual_fuentes_objetivo or '1' }}">
-            <p class="helper">Planea cuántas fuentes llevará este oficio.</p>
-          </div>
-          <div class="field">
-            <label>Estado del registro</label>
-            <div class="loader-context-static">Emitido</div>
-            <p class="helper">Se genera así al guardar la notificación.</p>
-          </div>
-          <div class="field">
-            <label>Tipos de anexo</label>
-            <div class="loader-context-static">SA, PDP, PRAS, PEFCF, R</div>
-            <p class="helper">Las cantidades se capturan en el paso 2.</p>
-          </div>
+          <p class="helper loader-principal-sync-note">Arriba defines el expediente; abajo solo capturas la fuente actual.</p>
         </div>
-        <p class="helper loader-principal-sync-note">Puedes ajustar este contexto desde arriba o desde la captura sincronizada; la pantalla sigue siendo de registro, no de edición.</p>
+
+        <aside class="loader-expediente-aside">
+          <div class="loader-current-mode-card">
+            <span class="loader-current-mode-label">Carga activa</span>
+            <strong>{{ "Carga de titulares" if initial_loader_mode == "titulares" else "Notificación de Cédula de Resultados" }}</strong>
+            <p>{% if initial_loader_mode == "titulares" %}Usa el botón flotante para volver a la cédula.{% else %}Usa el botón flotante para abrir titulares.{% endif %}</p>
+          </div>
+          <div class="loader-preview-metrics loader-principal-metrics">
+            <span class="loader-obs-chip">Fuentes guardadas: <strong id="manualFuentesTotal">0</strong></span>
+            <span class="loader-obs-chip">Observaciones programadas: <strong id="manualTotalObservaciones">0</strong></span>
+            <span class="loader-obs-chip">PDP programadas: <strong id="manualTotalPdp">0</strong></span>
+          </div>
+          <div class="loader-expediente-guide">
+            <article class="loader-expediente-guide-item">
+              <span>1</span>
+              <strong>Define el expediente</strong>
+              <p>Ejercicio, ente y alcance.</p>
+            </article>
+            <article class="loader-expediente-guide-item">
+              <span>2</span>
+              <strong>Captura cada fuente</strong>
+              <p>Fuente, tipo y cantidades.</p>
+            </article>
+            <article class="loader-expediente-guide-item">
+              <span>3</span>
+              <strong>Revisa y guarda</strong>
+              <p>Confirma totales y detalle PDP.</p>
+            </article>
+          </div>
+        </aside>
       </div>
-      <div class="loader-preview-metrics loader-principal-metrics">
-        <span class="loader-obs-chip">Estado inicial: <strong>Emitido</strong></span>
-        <span class="loader-obs-chip">Fuentes guardadas: <strong id="manualFuentesTotal">0</strong></span>
-        <span class="loader-obs-chip">Observaciones programadas: <strong id="manualTotalObservaciones">0</strong></span>
+
+      <div class="loader-context-hidden" hidden aria-hidden="true">
+        <select id="principal_fuente_id" data-selected="{{ form_data.manual_fuente_id }}">
+          <option value="">{% if manual_fuentes %}Selecciona una fuente{% else %}Selecciona un ente primero{% endif %}</option>
+          {% for fuente in manual_fuentes %}
+            <option value="{{ fuente.id }}" {% if form_data.manual_fuente_id == (fuente.id|string) %}selected{% endif %}>
+              {{ fuente.nombre }}
+            </option>
+          {% endfor %}
+          <option value="__new__" {% if form_data.manual_fuente_id == "__new__" %}selected{% endif %}>+ Agregar nueva fuente...</option>
+        </select>
+        <div id="principal_fuente_nueva_wrap" style="{% if form_data.manual_fuente_id != '__new__' %}display:none;{% endif %}">
+          <input id="principal_fuente_nueva" type="text" value="{{ form_data.manual_fuente_nueva }}" placeholder="Nombre de la fuente nueva">
+        </div>
       </div>
-      <div class="loader-current-mode-card">
-        <span class="loader-current-mode-label">Carga activa</span>
-        <strong>{{ "Carga de titulares" if initial_loader_mode == "titulares" else "Notificación de Cédula de Resultados" }}</strong>
-        <p>{% if initial_loader_mode == "titulares" %}Usa el botón flotante para regresar a la captura de cédula.{% else %}Usa el botón flotante para abrir la carga de titulares como vista independiente.{% endif %}</p>
-      </div>
+
       <div class="status status-info" id="principal_scope_info" hidden>
-        Primero selecciona ejercicio, ente y tipo de auditoría.
+        Primero selecciona ejercicio, ente y alcance del oficio.
       </div>
       <div class="status status-info" id="wizardToast" hidden></div>
     </section>
 
-    <section class="panel loader-card" data-loader-mode-panel="manual">
+    <section class="panel loader-card loader-manual-workspace" data-loader-mode-panel="manual">
       <div class="panel-header">
         <h2 id="manualPanelTitle">Notificación de Cédula de Resultados</h2>
+        <p>Agrega observaciones por fuente sin repetir el expediente.</p>
       </div>
       {% if manual_result %}
         <div class="status {% if manual_result.level == 'info' %}status-info{% elif manual_result.ok %}status-success{% else %}status-error{% endif %}">
@@ -147,193 +179,195 @@
         <input type="hidden" name="manual_id" value="{{ form_data.manual_id }}">
         <input id="manual_ejercicio" name="manual_ejercicio" type="hidden" value="{{ form_data.manual_ejercicio }}">
         <input id="manual_ente_id" name="manual_ente_id" type="hidden" value="{{ form_data.manual_ente_id }}">
+        <input id="manual_asunto" name="manual_asunto" type="hidden" value="{{ form_data.manual_asunto }}">
+        <input id="manual_oficio_base" name="manual_oficio_base" type="hidden" value="{{ form_data.manual_oficio_base }}">
+        <input id="manual_numero_oficio" name="manual_numero_oficio" type="hidden" value="{{ form_data.manual_numero_oficio }}">
+        <input id="manual_periodo" name="manual_periodo" type="hidden" value="{{ form_data.manual_periodo }}">
+        <input id="manual_fecha_notificacion" name="manual_fecha_notificacion" type="hidden" value="{{ form_data.manual_fecha_notificacion }}">
+        <input id="manual_fuentes_objetivo" name="manual_fuentes_objetivo" type="hidden" value="{{ form_data.manual_fuentes_objetivo or '1' }}">
+        <input type="hidden" id="manual_fuentes_detalle_json" name="manual_fuentes_detalle_json" value="{{ form_data.manual_fuentes_detalle_json|e }}">
+        <input type="hidden" id="manual_pdp_detalle_json" name="manual_pdp_detalle_json" value="{{ form_data.manual_pdp_detalle_json|e }}">
+        <datalist id="manual_oficio_options"></datalist>
+        <datalist id="manual_periodo_options"></datalist>
+
+        <div class="loader-context-hidden" hidden aria-hidden="true">
+          <div class="field" id="manual_oficio_base_field" style="display:none;">
+            <label for="manual_oficio_base_selector">Oficio de cédula a contestar</label>
+            <select
+              id="manual_oficio_base_selector"
+              data-selected-oficio="{{ form_data.manual_oficio_base }}"
+              data-selected-periodo="{{ form_data.manual_periodo }}"
+            >
+              <option value="">Selecciona un oficio de cédula</option>
+            </select>
+            <p class="helper" id="manual_oficio_base_hint">Selecciona un oficio base para heredar el periodo.</p>
+          </div>
+          <div class="field" id="manual_numero_oficio_field">
+            <label for="manual_numero_oficio" id="manual_numero_oficio_label">Número de oficio</label>
+          </div>
+          <div class="field" id="manual_periodo_field">
+            <label for="manual_periodo">Periodo</label>
+            <p class="helper" id="manual_periodo_helper">Ej. 01 de enero al 31 de diciembre</p>
+          </div>
+        </div>
+
         <section class="loader-step-section is-active" data-step="1">
           <div class="loader-step-head">
-            <h3 id="manualStep2Title">Notificación de Cédula de Resultados</h3>
-            <p id="manualStep2Help">1. Oficio de Notificación de Cédula de Resultados / 2. Observaciones Emitidas</p>
+            <h3 id="manualStep2Title">Fuentes y observaciones emitidas</h3>
+            <p id="manualStep2Help">Captura una fuente por vez. Si el oficio es mixto, define el tipo en la tarjeta.</p>
           </div>
-          <input id="manual_asunto" name="manual_asunto" type="hidden" value="{{ form_data.manual_asunto }}">
-          <input id="manual_oficio_base" name="manual_oficio_base" type="hidden" value="{{ form_data.manual_oficio_base }}">
-          <datalist id="manual_oficio_options"></datalist>
-          <datalist id="manual_periodo_options"></datalist>
 
-          <div class="loader-manual-subsection">
-            <h3 id="manualStep1Title">1. Oficio de Notificación de Cédula de Resultados</h3>
-            <p class="helper">Ajusta oficio, periodo, fecha y tipo aquí o desde el contexto de registro superior. Todo se mantiene sincronizado.</p>
-            <div class="form-grid loader-context-grid">
-              <div class="field" id="manual_oficio_base_field" style="display:none;">
-                <label for="manual_oficio_base_selector">Oficio de cédula a contestar</label>
-                <select
-                  id="manual_oficio_base_selector"
-                  data-selected-oficio="{{ form_data.manual_oficio_base }}"
-                  data-selected-periodo="{{ form_data.manual_periodo }}"
-                >
-                <option value="">Selecciona un oficio de cédula</option>
-                </select>
-                <p class="helper" id="manual_oficio_base_hint">Selecciona un oficio base para heredar el periodo.</p>
-              </div>
-              <div class="field">
-                <label for="manual_tipo_auditoria">Tipo de auditoría</label>
-                <select id="manual_tipo_auditoria" name="manual_tipo_auditoria" required>
-                  <option value="" {% if not form_data.manual_tipo_auditoria %}selected{% endif %}>Selecciona tipo de auditoría</option>
-                  <option value="Financiera" {% if form_data.manual_tipo_auditoria == "Financiera" %}selected{% endif %}>Financiera</option>
-                  <option value="Obra Pública" {% if form_data.manual_tipo_auditoria == "Obra Pública" %}selected{% endif %}>Obra Pública</option>
-                </select>
-                <p class="helper">Se sincroniza con el contexto superior y con titulares.</p>
-              </div>
-              <div class="field" id="manual_numero_oficio_field">
-                <label for="manual_numero_oficio" id="manual_numero_oficio_label">Número de oficio</label>
-                <input
-                  id="manual_numero_oficio"
-                  name="manual_numero_oficio"
-                  type="text"
-                  value="{{ form_data.manual_numero_oficio }}"
-                  list="manual_oficio_options"
-                  placeholder="Número de oficio"
-                  required
-                >
-              </div>
-              <div class="field" id="manual_periodo_field">
-                <label for="manual_periodo">Periodo</label>
-                <input
-                  id="manual_periodo"
-                  name="manual_periodo"
-                  type="text"
-                  value="{{ form_data.manual_periodo }}"
-                  list="manual_periodo_options"
-                  placeholder="Ej. 01 de enero al 31 de diciembre"
-                  required
-                >
-                <p class="helper" id="manual_periodo_helper">Ej. 01 de enero al 31 de diciembre</p>
-              </div>
-              <div class="field">
-                <label for="manual_fecha_notificacion">Fecha de notificación</label>
-                <div class="loader-date-inline">
-                  <input id="manual_fecha_notificacion" name="manual_fecha_notificacion" type="date" value="{{ form_data.manual_fecha_notificacion }}" required>
+          <div class="loader-capture-shell">
+            <div class="loader-capture-main">
+              <div class="loader-manual-subsection loader-context-review-card">
+                <div class="loader-source-editor-head">
+                  <div>
+                    <h3 id="manualStep1Title">Expediente activo</h3>
+                    <p class="helper">Resumen de la clave con la que se guardarán las fuentes.</p>
+                  </div>
                 </div>
-                <p class="helper">dd/mm/aaaa</p>
-              </div>
-              <div class="loader-context-review loader-context-review-compact">
-                <p>Resumen listo para registro. Si necesitas cambiar algún dato del oficio, tipo o fuente, ajústalo en el contexto superior o en esta captura sincronizada.</p>
                 <div class="loader-preview-metrics">
                   <span class="loader-obs-chip">Ejercicio: <strong id="manualContextSummaryEjercicio">-</strong></span>
                   <span class="loader-obs-chip">Ente: <strong id="manualContextSummaryEnte">-</strong></span>
-                  <span class="loader-obs-chip">Tipo: <strong id="manualContextSummaryTipo">-</strong></span>
+                  <span class="loader-obs-chip">Alcance: <strong id="manualContextSummaryTipo">-</strong></span>
                   <span class="loader-obs-chip">Fuente activa: <strong id="manualContextSummaryFuente">-</strong></span>
                   <span class="loader-obs-chip">Oficio: <strong id="manualContextSummaryOficio">-</strong></span>
                   <span class="loader-obs-chip">Periodo: <strong id="manualContextSummaryPeriodo">-</strong></span>
                   <span class="loader-obs-chip">Fecha: <strong id="manualContextSummaryFecha">-</strong></span>
-                  <span class="loader-obs-chip">Fuentes objetivo: <strong id="manualContextSummaryFuentes">-</strong></span>
+                  <span class="loader-obs-chip">Fuentes previstas: <strong id="manualContextSummaryFuentes">-</strong></span>
+                </div>
+                <p class="helper" id="manual_context_status"></p>
+              </div>
+
+              <div
+                class="loader-manual-subsection loader-fuente-subsection"
+                id="manual-cantidades-cedula"
+                style="{% if form_data.manual_asunto != 'Notificación de Cédula de Resultados' %}display:none;{% endif %}"
+              >
+                <div class="loader-source-editor-head">
+                  <div>
+                    <h3>Fuente en captura</h3>
+                    <p class="helper">Elige la fuente, define el tipo y captura sus cantidades.</p>
+                  </div>
+                  <span class="loader-source-card-type" id="manualFuenteEditorMode">Nueva fuente</span>
+                </div>
+
+                <div
+                  id="manual_fuentes_wrap"
+                  class="form-grid loader-fuente-editor-grid"
+                  style="{% if not form_data.manual_tipo_auditoria or not form_data.manual_ente_id %}display:none;{% endif %}"
+                >
+                  <div class="field">
+                    <label for="manual_tipo_auditoria">Tipo de esta fuente</label>
+                    <select id="manual_tipo_auditoria" name="manual_tipo_auditoria" required>
+                      <option value="" {% if not form_data.manual_tipo_auditoria %}selected{% endif %}>Selecciona tipo de auditoría</option>
+                      <option value="Financiera" {% if form_data.manual_tipo_auditoria == "Financiera" %}selected{% endif %}>Financiera</option>
+                      <option value="Obra Pública" {% if form_data.manual_tipo_auditoria == "Obra Pública" %}selected{% endif %}>Obra Pública</option>
+                    </select>
+                    <p class="helper" id="manual_tipo_scope_hint">Si el oficio es mixto, aquí eliges el tipo.</p>
+                  </div>
+                  <div class="field">
+                    <label for="manual_fuente_id">Fuente de financiamiento</label>
+                    <select id="manual_fuente_id" name="manual_fuente_id">
+                      <option value="">{% if manual_fuentes %}Selecciona una fuente{% else %}Selecciona un ente primero{% endif %}</option>
+                      {% for fuente in manual_fuentes %}
+                        <option value="{{ fuente.id }}" {% if form_data.manual_fuente_id == (fuente.id|string) %}selected{% endif %}>
+                          {{ fuente.nombre }}
+                        </option>
+                      {% endfor %}
+                      <option value="__new__" {% if form_data.manual_fuente_id == "__new__" %}selected{% endif %}>+ Agregar nueva fuente...</option>
+                    </select>
+                    <p class="helper" id="manual_fuente_tipo_hint">Consulta fuentes históricas o agrega una nueva.</p>
+                  </div>
+                  <div id="manual_fuente_nueva_wrap" class="field" style="{% if form_data.manual_fuente_id != '__new__' %}display:none;{% endif %}">
+                    <label for="manual_fuente_nueva">Nombre de la fuente nueva</label>
+                    <input id="manual_fuente_nueva" name="manual_fuente_nueva" type="text" value="{{ form_data.manual_fuente_nueva }}" placeholder="Ej. Remanentes">
+                  </div>
+                </div>
+
+                <div
+                  id="manual_cantidades_wrap"
+                  class="loader-cantidad-grid"
+                  style="{% if not form_data.manual_fuente_id %}display:none;{% endif %}"
+                >
+                  <div class="field loader-cantidad-card">
+                    <label for="manual_cantidad_sa">SA</label>
+                    <input id="manual_cantidad_sa" name="manual_cantidad_sa" type="number" min="0" value="{{ form_data.manual_cantidad_sa }}" required>
+                  </div>
+                  <div class="field loader-cantidad-card">
+                    <label for="manual_cantidad_pdp">PDP</label>
+                    <input id="manual_cantidad_pdp" name="manual_cantidad_pdp" type="number" min="0" value="{{ form_data.manual_cantidad_pdp }}" required>
+                  </div>
+                  <div class="field loader-cantidad-card">
+                    <label for="manual_cantidad_pras">PRAS</label>
+                    <input id="manual_cantidad_pras" name="manual_cantidad_pras" type="number" min="0" value="{{ form_data.manual_cantidad_pras }}" required>
+                  </div>
+                  <div class="field loader-cantidad-card">
+                    <label for="manual_cantidad_pefcf">PEFCF</label>
+                    <input id="manual_cantidad_pefcf" name="manual_cantidad_pefcf" type="number" min="0" value="{{ form_data.manual_cantidad_pefcf }}" required>
+                  </div>
+                  <div class="field loader-cantidad-card">
+                    <label for="manual_cantidad_r">R</label>
+                    <input id="manual_cantidad_r" name="manual_cantidad_r" type="number" min="0" value="{{ form_data.manual_cantidad_r }}" required>
+                  </div>
+                </div>
+
+                <div class="loader-step-nav">
+                  <button type="button" class="btn-secondary" id="manualAddNewFuenteBtnInline">Guardar esta fuente y continuar</button>
+                  <button type="button" class="btn-secondary" id="manualCancelFuenteEditBtn" hidden>Cancelar edición</button>
+                  <button type="button" class="btn-secondary" id="manualFinishFuentesBtn">Usar fuentes capturadas</button>
+                </div>
+
+                <div class="form-grid loader-manual-grid-3" id="manual_pdp_single_editor" style="display:none;" aria-hidden="true">
+                  <div class="field">
+                    <label for="manual_pdp_selector">Observación PDP</label>
+                    <select id="manual_pdp_selector"></select>
+                  </div>
+                  <div class="field">
+                    <label for="manual_pdp_monto">Monto PDP</label>
+                    <input id="manual_pdp_monto" type="text" inputmode="decimal" placeholder="$0.00 MXN">
+                  </div>
+                  <div class="field">
+                    <label for="manual_pdp_concepto">Concepto de irregularidad</label>
+                    <select id="manual_pdp_concepto">
+                      <option value="">Selecciona un concepto</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div
+                  id="manual-pdp-detalle"
+                  class="loader-pdp-inline-block"
+                  style="{% if form_data.manual_asunto != 'Notificación de Cédula de Resultados' or (form_data.manual_cantidad_pdp|int) <= 0 %}display:none;{% endif %}"
+                >
+                  <h3>Detalle PDP del oficio</h3>
+                  <p class="helper">Captura concepto y monto. El selector te indica la fuente correspondiente.</p>
+                  <div id="manual_pdp_breakdown" class="loader-fuentes-list"></div>
                 </div>
               </div>
+
+              <div class="loader-manual-subsection loader-fuentes-summary-card">
+                <div class="loader-source-editor-head">
+                  <div>
+                    <h3>Fuentes del oficio</h3>
+                    <p class="helper" id="manual_fuentes_progress"></p>
+                  </div>
+                </div>
+                <div id="manualFuentesDetalleList" class="loader-fuentes-board"></div>
+                <p class="helper" id="manual_fuentes_detalle_feedback"></p>
+              </div>
             </div>
+
+            <aside class="loader-capture-aside">
+              <div class="loader-manual-subsection loader-review-card">
+                <h3>Revisión final</h3>
+                <div id="manualReviewChecklist" class="loader-review-list">
+                  <p class="muted">Completa el expediente y agrega una fuente para revisar el cierre.</p>
+                </div>
+              </div>
+            </aside>
           </div>
 
-          <input type="hidden" id="manual_fuentes_detalle_json" name="manual_fuentes_detalle_json" value="{{ form_data.manual_fuentes_detalle_json|e }}">
-          <div
-            class="loader-manual-subsection loader-fuente-subsection"
-            id="manual-cantidades-cedula"
-            style="{% if form_data.manual_asunto != 'Notificación de Cédula de Resultados' %}display:none;{% endif %}"
-          >
-            <h3>2. Observaciones Emitidas</h3>
-            <p class="helper">Registra cada fuente del oficio y captura las cantidades por tipo de anexo.</p>
-            <div class="form-grid loader-fuente-grid">
-              <div class="field">
-                <label for="manual_fuentes_objetivo">Fuentes a capturar</label>
-                <input
-                  id="manual_fuentes_objetivo"
-                  name="manual_fuentes_objetivo"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value="{{ form_data.manual_fuentes_objetivo or '1' }}"
-                  required
-                >
-                <p class="helper">Indica cuántas fuentes vas a registrar en este oficio.</p>
-              </div>
-            </div>
-            <div
-              id="manual_fuentes_wrap"
-              class="form-grid loader-fuente-grid"
-              style="{% if not form_data.manual_tipo_auditoria or not form_data.manual_ente_id %}display:none;{% endif %}"
-            >
-              <div class="field">
-                <label for="manual_fuente_id">Fuente de financiamiento</label>
-                <select id="manual_fuente_id" name="manual_fuente_id">
-                  <option value="">{% if manual_fuentes %}Selecciona una fuente{% else %}Selecciona un ente primero{% endif %}</option>
-                  {% for fuente in manual_fuentes %}
-                    <option value="{{ fuente.id }}" {% if form_data.manual_fuente_id == (fuente.id|string) %}selected{% endif %}>
-                      {{ fuente.nombre }}
-                    </option>
-                  {% endfor %}
-                  <option value="__new__" {% if form_data.manual_fuente_id == "__new__" %}selected{% endif %}>+ Agregar nueva fuente...</option>
-                </select>
-                <p class="helper" id="manual_fuente_tipo_hint">Selecciona ente y tipo para consultar fuentes de ejercicios anteriores, o agrega una nueva.</p>
-              </div>
-              <div id="manual_fuente_nueva_wrap" class="field" style="{% if form_data.manual_fuente_id != '__new__' %}display:none;{% endif %}">
-                <label for="manual_fuente_nueva">Nombre de la fuente nueva</label>
-                <input id="manual_fuente_nueva" name="manual_fuente_nueva" type="text" value="{{ form_data.manual_fuente_nueva }}" placeholder="Ej. Remanentes">
-              </div>
-            </div>
-            <div
-              id="manual_cantidades_wrap"
-              class="form-grid loader-manual-grid-5"
-              style="{% if not form_data.manual_fuente_id %}display:none;{% endif %}"
-            >
-              <div class="field">
-                <label for="manual_cantidad_sa">SA</label>
-                <input id="manual_cantidad_sa" name="manual_cantidad_sa" type="number" min="0" value="{{ form_data.manual_cantidad_sa }}" required>
-              </div>
-              <div class="field">
-                <label for="manual_cantidad_pdp">PDP</label>
-                <input id="manual_cantidad_pdp" name="manual_cantidad_pdp" type="number" min="0" value="{{ form_data.manual_cantidad_pdp }}" required>
-              </div>
-              <div class="field">
-                <label for="manual_cantidad_pras">PRAS</label>
-                <input id="manual_cantidad_pras" name="manual_cantidad_pras" type="number" min="0" value="{{ form_data.manual_cantidad_pras }}" required>
-              </div>
-              <div class="field">
-                <label for="manual_cantidad_pefcf">PEFCF</label>
-                <input id="manual_cantidad_pefcf" name="manual_cantidad_pefcf" type="number" min="0" value="{{ form_data.manual_cantidad_pefcf }}" required>
-              </div>
-              <div class="field">
-                <label for="manual_cantidad_r">R</label>
-                <input id="manual_cantidad_r" name="manual_cantidad_r" type="number" min="0" value="{{ form_data.manual_cantidad_r }}" required>
-              </div>
-            </div>
-            <div class="loader-step-nav">
-              <button type="button" class="btn-secondary" id="manualAddNewFuenteBtnInline">Guardar fuente y continuar</button>
-              <button type="button" class="btn-secondary" id="manualFinishFuentesBtn">Terminar captura</button>
-            </div>
-            <div id="manualFuentesDetalleList" class="loader-fuentes-list"></div>
-            <p class="helper" id="manual_fuentes_progress"></p>
-            <p class="helper" id="manual_fuentes_detalle_feedback"></p>
-            <div class="form-grid loader-manual-grid-3" id="manual_pdp_single_editor" style="display:none;" aria-hidden="true">
-              <div class="field">
-                <label for="manual_pdp_selector">Observación PDP</label>
-                <select id="manual_pdp_selector"></select>
-              </div>
-              <div class="field">
-                <label for="manual_pdp_monto">Monto PDP</label>
-                <input id="manual_pdp_monto" type="text" inputmode="decimal" placeholder="$0.00 MXN">
-              </div>
-              <div class="field">
-                <label for="manual_pdp_concepto">Concepto de irregularidad</label>
-                <select id="manual_pdp_concepto">
-                  <option value="">Selecciona un concepto</option>
-                </select>
-              </div>
-            </div>
-            <div
-              id="manual-pdp-detalle"
-              style="{% if form_data.manual_asunto != 'Notificación de Cédula de Resultados' or (form_data.manual_cantidad_pdp|int) <= 0 %}display:none;{% endif %}"
-            >
-              <h3>Observaciones PDP</h3>
-              <p class="helper">Registra cada observación en una sola fila: concepto y monto individual, con total acumulado.</p>
-              <div id="manual_pdp_breakdown" class="loader-fuentes-list"></div>
-            </div>
-          </div>
-          <input type="hidden" id="manual_pdp_detalle_json" name="manual_pdp_detalle_json" value="{{ form_data.manual_pdp_detalle_json|e }}">
           <div class="loader-step-nav">
             <button class="btn-primary" type="submit" name="action" value="manual_save" id="manualSaveBtn">Guardar y concluir</button>
           </div>
@@ -522,13 +556,13 @@
       if (manualPanelTitle && manualStep2Title && manualStep2Help && mode !== "titulares") {
         manualPanelTitle.textContent = "Notificación de Cédula de Resultados";
         if (manualStep1ChipEl) {
-          manualStep1ChipEl.textContent = "1. Oficio de Notificación de Cédula de Resultados";
+          manualStep1ChipEl.textContent = "1. Expediente activo";
         }
         if (manualStep1TitleEl) {
-          manualStep1TitleEl.textContent = "1. Oficio de Notificación de Cédula de Resultados";
+          manualStep1TitleEl.textContent = "Expediente activo";
         }
-        manualStep2Title.textContent = "Notificación de Cédula de Resultados";
-        manualStep2Help.textContent = "1. Oficio de Notificación de Cédula de Resultados / 2. Observaciones Emitidas";
+        manualStep2Title.textContent = "Fuentes y observaciones emitidas";
+        manualStep2Help.textContent = "Captura una fuente por vez. Si el oficio es mixto, define el tipo en la tarjeta.";
         if (manualStep2ChipEl) {
           manualStep2ChipEl.textContent = "2. Observaciones Emitidas";
         }
@@ -583,7 +617,9 @@
     const manualFuenteNuevaWrap = document.getElementById("manual_fuente_nueva_wrap");
     const manualFuenteNuevaInput = document.getElementById("manual_fuente_nueva");
     const manualAddNewFuenteBtnInline = document.getElementById("manualAddNewFuenteBtnInline");
+    const manualCancelFuenteEditBtn = document.getElementById("manualCancelFuenteEditBtn");
     const manualFinishFuentesBtn = document.getElementById("manualFinishFuentesBtn");
+    const manualFuenteEditorMode = document.getElementById("manualFuenteEditorMode");
     const manualFuenteTipoHint = document.getElementById("manual_fuente_tipo_hint");
     const manualFuentesDetalleJson = document.getElementById("manual_fuentes_detalle_json");
     const manualCantidadesWrap = document.getElementById("manual_cantidades_wrap");
@@ -591,7 +627,10 @@
     const manualFuentesProgress = document.getElementById("manual_fuentes_progress");
     const manualFuentesTotal = document.getElementById("manualFuentesTotal");
     const manualTotalObservaciones = document.getElementById("manualTotalObservaciones");
+    const manualTotalPdp = document.getElementById("manualTotalPdp");
     const manualFuentesDetalleFeedback = document.getElementById("manual_fuentes_detalle_feedback");
+    const manualReviewChecklist = document.getElementById("manualReviewChecklist");
+    const manualTipoScopeHint = document.getElementById("manual_tipo_scope_hint");
     const manualObservacionesWrap = document.getElementById("manual-observaciones-cargadas");
     const manualObservacionesBody = document.getElementById("manualObservacionesBody");
     const manualObservacionesInfo = document.getElementById("manual_observaciones_info");
@@ -649,6 +688,7 @@
     let cedulaScopeRows = [];
     let isObservacionesLoading = false;
     let fuentesDetalleState = [];
+    let editingFuenteIndex = null;
     const solventacionTipos = ["PDP", "PEFCF", "PRAS", "R", "SA"];
     const contextDraftKey = "sifeet_manual_context_draft";
     let wizardStageProgress = { manual: false, titulares: false };
@@ -671,6 +711,8 @@
     const manualContextSummaryFecha = document.getElementById("manualContextSummaryFecha");
     const manualContextSummaryFuentes = document.getElementById("manualContextSummaryFuentes");
     let isSyncingContextFields = false;
+    const MIXED_TIPO_AUDITORIA = "Financiera y Obra Pública";
+    const NEW_SOURCE_VALUE = "__new__";
 
     const escapeHtml = (value) => (
       String(value || "")
@@ -794,9 +836,9 @@
 
     const contextFields = [
       principalTipoAuditoria,
-      manualNumeroOficio,
-      manualPeriodo,
-      manualFechaNotificacion,
+      principalNumeroOficio,
+      principalPeriodo,
+      principalFechaNotificacion,
     ].filter(Boolean);
 
     const optionExists = (field, value) => {
@@ -880,6 +922,78 @@
       return selected ? String(selected.textContent || "").split(/\s+/).filter(Boolean).join(" ") : "";
     };
 
+    const ensureCustomFuenteOption = (field, fuenteNombre) => {
+      if (!field) {
+        return;
+      }
+      const cleanName = String(fuenteNombre || "").split(/\s+/).filter(Boolean).join(" ");
+      if (!cleanName) {
+        return;
+      }
+      const optionValue = `__obs__:${cleanName}`;
+      const existingOption = Array.from(field.options || []).find((opt) => (
+        String(opt.value || "").trim() === optionValue
+      ));
+      if (existingOption) {
+        existingOption.textContent = cleanName;
+        return;
+      }
+      const option = document.createElement("option");
+      option.value = optionValue;
+      option.textContent = cleanName;
+      const newOption = Array.from(field.options || []).find((opt) => opt.value === NEW_SOURCE_VALUE);
+      if (newOption && newOption.parentNode) {
+        newOption.parentNode.insertBefore(option, newOption);
+      } else {
+        field.appendChild(option);
+      }
+    };
+
+    const isMixedScopeTipo = (value) => String(value || "").trim() === MIXED_TIPO_AUDITORIA;
+
+    const getAllowedSourceTipos = () => {
+      const scopeTipo = principalTipoAuditoria ? String(principalTipoAuditoria.value || "").trim() : "";
+      if (!scopeTipo) {
+        return [];
+      }
+      if (isMixedScopeTipo(scopeTipo)) {
+        return ["Financiera", "Obra Pública"];
+      }
+      return [scopeTipo];
+    };
+
+    const updateSourceTypeOptions = ({ preserveSelection = true } = {}) => {
+      if (!manualTipoAuditoria) {
+        return;
+      }
+      const allowedTipos = getAllowedSourceTipos();
+      const currentValue = preserveSelection ? String(manualTipoAuditoria.value || "").trim() : "";
+
+      if (!allowedTipos.length) {
+        manualTipoAuditoria.innerHTML = '<option value="">Selecciona primero el alcance del oficio</option>';
+        manualTipoAuditoria.value = "";
+        manualTipoAuditoria.disabled = true;
+        if (manualTipoScopeHint) {
+          manualTipoScopeHint.textContent = "Primero define el alcance.";
+        }
+        return;
+      }
+
+      manualTipoAuditoria.innerHTML = allowedTipos
+        .map((tipo) => `<option value="${escapeHtml(tipo)}">${escapeHtml(tipo)}</option>`)
+        .join("");
+
+      const nextValue = allowedTipos.includes(currentValue) ? currentValue : allowedTipos[0];
+      manualTipoAuditoria.value = nextValue;
+      manualTipoAuditoria.disabled = false;
+
+      if (manualTipoScopeHint) {
+        manualTipoScopeHint.textContent = isMixedScopeTipo(principalTipoAuditoria ? principalTipoAuditoria.value : "")
+          ? "Oficio mixto: elige Financiera u Obra."
+          : "Se alinea con el alcance del oficio.";
+      }
+    };
+
     const updateTitularesOpenLink = () => {
       if (!loaderOpenTitularesBtn || !loaderOpenTitularesBtn.dataset.baseHref) {
         return;
@@ -894,7 +1008,7 @@
       if (enteId) {
         params.set("ente_id", enteId);
       }
-      if (tipoAuditoria) {
+      if (tipoAuditoria && !isMixedScopeTipo(tipoAuditoria)) {
         params.set("tipo_auditoria", tipoAuditoria);
       }
       const baseHref = loaderOpenTitularesBtn.dataset.baseHref;
@@ -905,7 +1019,7 @@
 
     const updateContextSummary = () => {
       const enteLabel = getSelectedOptionLabel(principalEnte);
-      const fuenteLabel = resolvePrincipalFuenteNombre() || "-";
+      const fuenteLabel = resolveManualFuenteNombre() || resolvePrincipalFuenteNombre() || "-";
       if (manualContextSummaryEjercicio) {
         manualContextSummaryEjercicio.textContent = String(principalEjercicio ? principalEjercicio.value || "-" : "-");
       }
@@ -940,6 +1054,7 @@
         manualContextSummaryFuentes.textContent = String(principalFuentesObjetivo ? principalFuentesObjetivo.value || "-" : "-");
       }
       updateTitularesOpenLink();
+      renderManualReviewSummary();
     };
 
     const hasPrincipalScope = () => {
@@ -950,7 +1065,7 @@
     };
 
     const showPrincipalScopeMessage = () => {
-      showWizardToast("Primero selecciona ejercicio, ente y tipo de auditoría.", "info");
+      showWizardToast("Primero selecciona ejercicio, ente y alcance del oficio.", "info");
     };
 
     const validateContextStep = ({ showFeedback = true } = {}) => {
@@ -1102,10 +1217,14 @@
       if (syncTitular && titularEnte) {
         titularEnte.value = enteId;
       }
-      if (manualTipoAuditoria && setFieldValue(manualTipoAuditoria, tipoAuditoria)) {
+      const previousManualTipo = manualTipoAuditoria ? String(manualTipoAuditoria.value || "").trim() : "";
+      updateSourceTypeOptions({ preserveSelection: true });
+      const nextManualTipo = manualTipoAuditoria ? String(manualTipoAuditoria.value || "").trim() : "";
+      if (manualTipoAuditoria && nextManualTipo !== previousManualTipo) {
         manualTipoAuditoria.dispatchEvent(new Event("change", { bubbles: true }));
       }
-      if (syncTitular && titularTipoAuditoria && setFieldValue(titularTipoAuditoria, tipoAuditoria)) {
+      const titularScopeTipo = isMixedScopeTipo(tipoAuditoria) ? "" : tipoAuditoria;
+      if (syncTitular && titularTipoAuditoria && setFieldValue(titularTipoAuditoria, titularScopeTipo)) {
         titularTipoAuditoria.dispatchEvent(new Event("change", { bubbles: true }));
       }
       if (manualNumeroOficio && setFieldValue(manualNumeroOficio, numeroOficio)) {
@@ -1142,12 +1261,6 @@
         return;
       }
       isSyncingContextFields = true;
-      if (principalTipoAuditoria && manualTipoAuditoria) {
-        setFieldValue(principalTipoAuditoria, manualTipoAuditoria.value || "");
-      }
-      if (titularTipoAuditoria && manualTipoAuditoria) {
-        setFieldValue(titularTipoAuditoria, manualTipoAuditoria.value || "");
-      }
       if (principalFuente && manualFuente) {
         setSelectValueOrPending(principalFuente, manualFuente.value || "");
       }
@@ -1302,11 +1415,22 @@
         principalEnte.dataset.selected = String(manualFormValues.manual_ente_id || "").trim();
       }
       if (principalTipoAuditoria) {
-        principalTipoAuditoria.value = String(
-          manualFormValues.manual_tipo_auditoria
-          || titularFormValues.titular_tipo_auditoria
-          || ""
-        ).trim();
+        const tiposFuentes = Array.isArray(payload.fuentes_detalle)
+          ? Array.from(new Set(
+              payload.fuentes_detalle
+                .map((row) => String(row && row.tipo_auditoria ? row.tipo_auditoria : "").trim())
+                .filter(Boolean)
+            ))
+          : [];
+        const restoredScopeTipo = tiposFuentes.length > 1
+          ? MIXED_TIPO_AUDITORIA
+          : (
+              tiposFuentes[0]
+              || manualFormValues.manual_tipo_auditoria
+              || titularFormValues.titular_tipo_auditoria
+              || ""
+            );
+        principalTipoAuditoria.value = String(restoredScopeTipo || "").trim();
       }
       if (principalFuente) {
         principalFuente.dataset.selected = String(manualFormValues.manual_fuente_id || "").trim();
@@ -1336,12 +1460,14 @@
       if (manualAsunto) {
         manualAsunto.dispatchEvent(new Event("change", { bubbles: true }));
       }
+      updateSourceTypeOptions({ preserveSelection: true });
       if (manualTipoAuditoria) {
         manualTipoAuditoria.dispatchEvent(new Event("change", { bubbles: true }));
       }
       if (manualFuente) {
         manualFuente.dispatchEvent(new Event("change", { bubbles: true }));
       }
+      editingFuenteIndex = null;
       renderFuentesDetalleRows();
       renderPdpDetalleMenu();
       renderPreviewTable();
@@ -1416,10 +1542,67 @@
       if (!manualAddNewFuenteBtnInline) {
         return;
       }
+      const editingItem = Array.isArray(fuentesDetalleState)
+        && Number.isInteger(editingFuenteIndex)
+        && editingFuenteIndex >= 0
+        && editingFuenteIndex < fuentesDetalleState.length
+        ? (fuentesDetalleState[editingFuenteIndex] || null)
+        : null;
+      if (editingItem) {
+        manualAddNewFuenteBtnInline.textContent = "Guardar cambios de esta fuente";
+        return;
+      }
       const objetivo = readFuentesObjetivo({ fallback: 1 });
       manualAddNewFuenteBtnInline.textContent = objetivo > 1
-        ? "Guardar fuente y continuar"
-        : "Guardar fuente";
+        ? "Guardar esta fuente y continuar"
+        : "Guardar esta fuente";
+    };
+
+    const updateFuenteEditorMode = () => {
+      const editingItem = Array.isArray(fuentesDetalleState)
+        && Number.isInteger(editingFuenteIndex)
+        && editingFuenteIndex >= 0
+        && editingFuenteIndex < fuentesDetalleState.length
+        ? (fuentesDetalleState[editingFuenteIndex] || null)
+        : null;
+      if (manualFuenteEditorMode) {
+        manualFuenteEditorMode.textContent = editingItem
+          ? `Editando #${editingFuenteIndex + 1} · ${editingItem.fuente_nombre}`
+          : "Nueva fuente";
+      }
+      if (manualCancelFuenteEditBtn) {
+        manualCancelFuenteEditBtn.hidden = !editingItem;
+      }
+      updateFuenteActionButton();
+    };
+
+    const clearFuenteEditor = ({ focus = false, clearFeedback = false } = {}) => {
+      editingFuenteIndex = null;
+      ["manual_cantidad_sa", "manual_cantidad_pdp", "manual_cantidad_pras", "manual_cantidad_pefcf", "manual_cantidad_r"]
+        .forEach((id) => {
+          const input = document.getElementById(id);
+          if (input) {
+            input.value = "0";
+          }
+        });
+      if (manualFuenteNuevaInput) {
+        manualFuenteNuevaInput.value = "";
+      }
+      if (manualFuente) {
+        manualFuente.value = "";
+        manualFuente.dispatchEvent(new Event("change", { bubbles: true }));
+      } else {
+        renderPdpDetalleMenu();
+        renderFuentesDetalleRows();
+        updateContextSummary();
+      }
+      if (clearFeedback && manualFuentesDetalleFeedback) {
+        manualFuentesDetalleFeedback.textContent = "";
+      }
+      updateFuenteEditorMode();
+      if (focus && manualFuente && typeof manualFuente.focus === "function") {
+        manualFuente.focus();
+      }
     };
 
     const renderFuentesProgress = () => {
@@ -1450,6 +1633,88 @@
       updateFuenteActionButton();
     };
 
+    const renderManualReviewSummary = () => {
+      if (!manualReviewChecklist) {
+        return;
+      }
+      const objetivo = readFuentesObjetivo({ fallback: 1 });
+      const capturadas = Array.isArray(fuentesDetalleState) ? fuentesDetalleState.length : 0;
+      const totalObs = (Array.isArray(fuentesDetalleState) ? fuentesDetalleState : []).reduce(
+        (sum, item) => sum
+          + Number(item.cantidad_sa || 0)
+          + Number(item.cantidad_pdp || 0)
+          + Number(item.cantidad_pras || 0)
+          + Number(item.cantidad_pefcf || 0)
+          + Number(item.cantidad_r || 0),
+        0,
+      );
+      const totalPdp = getTotalPdpFromFuentes();
+      const normalizedPdp = normalizePdpDetalleState(
+        totalPdp,
+        pdpDetalleState.length ? pdpDetalleState : parsePdpDetalleState(),
+      );
+      const pdpCompletas = normalizedPdp.reduce((sum, item) => {
+        const concepto = String(item.concepto || "").trim();
+        const monto = parseMoneyInput(item.monto);
+        return sum + ((concepto && monto !== null) ? 1 : 0);
+      }, 0);
+      const scopeTipo = principalTipoAuditoria ? String(principalTipoAuditoria.value || "").trim() : "";
+      const oficio = principalNumeroOficio ? String(principalNumeroOficio.value || "").trim() : "";
+      const periodo = principalPeriodo ? String(principalPeriodo.value || "").trim() : "";
+      const fecha = principalFechaNotificacion ? String(principalFechaNotificacion.value || "").trim() : "";
+      const fuenteActiva = resolveManualFuenteNombre();
+      const editingItem = Array.isArray(fuentesDetalleState)
+        && Number.isInteger(editingFuenteIndex)
+        && editingFuenteIndex >= 0
+        && editingFuenteIndex < fuentesDetalleState.length
+        ? (fuentesDetalleState[editingFuenteIndex] || null)
+        : null;
+      const rows = [
+        {
+          ok: !!scopeTipo,
+          label: "Alcance del oficio",
+          detail: scopeTipo || "Pendiente",
+        },
+        {
+          ok: !!oficio && !!periodo && !!fecha,
+          label: "Clave del oficio",
+          detail: oficio && periodo && fecha
+            ? `${oficio} · ${periodo} · ${formatFechaForSummary(fecha)}`
+            : "Faltan oficio, periodo o fecha",
+        },
+        {
+          ok: capturadas > 0,
+          label: "Fuentes registradas",
+          detail: `${capturadas} de ${objetivo}`,
+        },
+        {
+          ok: totalObs > 0,
+          label: "Observaciones programadas",
+          detail: String(totalObs),
+        },
+        {
+          ok: totalPdp === 0 || pdpCompletas === totalPdp,
+          label: "Detalle PDP",
+          detail: totalPdp > 0
+            ? `${pdpCompletas} de ${totalPdp} completas`
+            : "Sin observaciones PDP",
+        },
+        {
+          ok: !!fuenteActiva || !!editingItem || capturadas > 0,
+          label: "Fuente en edición",
+          detail: editingItem
+            ? `Editando #${editingFuenteIndex + 1} · ${editingItem.fuente_nombre}`
+            : (fuenteActiva || "Sin fuente activa"),
+        },
+      ];
+      manualReviewChecklist.innerHTML = rows.map((row) => (
+        `<article class="loader-review-item ${row.ok ? "is-ok" : "is-warn"}">`
+        + `<strong>${escapeHtml(row.label)}</strong>`
+        + `<span>${escapeHtml(row.detail)}</span>`
+        + `</article>`
+      )).join("");
+    };
+
     const renderFuentesDetalleRows = () => {
       if (!manualFuentesDetalleList) {
         return;
@@ -1469,14 +1734,21 @@
       if (manualTotalObservaciones) {
         manualTotalObservaciones.textContent = String(totalObs);
       }
+      if (manualTotalPdp) {
+        manualTotalPdp.textContent = String(getTotalPdpFromFuentes());
+      }
       renderFuentesProgress();
       if (!fuentesDetalleState.length) {
         const objetivo = readFuentesObjetivo({ fallback: 1 });
-        manualFuentesDetalleList.innerHTML = `<p class="muted">Captura la fuente 1 de ${objetivo}.</p>`;
+        manualFuentesDetalleList.innerHTML = `<p class="muted">Captura la fuente 1 de ${objetivo}. Cada tarjeta representará una fuente del oficio.</p>`;
+        updateFuenteEditorMode();
+        renderManualReviewSummary();
         updateManualSaveState();
         updateWizardModeAvailability();
         return;
       }
+      const activeTipo = manualTipoAuditoria ? String(manualTipoAuditoria.value || "").trim().toLowerCase() : "";
+      const activeFuente = resolveManualFuenteNombre().toLowerCase();
       manualFuentesDetalleList.innerHTML = fuentesDetalleState.map((item, idx) => {
         const sa = Math.max(0, Number.parseInt(String(item.cantidad_sa || 0), 10) || 0);
         const pdp = Math.max(0, Number.parseInt(String(item.cantidad_pdp || 0), 10) || 0);
@@ -1484,19 +1756,88 @@
         const r = Math.max(0, Number.parseInt(String(item.cantidad_r || 0), 10) || 0);
         const pefcf = Math.max(0, Number.parseInt(String(item.cantidad_pefcf || 0), 10) || 0);
         const totalItem = sa + pdp + pras + r + pefcf;
+        const isActive = Number.isInteger(editingFuenteIndex) && editingFuenteIndex >= 0
+          ? idx === editingFuenteIndex
+          : (
+              activeTipo === String(item.tipo_auditoria || "").trim().toLowerCase()
+              && activeFuente === String(item.fuente_nombre || "").trim().toLowerCase()
+            );
         return (
-          `<article class="loader-fuente-item">` +
-          `<div class="loader-fuente-item-head">` +
-          `<strong>#${idx + 1} · ${escapeHtml(item.tipo_auditoria)} · ${escapeHtml(item.fuente_nombre)}</strong>` +
+          `<article class="loader-source-card${isActive ? " is-active" : ""}">` +
+          `<div class="loader-source-card-head">` +
+          `<div>` +
+          `<strong>#${idx + 1} · ${escapeHtml(item.fuente_nombre)}</strong>` +
+          `<span class="loader-source-card-type">${escapeHtml(item.tipo_auditoria)}</span>` +
+          `</div>` +
+          `<div class="loader-source-card-actions">` +
+          `<button type="button" class="btn-secondary btn-compact" data-edit-fuente="${idx}">Editar</button>` +
           `<button type="button" class="btn-secondary btn-compact" data-remove-fuente="${idx}">Quitar</button>` +
           `</div>` +
-          `<p class="helper">SA: ${sa} · PDP: ${pdp} · PRAS: ${pras} · R: ${r} · PEFCF: ${pefcf}</p>` +
-          `<p class="helper">Total observaciones: <strong>${totalItem}</strong></p>` +
+          `</div>` +
+          `<div class="loader-source-card-stats">` +
+          `<span class="loader-source-stat">SA <strong>${sa}</strong></span>` +
+          `<span class="loader-source-stat">PDP <strong>${pdp}</strong></span>` +
+          `<span class="loader-source-stat">PRAS <strong>${pras}</strong></span>` +
+          `<span class="loader-source-stat">PEFCF <strong>${pefcf}</strong></span>` +
+          `<span class="loader-source-stat">R <strong>${r}</strong></span>` +
+          `<span class="loader-source-stat is-total">Total <strong>${totalItem}</strong></span>` +
+          `</div>` +
+          `${pdp > 0 ? `<p class="helper">Esta fuente requiere ${pdp} detalle(s) PDP.</p>` : ""}` +
           `</article>`
         );
       }).join("");
+      updateFuenteEditorMode();
+      renderManualReviewSummary();
       updateManualSaveState();
       updateWizardModeAvailability();
+    };
+
+    const loadFuenteDetalleIntoEditor = (item, idx = -1) => {
+      if (!item || !manualTipoAuditoria || !manualFuente) {
+        return;
+      }
+      const itemTipo = String(item.tipo_auditoria || "").trim();
+      const scopeTipo = principalTipoAuditoria ? String(principalTipoAuditoria.value || "").trim() : "";
+      if (principalTipoAuditoria && !scopeTipo && itemTipo) {
+        principalTipoAuditoria.value = itemTipo;
+        syncPrincipalFiltersToForms({ syncTitular: true });
+      } else if (principalTipoAuditoria && scopeTipo && !isMixedScopeTipo(scopeTipo) && scopeTipo !== itemTipo) {
+        principalTipoAuditoria.value = MIXED_TIPO_AUDITORIA;
+        syncPrincipalFiltersToForms({ syncTitular: true });
+      } else {
+        updateSourceTypeOptions({ preserveSelection: false });
+      }
+      editingFuenteIndex = Number.isInteger(idx) && idx >= 0 ? idx : findFuenteDetalleIndex(itemTipo, String(item.fuente_nombre || "").trim());
+      updateFuenteEditorMode();
+      if (manualTipoAuditoria) {
+        manualTipoAuditoria.value = itemTipo;
+        manualTipoAuditoria.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      const normalizedFuente = String(item.fuente_nombre || "").trim();
+      if (normalizedFuente) {
+        ensureCustomFuenteOption(manualFuente, normalizedFuente);
+        ensureCustomFuenteOption(principalFuente, normalizedFuente);
+        manualFuente.value = `__obs__:${normalizedFuente}`;
+        manualFuente.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      ["manual_cantidad_sa", "manual_cantidad_pdp", "manual_cantidad_pras", "manual_cantidad_pefcf", "manual_cantidad_r"]
+        .forEach((id) => {
+          const input = document.getElementById(id);
+          if (!input) {
+            return;
+          }
+          const key = id.replace("manual_", "");
+          input.value = String(Math.max(0, Number.parseInt(String(item[key] || 0), 10) || 0));
+        });
+      renderPdpDetalleMenu();
+      renderFuentesDetalleRows();
+      updateContextSummary();
+      if (manualFuentesDetalleFeedback) {
+        manualFuentesDetalleFeedback.textContent = `Editando la fuente ${normalizedFuente}. Guarda cambios para reemplazar el registro actual.`;
+      }
+      if (manualFuente && typeof manualFuente.focus === "function") {
+        manualFuente.focus();
+      }
     };
 
     const addFuenteDetalleRow = () => {
@@ -1504,6 +1845,9 @@
       const fuenteValue = (manualFuente ? (manualFuente.value || "").trim() : "");
       const fuenteNombre = resolveManualFuenteNombre();
       const objetivoFuentes = readFuentesObjetivo({ fallback: 1 });
+      const isEditingExisting = Number.isInteger(editingFuenteIndex)
+        && editingFuenteIndex >= 0
+        && editingFuenteIndex < fuentesDetalleState.length;
       const cantidadSa = readCantidadValue("manual_cantidad_sa");
       const cantidadPdp = readCantidadValue("manual_cantidad_pdp");
       const cantidadPras = readCantidadValue("manual_cantidad_pras");
@@ -1512,7 +1856,7 @@
       const total = cantidadSa + cantidadPdp + cantidadPras + cantidadPefcf + cantidadR;
 
       if (!tipo) {
-        if (manualFuentesDetalleFeedback) manualFuentesDetalleFeedback.textContent = "Selecciona tipo de auditoría.";
+        if (manualFuentesDetalleFeedback) manualFuentesDetalleFeedback.textContent = "Selecciona el tipo de la fuente.";
         return false;
       }
       if (!fuenteNombre) {
@@ -1527,9 +1871,9 @@
       const existingIndex = fuentesDetalleState.findIndex((row) => (
         row.tipo_auditoria === tipo && row.fuente_nombre.toLowerCase() === fuenteNombre.toLowerCase()
       ));
-      if (existingIndex < 0 && fuentesDetalleState.length >= objetivoFuentes) {
+      if (!isEditingExisting && existingIndex < 0 && fuentesDetalleState.length >= objetivoFuentes) {
         if (manualFuentesDetalleFeedback) {
-          manualFuentesDetalleFeedback.textContent = `Ya capturaste ${objetivoFuentes} fuente(s). Si necesitas otra, aumenta "Fuentes a capturar".`;
+          manualFuentesDetalleFeedback.textContent = `Ya capturaste ${objetivoFuentes} fuente(s). Si necesitas otra, aumenta "Fuentes previstas".`;
         }
         return false;
       }
@@ -1542,25 +1886,39 @@
         cantidad_pefcf: cantidadPefcf,
         cantidad_r: cantidadR,
       };
-      if (existingIndex >= 0) {
+      let updatedExisting = existingIndex >= 0;
+      if (isEditingExisting) {
+        if (existingIndex >= 0 && existingIndex !== editingFuenteIndex) {
+          fuentesDetalleState[existingIndex] = payload;
+          fuentesDetalleState.splice(editingFuenteIndex, 1);
+        } else {
+          fuentesDetalleState[editingFuenteIndex] = payload;
+        }
+        updatedExisting = true;
+      } else if (existingIndex >= 0) {
         fuentesDetalleState[existingIndex] = payload;
       } else {
         fuentesDetalleState.push(payload);
       }
+      editingFuenteIndex = null;
       syncFuentesDetalleState();
       renderFuentesDetalleRows();
       const capturadas = fuentesDetalleState.length;
       const faltantes = Math.max(0, objetivoFuentes - capturadas);
       if (manualFuentesDetalleFeedback) {
-        manualFuentesDetalleFeedback.textContent = faltantes > 0
-          ? `Fuente guardada. Continúa con la fuente ${capturadas + 1} de ${objetivoFuentes}.`
-          : "Fuente guardada.";
+        if (updatedExisting) {
+          manualFuentesDetalleFeedback.textContent = "Fuente actualizada en el oficio.";
+        } else {
+          manualFuentesDetalleFeedback.textContent = faltantes > 0
+            ? `Fuente guardada. Continúa con la fuente ${capturadas + 1} de ${objetivoFuentes}.`
+            : "Fuente guardada.";
+        }
       }
       if (manualFuente && fuenteValue === "__new__" && fuenteNombre) {
         ensureCustomFuenteOption(manualFuente, fuenteNombre);
         ensureCustomFuenteOption(principalFuente, fuenteNombre);
       }
-      if (objetivoFuentes > 1 && faltantes > 0) {
+      if (!updatedExisting && objetivoFuentes > 1 && faltantes > 0) {
         if (manualFuente) {
           manualFuente.value = "";
         }
@@ -1578,6 +1936,9 @@
           manualFuente.dispatchEvent(new Event("change", { bubbles: true }));
           manualFuente.focus();
         }
+      } else {
+        updateFuenteEditorMode();
+        updateContextSummary();
       }
       updateManualSaveState();
       return true;
@@ -1595,6 +1956,9 @@
       const objetivoFuentes = readFuentesObjetivo({ fallback: 1 });
       const fuenteValue = (manualFuente ? (manualFuente.value || "").trim() : "");
       const fuenteNombre = resolveManualFuenteNombre();
+      const isEditingExisting = Number.isInteger(editingFuenteIndex)
+        && editingFuenteIndex >= 0
+        && editingFuenteIndex < fuentesDetalleState.length;
       const cantidadSa = readCantidadValue("manual_cantidad_sa");
       const cantidadPdp = readCantidadValue("manual_cantidad_pdp");
       const cantidadPras = readCantidadValue("manual_cantidad_pras");
@@ -1603,17 +1967,15 @@
       const total = cantidadSa + cantidadPdp + cantidadPras + cantidadPefcf + cantidadR;
       if (!tipo || !fuenteNombre) {
         if (showFeedback && manualFuentesDetalleFeedback) {
-          manualFuentesDetalleFeedback.textContent = "Selecciona tipo de auditoría y fuente.";
+          manualFuentesDetalleFeedback.textContent = "Selecciona el tipo de la fuente y una fuente válida.";
         }
         return false;
       }
 
       const existingIndex = findFuenteDetalleIndex(tipo, fuenteNombre);
       if (total <= 0) {
-        if (existingIndex >= 0) {
-          fuentesDetalleState.splice(existingIndex, 1);
-          syncFuentesDetalleState();
-          renderFuentesDetalleRows();
+        if (showFeedback && manualFuentesDetalleFeedback) {
+          manualFuentesDetalleFeedback.textContent = "Captura al menos una observación para guardar la fuente.";
         }
         return false;
       }
@@ -1627,18 +1989,26 @@
         cantidad_pefcf: cantidadPefcf,
         cantidad_r: cantidadR,
       };
-      if (existingIndex >= 0) {
+      if (isEditingExisting) {
+        if (existingIndex >= 0 && existingIndex !== editingFuenteIndex) {
+          fuentesDetalleState[existingIndex] = payload;
+          fuentesDetalleState.splice(editingFuenteIndex, 1);
+          editingFuenteIndex = existingIndex > editingFuenteIndex ? existingIndex - 1 : existingIndex;
+        } else {
+          fuentesDetalleState[editingFuenteIndex] = payload;
+        }
+      } else if (existingIndex >= 0) {
         fuentesDetalleState[existingIndex] = payload;
       } else {
         if (!allowCreate) {
           if (showFeedback && manualFuentesDetalleFeedback) {
-            manualFuentesDetalleFeedback.textContent = "Presiona \"Guardar fuente\" para registrar esta fuente.";
+            manualFuentesDetalleFeedback.textContent = "Presiona \"Guardar esta fuente\" para registrar esta tarjeta.";
           }
           return false;
         }
         if (fuentesDetalleState.length >= objetivoFuentes) {
           if (showFeedback && manualFuentesDetalleFeedback) {
-            manualFuentesDetalleFeedback.textContent = `Ya capturaste ${objetivoFuentes} fuente(s). Si necesitas otra, aumenta "Fuentes a capturar".`;
+            manualFuentesDetalleFeedback.textContent = `Ya capturaste ${objetivoFuentes} fuente(s). Si necesitas otra, aumenta "Fuentes previstas".`;
           }
           return false;
         }
@@ -1651,7 +2021,9 @@
       syncFuentesDetalleState();
       renderFuentesDetalleRows();
       if (showFeedback && manualFuentesDetalleFeedback) {
-        manualFuentesDetalleFeedback.textContent = "Fuente actualizada en el oficio.";
+        manualFuentesDetalleFeedback.textContent = isEditingExisting || existingIndex >= 0
+          ? "Fuente actualizada en el oficio."
+          : "Fuente registrada en el oficio.";
       }
       return true;
     };
@@ -1729,6 +2101,7 @@
       }
       if (!pdpDetalleState.length) {
         manualPdpBreakdown.innerHTML = "";
+        renderManualReviewSummary();
         return;
       }
       const resumen = pdpDetalleState.reduce((acc, item) => {
@@ -1799,6 +2172,7 @@
         `<span>Estado</span>` +
         `</div>` +
         cards;
+      renderManualReviewSummary();
     };
 
     const getTotalPdpFromFuentes = () => (
@@ -3104,7 +3478,7 @@
     const validateStage1 = ({ showFeedback = true, toastLevel = "success" } = {}) => {
       if (!validateContextStep({ showFeedback })) {
         if (showFeedback) {
-          showWizardToast("Completa el contexto del registro antes de guardar.", toastLevel);
+          showWizardToast("Completa el expediente del oficio antes de guardar.", toastLevel);
         }
         return false;
       }
@@ -3274,7 +3648,7 @@
         }
         loaderModeButtons.forEach((button) => {
           button.disabled = true;
-          button.title = "Primero selecciona ejercicio, ente y tipo de auditoría.";
+          button.title = "Primero selecciona ejercicio, ente y alcance del oficio.";
         });
         loaderModePanels.forEach((panel) => {
           panel.hidden = true;
@@ -3386,11 +3760,11 @@
       }
       if (manualFuenteTipoHint) {
         if (!hasTipo || !hasEnte) {
-          manualFuenteTipoHint.textContent = "Selecciona ente y tipo para consultar fuentes de ejercicios anteriores, o agrega una nueva.";
+          manualFuenteTipoHint.textContent = "Selecciona ente y tipo para consultar fuentes.";
         } else if (!hasObjetivo) {
           manualFuenteTipoHint.textContent = "Primero indica cuántas fuentes vas a capturar.";
         } else {
-          manualFuenteTipoHint.textContent = `Fuentes disponibles para ${manualTipoAuditoria ? (manualTipoAuditoria.value || "el tipo seleccionado") : "el tipo seleccionado"} (incluye historial y opción nueva).`;
+          manualFuenteTipoHint.textContent = `Fuentes disponibles para ${manualTipoAuditoria ? (manualTipoAuditoria.value || "el tipo actual") : "el tipo actual"}.`;
         }
       }
       updateContextSummary();
@@ -3415,6 +3789,7 @@
     if (manualAsunto) {
       manualAsunto.addEventListener("change", () => {
         toggleManualCantidades();
+        updateSourceTypeOptions({ preserveSelection: true });
         const mode = getManualMode();
         if (mode === "cedula") {
           if (manualTipoAuditoria) {
@@ -3447,6 +3822,7 @@
         updateWizardModeAvailability();
       });
       toggleManualCantidades();
+      updateSourceTypeOptions({ preserveSelection: true });
       const initialMode = getManualMode();
       if (manualAddNewFuenteBtnInline) {
         manualAddNewFuenteBtnInline.style.display = initialMode === "cedula" ? "" : "none";
@@ -3456,6 +3832,7 @@
       }
       updateManualStageActions();
     }
+    updateSourceTypeOptions({ preserveSelection: true });
     toggleCantidadesByFuente();
     toggleFuentesByTipo();
     fuentesDetalleState = parseFuentesDetalleState();
@@ -3467,6 +3844,15 @@
         if (!(target instanceof HTMLElement)) {
           return;
         }
+        const editIdxRaw = target.getAttribute("data-edit-fuente");
+        if (editIdxRaw !== null) {
+          const editIdx = Number.parseInt(editIdxRaw, 10);
+          if (!Number.isFinite(editIdx) || editIdx < 0 || editIdx >= fuentesDetalleState.length) {
+            return;
+          }
+          loadFuenteDetalleIntoEditor(fuentesDetalleState[editIdx], editIdx);
+          return;
+        }
         const idxRaw = target.getAttribute("data-remove-fuente");
         if (idxRaw === null) {
           return;
@@ -3475,9 +3861,23 @@
         if (!Number.isFinite(idx) || idx < 0 || idx >= fuentesDetalleState.length) {
           return;
         }
+        const removedWasEditing = Number.isInteger(editingFuenteIndex) && editingFuenteIndex === idx;
         fuentesDetalleState.splice(idx, 1);
+        if (Number.isInteger(editingFuenteIndex) && editingFuenteIndex >= 0) {
+          if (editingFuenteIndex === idx) {
+            editingFuenteIndex = null;
+          } else if (idx < editingFuenteIndex) {
+            editingFuenteIndex -= 1;
+          }
+        }
         syncFuentesDetalleState();
         renderFuentesDetalleRows();
+        if (manualFuentesDetalleFeedback) {
+          manualFuentesDetalleFeedback.textContent = "Fuente eliminada del oficio.";
+        }
+        if (removedWasEditing || !fuentesDetalleState.length) {
+          clearFuenteEditor({ clearFeedback: false });
+        }
       });
     }
     if (manualAddNewFuenteBtnInline && manualFuente) {
@@ -3489,6 +3889,11 @@
         if (manualFuente) {
           manualFuente.focus();
         }
+      });
+    }
+    if (manualCancelFuenteEditBtn) {
+      manualCancelFuenteEditBtn.addEventListener("click", () => {
+        clearFuenteEditor({ focus: true, clearFeedback: true });
       });
     }
     if (solventacionInputs.length) {
@@ -3652,8 +4057,14 @@
 
     if (titularTipoAuditoria) {
       titularTipoAuditoria.addEventListener("change", () => {
-        if (principalTipoAuditoria) {
-          principalTipoAuditoria.value = String(titularTipoAuditoria.value || "").trim();
+        const titularTipo = String(titularTipoAuditoria.value || "").trim();
+        const scopeTipo = principalTipoAuditoria ? String(principalTipoAuditoria.value || "").trim() : "";
+        if (principalTipoAuditoria && titularTipo) {
+          if (!scopeTipo) {
+            principalTipoAuditoria.value = titularTipo;
+          } else if (!isMixedScopeTipo(scopeTipo) && scopeTipo !== titularTipo) {
+            principalTipoAuditoria.value = MIXED_TIPO_AUDITORIA;
+          }
         }
         syncPrincipalFiltersToForms({ syncTitular: false });
       });
@@ -3940,7 +4351,6 @@
 
     if (manualEjercicio && manualEnte && manualFuente) {
       let fuentesFetchId = 0;
-      const NEW_SOURCE_VALUE = "__new__";
 
       const toggleNuevaFuente = () => {
         if (!manualFuente || !manualFuenteNuevaWrap || !manualFuenteNuevaInput) {
@@ -3951,33 +4361,6 @@
         manualFuenteNuevaInput.disabled = !usingNewSource;
         if (!usingNewSource) {
           manualFuenteNuevaInput.value = "";
-        }
-      };
-
-      const ensureCustomFuenteOption = (field, fuenteNombre) => {
-        if (!field) {
-          return;
-        }
-        const cleanName = String(fuenteNombre || "").split(/\s+/).filter(Boolean).join(" ");
-        if (!cleanName) {
-          return;
-        }
-        const optionValue = `__obs__:${cleanName}`;
-        const existingOption = Array.from(field.options || []).find((opt) => (
-          String(opt.value || "").trim() === optionValue
-        ));
-        if (existingOption) {
-          existingOption.textContent = cleanName;
-          return;
-        }
-        const option = document.createElement("option");
-        option.value = optionValue;
-        option.textContent = cleanName;
-        const newOption = Array.from(field.options || []).find((opt) => opt.value === NEW_SOURCE_VALUE);
-        if (newOption && newOption.parentNode) {
-          newOption.parentNode.insertBefore(option, newOption);
-        } else {
-          field.appendChild(option);
         }
       };
 
@@ -4143,7 +4526,7 @@
       if (manualTipoAuditoria) {
         manualTipoAuditoria.addEventListener("change", () => {
           if (manualFuenteTipoHint) {
-            manualFuenteTipoHint.textContent = `Fuentes disponibles para ${manualTipoAuditoria.value || "el tipo seleccionado"}.`;
+            manualFuenteTipoHint.textContent = `Fuentes disponibles para ${manualTipoAuditoria.value || "el tipo actual"}.`;
           }
           syncManualContextToPrincipal();
           toggleFuentesByTipo();
@@ -4232,8 +4615,8 @@
       }
       if (manualFuenteTipoHint && manualTipoAuditoria) {
         manualFuenteTipoHint.textContent = (manualTipoAuditoria.value || "").trim()
-          ? `Fuentes disponibles para ${manualTipoAuditoria.value || "el tipo seleccionado"} (incluye historial y opción nueva).`
-          : "Selecciona ente y tipo para consultar fuentes de ejercicios anteriores, o agrega una nueva.";
+          ? `Fuentes disponibles para ${manualTipoAuditoria.value || "el tipo actual"}.`
+          : "Selecciona ente y tipo para consultar fuentes.";
       }
       if (manualTipoAuditoria && (manualTipoAuditoria.value || "").trim()) {
         loadFuentesByEnte(manualFuente.value || "");
