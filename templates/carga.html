@@ -32,16 +32,26 @@
   <main class="page-content loader-content">
     {% set principal_tipo = form_data.manual_tipo_auditoria or form_data.titular_tipo_auditoria %}
     <section class="panel loader-mode-panel loader-expediente-panel">
-      <div class="panel-header">
-        <h2>Expediente de cédula</h2>
-        <p>Define el expediente una vez y captura las fuentes sin repetir datos.</p>
+      <div class="panel-header panel-header-compact">
+        <h2>Contexto de captura</h2>
+        <p>Define el oficio una vez y sigue capturando fuente por fuente.</p>
       </div>
       <div class="loader-expediente-shell">
         <div class="record-form filters-form loader-principal-form">
+          <div class="loader-expediente-inline-head">
+            <div class="loader-expediente-inline-title">
+              <span class="loader-current-mode-label">Carga activa</span>
+              <strong>{{ "Carga de titulares" if initial_loader_mode == "titulares" else "Notificación de Cédula de Resultados" }}</strong>
+            </div>
+            <div class="loader-expediente-mini-meta">
+              <span class="loader-obs-chip">Estado <strong>Emitido</strong></span>
+              <span class="loader-obs-chip">Flujo <strong>Fuente por fuente</strong></span>
+            </div>
+          </div>
           <div class="loader-expediente-collection">
             <section class="loader-expediente-group">
               <div class="loader-expediente-group-head">
-                <span>Contexto base</span>
+                <span>Base</span>
                 <p>Ejercicio, ente y alcance.</p>
               </div>
               <div class="form-grid loader-expediente-grid">
@@ -72,15 +82,14 @@
                     <option value="Obra Pública" {% if principal_tipo == "Obra Pública" %}selected{% endif %}>Obra Pública</option>
                     <option value="Financiera y Obra Pública" {% if principal_tipo == "Financiera y Obra Pública" %}selected{% endif %}>Financiera y Obra Pública</option>
                   </select>
-                  <p class="helper">Usa mixto si el oficio combina Financiera y Obra.</p>
                 </div>
               </div>
             </section>
 
             <section class="loader-expediente-group">
               <div class="loader-expediente-group-head">
-                <span>Clave del oficio</span>
-                <p>Número, fecha, periodo y meta de captura.</p>
+                <span>Oficio</span>
+                <p>Número, fecha, periodo y meta.</p>
               </div>
               <div class="form-grid loader-expediente-grid">
                 <div class="field">
@@ -96,52 +105,27 @@
                 <div class="field">
                   <label for="principal_periodo">Periodo</label>
                   <input id="principal_periodo" type="text" value="{{ form_data.manual_periodo }}" placeholder="Ej. 01 de enero al 31 de diciembre" required>
-                  <p class="helper">Mismo periodo para las observaciones emitidas.</p>
                 </div>
                 <div class="field">
                   <label for="principal_fuentes_objetivo">Fuentes previstas</label>
                   <input id="principal_fuentes_objetivo" type="number" min="1" step="1" value="{{ form_data.manual_fuentes_objetivo or '1' }}">
-                  <p class="helper">Solo marca la meta inicial.</p>
                 </div>
               </div>
             </section>
           </div>
-          <div class="loader-expediente-mini-meta">
-            <span class="loader-obs-chip">Estado <strong>Emitido</strong></span>
-            <span class="loader-obs-chip">Captura <strong>1 fuente por tarjeta</strong></span>
+          <div class="loader-expediente-status-card loader-expediente-status-inline">
+            <div class="loader-expediente-status-head">
+              <span class="loader-current-mode-label">Resumen rápido</span>
+              <strong>Oficio en captura</strong>
+            </div>
+            <div class="loader-preview-metrics loader-principal-metrics">
+              <span class="loader-obs-chip">Fuentes guardadas: <strong id="manualFuentesTotal">0</strong></span>
+              <span class="loader-obs-chip">Observaciones: <strong id="manualTotalObservaciones">0</strong></span>
+              <span class="loader-obs-chip">PDP: <strong id="manualTotalPdp">0</strong></span>
+              <span class="loader-obs-chip">Monto PDP: <strong id="manualTotalPdpMonto">$0.00</strong></span>
+            </div>
           </div>
-          <p class="helper loader-principal-sync-note">Arriba defines el expediente; abajo solo capturas la fuente actual.</p>
         </div>
-
-        <aside class="loader-expediente-aside">
-          <div class="loader-current-mode-card">
-            <span class="loader-current-mode-label">Carga activa</span>
-            <strong>{{ "Carga de titulares" if initial_loader_mode == "titulares" else "Notificación de Cédula de Resultados" }}</strong>
-            <p>{% if initial_loader_mode == "titulares" %}Usa el botón flotante para volver a la cédula.{% else %}Usa el botón flotante para abrir titulares.{% endif %}</p>
-          </div>
-          <div class="loader-preview-metrics loader-principal-metrics">
-            <span class="loader-obs-chip">Fuentes guardadas: <strong id="manualFuentesTotal">0</strong></span>
-            <span class="loader-obs-chip">Observaciones programadas: <strong id="manualTotalObservaciones">0</strong></span>
-            <span class="loader-obs-chip">PDP programadas: <strong id="manualTotalPdp">0</strong></span>
-          </div>
-          <div class="loader-expediente-guide">
-            <article class="loader-expediente-guide-item">
-              <span>1</span>
-              <strong>Define el expediente</strong>
-              <p>Ejercicio, ente y alcance.</p>
-            </article>
-            <article class="loader-expediente-guide-item">
-              <span>2</span>
-              <strong>Captura cada fuente</strong>
-              <p>Fuente, tipo y cantidades.</p>
-            </article>
-            <article class="loader-expediente-guide-item">
-              <span>3</span>
-              <strong>Revisa y guarda</strong>
-              <p>Confirma totales y detalle PDP.</p>
-            </article>
-          </div>
-        </aside>
       </div>
 
       <div class="loader-context-hidden" hidden aria-hidden="true">
@@ -166,9 +150,9 @@
     </section>
 
     <section class="panel loader-card loader-manual-workspace" data-loader-mode-panel="manual">
-      <div class="panel-header">
+      <div class="panel-header panel-header-compact loader-manual-header">
         <h2 id="manualPanelTitle">Notificación de Cédula de Resultados</h2>
-        <p>Agrega observaciones por fuente sin repetir el expediente.</p>
+        <p>Captura por fuente.</p>
       </div>
       {% if manual_result %}
         <div class="status {% if manual_result.level == 'info' %}status-info{% elif manual_result.ok %}status-success{% else %}status-error{% endif %}">
@@ -212,42 +196,55 @@
         </div>
 
         <section class="loader-step-section is-active" data-step="1">
-          <div class="loader-step-head">
-            <h3 id="manualStep2Title">Fuentes y observaciones emitidas</h3>
-            <p id="manualStep2Help">Captura una fuente por vez. Si el oficio es mixto, define el tipo en la tarjeta.</p>
+          <div class="loader-step-head loader-step-head-compact">
+            <h3 id="manualStep2Title">Captura por fuente</h3>
+            <p id="manualStep2Help">Selecciona fuente y cantidades.</p>
           </div>
 
           <div class="loader-capture-shell">
             <div class="loader-capture-main">
-              <div class="loader-manual-subsection loader-context-review-card">
-                <div class="loader-source-editor-head">
+              <div class="loader-manual-subsection loader-context-review-card loader-context-review-card-compact">
+                <div class="loader-source-editor-head loader-context-card-head loader-source-editor-head-compact">
                   <div>
-                    <h3 id="manualStep1Title">Expediente activo</h3>
-                    <p class="helper">Resumen de la clave con la que se guardarán las fuentes.</p>
+                    <h3 id="manualStep1Title">Contexto activo</h3>
                   </div>
                 </div>
-                <div class="loader-preview-metrics">
-                  <span class="loader-obs-chip">Ejercicio: <strong id="manualContextSummaryEjercicio">-</strong></span>
-                  <span class="loader-obs-chip">Ente: <strong id="manualContextSummaryEnte">-</strong></span>
-                  <span class="loader-obs-chip">Alcance: <strong id="manualContextSummaryTipo">-</strong></span>
-                  <span class="loader-obs-chip">Fuente activa: <strong id="manualContextSummaryFuente">-</strong></span>
-                  <span class="loader-obs-chip">Oficio: <strong id="manualContextSummaryOficio">-</strong></span>
-                  <span class="loader-obs-chip">Periodo: <strong id="manualContextSummaryPeriodo">-</strong></span>
-                  <span class="loader-obs-chip">Fecha: <strong id="manualContextSummaryFecha">-</strong></span>
-                  <span class="loader-obs-chip">Fuentes previstas: <strong id="manualContextSummaryFuentes">-</strong></span>
+                <div class="loader-context-summary-grid">
+                  <article class="loader-context-summary-block loader-context-summary-block-primary">
+                    <span class="loader-context-summary-label">Ente</span>
+                    <strong id="manualContextSummaryEnte">-</strong>
+                    <div class="loader-context-inline">
+                      <span>Ejercicio <strong id="manualContextSummaryEjercicio">-</strong></span>
+                      <span>Alcance <strong id="manualContextSummaryTipo">-</strong></span>
+                    </div>
+                  </article>
+                  <article class="loader-context-summary-block">
+                    <span class="loader-context-summary-label">Oficio</span>
+                    <strong id="manualContextSummaryOficio">-</strong>
+                    <div class="loader-context-inline">
+                      <span>Periodo <strong id="manualContextSummaryPeriodo">-</strong></span>
+                      <span>Fecha <strong id="manualContextSummaryFecha">-</strong></span>
+                    </div>
+                  </article>
+                  <article class="loader-context-summary-block">
+                    <span class="loader-context-summary-label">Fuente</span>
+                    <strong id="manualContextSummaryFuente">-</strong>
+                    <div class="loader-context-inline">
+                      <span>Meta <strong id="manualContextSummaryFuentes">-</strong> fuentes</span>
+                    </div>
+                  </article>
                 </div>
                 <p class="helper" id="manual_context_status"></p>
               </div>
 
               <div
-                class="loader-manual-subsection loader-fuente-subsection"
+                class="loader-manual-subsection loader-fuente-subsection loader-fuente-subsection-compact"
                 id="manual-cantidades-cedula"
                 style="{% if form_data.manual_asunto != 'Notificación de Cédula de Resultados' %}display:none;{% endif %}"
               >
-                <div class="loader-source-editor-head">
+                <div class="loader-source-editor-head loader-source-editor-head-compact">
                   <div>
-                    <h3>Fuente en captura</h3>
-                    <p class="helper">Elige la fuente, define el tipo y captura sus cantidades.</p>
+                    <h3>Captura actual</h3>
                   </div>
                   <span class="loader-source-card-type" id="manualFuenteEditorMode">Nueva fuente</span>
                 </div>
@@ -258,16 +255,15 @@
                   style="{% if not form_data.manual_tipo_auditoria or not form_data.manual_ente_id %}display:none;{% endif %}"
                 >
                   <div class="field">
-                    <label for="manual_tipo_auditoria">Tipo de esta fuente</label>
+                    <label for="manual_tipo_auditoria">Tipo</label>
                     <select id="manual_tipo_auditoria" name="manual_tipo_auditoria" required>
                       <option value="" {% if not form_data.manual_tipo_auditoria %}selected{% endif %}>Selecciona tipo de auditoría</option>
                       <option value="Financiera" {% if form_data.manual_tipo_auditoria == "Financiera" %}selected{% endif %}>Financiera</option>
                       <option value="Obra Pública" {% if form_data.manual_tipo_auditoria == "Obra Pública" %}selected{% endif %}>Obra Pública</option>
                     </select>
-                    <p class="helper" id="manual_tipo_scope_hint">Si el oficio es mixto, aquí eliges el tipo.</p>
                   </div>
                   <div class="field">
-                    <label for="manual_fuente_id">Fuente de financiamiento</label>
+                    <label for="manual_fuente_id">Fuente</label>
                     <select id="manual_fuente_id" name="manual_fuente_id">
                       <option value="">{% if manual_fuentes %}Selecciona una fuente{% else %}Selecciona un ente primero{% endif %}</option>
                       {% for fuente in manual_fuentes %}
@@ -277,7 +273,6 @@
                       {% endfor %}
                       <option value="__new__" {% if form_data.manual_fuente_id == "__new__" %}selected{% endif %}>+ Agregar nueva fuente...</option>
                     </select>
-                    <p class="helper" id="manual_fuente_tipo_hint">Consulta fuentes históricas o agrega una nueva.</p>
                   </div>
                   <div id="manual_fuente_nueva_wrap" class="field" style="{% if form_data.manual_fuente_id != '__new__' %}display:none;{% endif %}">
                     <label for="manual_fuente_nueva">Nombre de la fuente nueva</label>
@@ -312,10 +307,10 @@
                   </div>
                 </div>
 
-                <div class="loader-step-nav">
-                  <button type="button" class="btn-secondary" id="manualAddNewFuenteBtnInline">Guardar esta fuente y continuar</button>
+                <div class="loader-step-nav loader-step-nav-inline">
+                  <button type="button" class="btn-primary" id="manualAddNewFuenteBtnInline">Guardar fuente</button>
                   <button type="button" class="btn-secondary" id="manualCancelFuenteEditBtn" hidden>Cancelar edición</button>
-                  <button type="button" class="btn-secondary" id="manualFinishFuentesBtn">Usar fuentes capturadas</button>
+                  <button type="button" class="btn-secondary" id="manualFinishFuentesBtn">Usar total actual</button>
                 </div>
 
                 <div class="form-grid loader-manual-grid-3" id="manual_pdp_single_editor" style="display:none;" aria-hidden="true">
@@ -340,36 +335,68 @@
                   class="loader-pdp-inline-block"
                   style="{% if form_data.manual_asunto != 'Notificación de Cédula de Resultados' or (form_data.manual_cantidad_pdp|int) <= 0 %}display:none;{% endif %}"
                 >
-                  <h3>Detalle PDP del oficio</h3>
-                  <p class="helper">Captura concepto y monto. El selector te indica la fuente correspondiente.</p>
+                  <h3>Detalle PDP</h3>
+                  <p class="helper">Captura concepto y monto; el selector indica la fuente correspondiente.</p>
                   <div id="manual_pdp_breakdown" class="loader-fuentes-list"></div>
                 </div>
-              </div>
-
-              <div class="loader-manual-subsection loader-fuentes-summary-card">
-                <div class="loader-source-editor-head">
-                  <div>
-                    <h3>Fuentes del oficio</h3>
-                    <p class="helper" id="manual_fuentes_progress"></p>
-                  </div>
-                </div>
-                <div id="manualFuentesDetalleList" class="loader-fuentes-board"></div>
-                <p class="helper" id="manual_fuentes_detalle_feedback"></p>
               </div>
             </div>
 
             <aside class="loader-capture-aside">
-              <div class="loader-manual-subsection loader-review-card">
-                <h3>Revisión final</h3>
-                <div id="manualReviewChecklist" class="loader-review-list">
-                  <p class="muted">Completa el expediente y agrega una fuente para revisar el cierre.</p>
+              <div class="loader-manual-subsection loader-capture-summary-card">
+                <div class="loader-capture-summary-head">
+                  <div>
+                    <h3>Resumen de captura</h3>
+                    <p class="helper loader-fuentes-progress-inline" id="manual_fuentes_progress"></p>
+                  </div>
+                  <button
+                    type="button"
+                    class="btn-secondary btn-compact"
+                    id="manualToggleAsideBtn"
+                    aria-expanded="false"
+                    aria-controls="manualCaptureAsideDetails"
+                  >
+                    Mostrar desglose
+                  </button>
                 </div>
+                <div class="loader-capture-summary-pills">
+                  <article class="loader-capture-summary-pill">
+                    <span>Fuentes</span>
+                    <strong id="manualAsideFuentesSummary">0 / 1</strong>
+                  </article>
+                  <article class="loader-capture-summary-pill">
+                    <span>Obs.</span>
+                    <strong id="manualAsideObsSummary">0</strong>
+                  </article>
+                  <article class="loader-capture-summary-pill">
+                    <span>PDP</span>
+                    <strong id="manualAsidePdpSummary">Sin PDP</strong>
+                  </article>
+                  <article class="loader-capture-summary-pill loader-capture-summary-pill-wide">
+                    <span>Activa</span>
+                    <strong id="manualAsideActivaSummary">Sin fuente</strong>
+                  </article>
+                </div>
+                <p class="helper" id="manual_fuentes_detalle_feedback"></p>
               </div>
             </aside>
           </div>
 
-          <div class="loader-step-nav">
-            <button class="btn-primary" type="submit" name="action" value="manual_save" id="manualSaveBtn">Guardar y concluir</button>
+          <section id="manualCaptureAsideDetails" class="loader-capture-details-panel" hidden>
+            <div class="loader-manual-subsection loader-fuentes-summary-card">
+              <h3>Fuentes capturadas</h3>
+              <div id="manualFuentesDetalleList" class="loader-fuentes-board"></div>
+            </div>
+            <div class="loader-manual-subsection loader-review-card loader-review-card-compact">
+              <h3>Estado</h3>
+              <div id="manualReviewChecklist" class="loader-review-list">
+                <p class="muted">Sin captura activa.</p>
+              </div>
+            </div>
+          </section>
+
+          <div class="loader-step-nav loader-step-nav-submit">
+            <button class="btn-primary" type="submit" name="action" value="manual_save" id="manualSaveBtn">Guardar oficio</button>
           </div>
         </section>
         {% if form_data.manual_id %}
@@ -556,15 +583,15 @@
       if (manualPanelTitle && manualStep2Title && manualStep2Help && mode !== "titulares") {
         manualPanelTitle.textContent = "Notificación de Cédula de Resultados";
         if (manualStep1ChipEl) {
-          manualStep1ChipEl.textContent = "1. Expediente activo";
+          manualStep1ChipEl.textContent = "1. Contexto";
         }
         if (manualStep1TitleEl) {
-          manualStep1TitleEl.textContent = "Expediente activo";
+          manualStep1TitleEl.textContent = "Contexto activo";
         }
-        manualStep2Title.textContent = "Fuentes y observaciones emitidas";
-        manualStep2Help.textContent = "Captura una fuente por vez. Si el oficio es mixto, define el tipo en la tarjeta.";
+        manualStep2Title.textContent = "Captura por fuente";
+        manualStep2Help.textContent = "Selecciona fuente y cantidades.";
         if (manualStep2ChipEl) {
-          manualStep2ChipEl.textContent = "2. Observaciones Emitidas";
+          manualStep2ChipEl.textContent = "2. Captura";
         }
       }
       loaderModeButtons.forEach((button) => {
@@ -619,15 +646,22 @@
     const manualAddNewFuenteBtnInline = document.getElementById("manualAddNewFuenteBtnInline");
     const manualCancelFuenteEditBtn = document.getElementById("manualCancelFuenteEditBtn");
     const manualFinishFuentesBtn = document.getElementById("manualFinishFuentesBtn");
+    const manualToggleAsideBtn = document.getElementById("manualToggleAsideBtn");
     const manualFuenteEditorMode = document.getElementById("manualFuenteEditorMode");
     const manualFuenteTipoHint = document.getElementById("manual_fuente_tipo_hint");
     const manualFuentesDetalleJson = document.getElementById("manual_fuentes_detalle_json");
     const manualCantidadesWrap = document.getElementById("manual_cantidades_wrap");
     const manualFuentesDetalleList = document.getElementById("manualFuentesDetalleList");
+    const manualCaptureAsideDetails = document.getElementById("manualCaptureAsideDetails");
     const manualFuentesProgress = document.getElementById("manual_fuentes_progress");
+    const manualAsideFuentesSummary = document.getElementById("manualAsideFuentesSummary");
+    const manualAsideObsSummary = document.getElementById("manualAsideObsSummary");
+    const manualAsidePdpSummary = document.getElementById("manualAsidePdpSummary");
+    const manualAsideActivaSummary = document.getElementById("manualAsideActivaSummary");
     const manualFuentesTotal = document.getElementById("manualFuentesTotal");
     const manualTotalObservaciones = document.getElementById("manualTotalObservaciones");
     const manualTotalPdp = document.getElementById("manualTotalPdp");
+    const manualTotalPdpMonto = document.getElementById("manualTotalPdpMonto");
     const manualFuentesDetalleFeedback = document.getElementById("manual_fuentes_detalle_feedback");
     const manualReviewChecklist = document.getElementById("manualReviewChecklist");
     const manualTipoScopeHint = document.getElementById("manual_tipo_scope_hint");
@@ -689,6 +723,7 @@
     let isObservacionesLoading = false;
     let fuentesDetalleState = [];
     let editingFuenteIndex = null;
+    let manualCaptureAsideExpanded = false;
     const solventacionTipos = ["PDP", "PEFCF", "PRAS", "R", "SA"];
     const contextDraftKey = "sifeet_manual_context_draft";
     let wizardStageProgress = { manual: false, titulares: false };
@@ -989,8 +1024,8 @@
 
       if (manualTipoScopeHint) {
         manualTipoScopeHint.textContent = isMixedScopeTipo(principalTipoAuditoria ? principalTipoAuditoria.value : "")
-          ? "Oficio mixto: elige Financiera u Obra."
-          : "Se alinea con el alcance del oficio.";
+          ? "Puedes cambiar el tipo aquí."
+          : "";
       }
     };
 
@@ -1549,13 +1584,13 @@
         ? (fuentesDetalleState[editingFuenteIndex] || null)
         : null;
       if (editingItem) {
-        manualAddNewFuenteBtnInline.textContent = "Guardar cambios de esta fuente";
+        manualAddNewFuenteBtnInline.textContent = "Guardar cambios";
         return;
       }
       const objetivo = readFuentesObjetivo({ fallback: 1 });
       manualAddNewFuenteBtnInline.textContent = objetivo > 1
-        ? "Guardar esta fuente y continuar"
-        : "Guardar esta fuente";
+        ? "Guardar y seguir"
+        : "Guardar fuente";
     };
 
     const updateFuenteEditorMode = () => {
@@ -1574,6 +1609,22 @@
         manualCancelFuenteEditBtn.hidden = !editingItem;
       }
       updateFuenteActionButton();
+    };
+
+    const setManualCaptureAsideExpanded = (expanded) => {
+      manualCaptureAsideExpanded = !!expanded;
+      if (manualCaptureAsideDetails) {
+        manualCaptureAsideDetails.hidden = !manualCaptureAsideExpanded;
+      }
+      if (manualToggleAsideBtn) {
+        manualToggleAsideBtn.textContent = manualCaptureAsideExpanded
+          ? "Ocultar desglose"
+          : "Mostrar desglose";
+        manualToggleAsideBtn.setAttribute("aria-expanded", manualCaptureAsideExpanded ? "true" : "false");
+      }
+      if (manualCaptureAsideExpanded && manualCaptureAsideDetails && typeof manualCaptureAsideDetails.scrollIntoView === "function") {
+        manualCaptureAsideDetails.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
     };
 
     const clearFuenteEditor = ({ focus = false, clearFeedback = false } = {}) => {
@@ -1620,16 +1671,16 @@
         manualFinishFuentesBtn.disabled = capturadas <= 0;
       }
       if (capturadas > objetivo) {
-        manualFuentesProgress.textContent = `Fuentes capturadas: ${capturadas} de ${objetivo}. Ajusta el número objetivo o elimina fuentes sobrantes.`;
+        manualFuentesProgress.textContent = `${capturadas} / ${objetivo} fuentes. Ajusta la meta o elimina sobrantes.`;
         updateFuenteActionButton();
         return;
       }
       if (faltantes > 0) {
-        manualFuentesProgress.textContent = `Fuentes capturadas: ${capturadas} de ${objetivo}. Faltan ${faltantes}.`;
+        manualFuentesProgress.textContent = `${capturadas} / ${objetivo} fuentes. Faltan ${faltantes}.`;
         updateFuenteActionButton();
         return;
       }
-      manualFuentesProgress.textContent = `Fuentes capturadas: ${capturadas} de ${objetivo}.`;
+      manualFuentesProgress.textContent = `${capturadas} / ${objetivo} fuentes.`;
       updateFuenteActionButton();
     };
 
@@ -1649,6 +1700,7 @@
         0,
       );
       const totalPdp = getTotalPdpFromFuentes();
+      const totalPdpMonto = getTotalPdpMonto();
       const normalizedPdp = normalizePdpDetalleState(
         totalPdp,
         pdpDetalleState.length ? pdpDetalleState : parsePdpDetalleState(),
@@ -1672,41 +1724,57 @@
       const rows = [
         {
           ok: !!scopeTipo,
-          label: "Alcance del oficio",
+          label: "Alcance",
           detail: scopeTipo || "Pendiente",
         },
         {
           ok: !!oficio && !!periodo && !!fecha,
-          label: "Clave del oficio",
+          label: "Oficio",
           detail: oficio && periodo && fecha
             ? `${oficio} · ${periodo} · ${formatFechaForSummary(fecha)}`
-            : "Faltan oficio, periodo o fecha",
+            : "Faltan datos",
         },
         {
           ok: capturadas > 0,
-          label: "Fuentes registradas",
-          detail: `${capturadas} de ${objetivo}`,
+          label: "Fuentes",
+          detail: `${capturadas} / ${objetivo}`,
         },
         {
           ok: totalObs > 0,
-          label: "Observaciones programadas",
+          label: "Obs.",
           detail: String(totalObs),
         },
         {
           ok: totalPdp === 0 || pdpCompletas === totalPdp,
-          label: "Detalle PDP",
+          label: "PDP",
           detail: totalPdp > 0
-            ? `${pdpCompletas} de ${totalPdp} completas`
-            : "Sin observaciones PDP",
+            ? `${pdpCompletas} / ${totalPdp} completas · ${formatMoney(totalPdpMonto)}`
+            : "Sin PDP",
         },
         {
           ok: !!fuenteActiva || !!editingItem || capturadas > 0,
-          label: "Fuente en edición",
+          label: "Activa",
           detail: editingItem
             ? `Editando #${editingFuenteIndex + 1} · ${editingItem.fuente_nombre}`
-            : (fuenteActiva || "Sin fuente activa"),
+            : (fuenteActiva || "Sin fuente"),
         },
       ];
+      if (manualAsideFuentesSummary) {
+        manualAsideFuentesSummary.textContent = `${capturadas} / ${objetivo}`;
+      }
+      if (manualAsideObsSummary) {
+        manualAsideObsSummary.textContent = String(totalObs);
+      }
+      if (manualAsidePdpSummary) {
+        manualAsidePdpSummary.textContent = totalPdp > 0
+          ? `${pdpCompletas} / ${totalPdp} · ${formatMoney(totalPdpMonto)}`
+          : "Sin PDP";
+      }
+      if (manualAsideActivaSummary) {
+        manualAsideActivaSummary.textContent = editingItem
+          ? `Editando #${editingFuenteIndex + 1} · ${editingItem.fuente_nombre}`
+          : (fuenteActiva || "Sin fuente");
+      }
       manualReviewChecklist.innerHTML = rows.map((row) => (
         `<article class="loader-review-item ${row.ok ? "is-ok" : "is-warn"}">`
         + `<strong>${escapeHtml(row.label)}</strong>`
@@ -1737,10 +1805,12 @@
       if (manualTotalPdp) {
         manualTotalPdp.textContent = String(getTotalPdpFromFuentes());
       }
+      if (manualTotalPdpMonto) {
+        manualTotalPdpMonto.textContent = formatMoney(getTotalPdpMonto());
+      }
       renderFuentesProgress();
       if (!fuentesDetalleState.length) {
-        const objetivo = readFuentesObjetivo({ fallback: 1 });
-        manualFuentesDetalleList.innerHTML = `<p class="muted">Captura la fuente 1 de ${objetivo}. Cada tarjeta representará una fuente del oficio.</p>`;
+        manualFuentesDetalleList.innerHTML = '<p class="muted">Sin fuentes registradas.</p>';
         updateFuenteEditorMode();
         renderManualReviewSummary();
         updateManualSaveState();
@@ -1833,7 +1903,7 @@
       renderFuentesDetalleRows();
       updateContextSummary();
       if (manualFuentesDetalleFeedback) {
-        manualFuentesDetalleFeedback.textContent = `Editando la fuente ${normalizedFuente}. Guarda cambios para reemplazar el registro actual.`;
+        manualFuentesDetalleFeedback.textContent = `Editando ${normalizedFuente}. Guarda cambios para actualizarla.`;
       }
       if (manualFuente && typeof manualFuente.focus === "function") {
         manualFuente.focus();
@@ -1856,7 +1926,7 @@
       const total = cantidadSa + cantidadPdp + cantidadPras + cantidadPefcf + cantidadR;
 
       if (!tipo) {
-        if (manualFuentesDetalleFeedback) manualFuentesDetalleFeedback.textContent = "Selecciona el tipo de la fuente.";
+        if (manualFuentesDetalleFeedback) manualFuentesDetalleFeedback.textContent = "Selecciona el tipo.";
         return false;
       }
       if (!fuenteNombre) {
@@ -1864,7 +1934,7 @@
         return false;
       }
       if (total <= 0) {
-        if (manualFuentesDetalleFeedback) manualFuentesDetalleFeedback.textContent = "Captura al menos una observación para agregar la fuente.";
+        if (manualFuentesDetalleFeedback) manualFuentesDetalleFeedback.textContent = "Captura al menos una observación.";
         return false;
       }
 
@@ -1873,7 +1943,7 @@
       ));
       if (!isEditingExisting && existingIndex < 0 && fuentesDetalleState.length >= objetivoFuentes) {
         if (manualFuentesDetalleFeedback) {
-          manualFuentesDetalleFeedback.textContent = `Ya capturaste ${objetivoFuentes} fuente(s). Si necesitas otra, aumenta "Fuentes previstas".`;
+          manualFuentesDetalleFeedback.textContent = `Ya capturaste ${objetivoFuentes} fuente(s). Aumenta la meta si necesitas otra.`;
         }
         return false;
       }
@@ -1907,10 +1977,10 @@
       const faltantes = Math.max(0, objetivoFuentes - capturadas);
       if (manualFuentesDetalleFeedback) {
         if (updatedExisting) {
-          manualFuentesDetalleFeedback.textContent = "Fuente actualizada en el oficio.";
+          manualFuentesDetalleFeedback.textContent = "Fuente actualizada.";
         } else {
           manualFuentesDetalleFeedback.textContent = faltantes > 0
-            ? `Fuente guardada. Continúa con la fuente ${capturadas + 1} de ${objetivoFuentes}.`
+            ? `Fuente guardada. Sigue con la ${capturadas + 1} de ${objetivoFuentes}.`
             : "Fuente guardada.";
         }
       }
@@ -1967,7 +2037,7 @@
       const total = cantidadSa + cantidadPdp + cantidadPras + cantidadPefcf + cantidadR;
       if (!tipo || !fuenteNombre) {
         if (showFeedback && manualFuentesDetalleFeedback) {
-          manualFuentesDetalleFeedback.textContent = "Selecciona el tipo de la fuente y una fuente válida.";
+          manualFuentesDetalleFeedback.textContent = "Selecciona tipo y fuente.";
         }
         return false;
       }
@@ -1975,7 +2045,7 @@
       const existingIndex = findFuenteDetalleIndex(tipo, fuenteNombre);
       if (total <= 0) {
         if (showFeedback && manualFuentesDetalleFeedback) {
-          manualFuentesDetalleFeedback.textContent = "Captura al menos una observación para guardar la fuente.";
+          manualFuentesDetalleFeedback.textContent = "Captura al menos una observación.";
         }
         return false;
       }
@@ -2002,13 +2072,13 @@
       } else {
         if (!allowCreate) {
           if (showFeedback && manualFuentesDetalleFeedback) {
-            manualFuentesDetalleFeedback.textContent = "Presiona \"Guardar esta fuente\" para registrar esta tarjeta.";
+            manualFuentesDetalleFeedback.textContent = "Presiona \"Guardar fuente\" para registrar esta tarjeta.";
           }
           return false;
         }
         if (fuentesDetalleState.length >= objetivoFuentes) {
           if (showFeedback && manualFuentesDetalleFeedback) {
-            manualFuentesDetalleFeedback.textContent = `Ya capturaste ${objetivoFuentes} fuente(s). Si necesitas otra, aumenta "Fuentes previstas".`;
+            manualFuentesDetalleFeedback.textContent = `Ya capturaste ${objetivoFuentes} fuente(s). Aumenta la meta si necesitas otra.`;
           }
           return false;
         }
@@ -2022,8 +2092,8 @@
       renderFuentesDetalleRows();
       if (showFeedback && manualFuentesDetalleFeedback) {
         manualFuentesDetalleFeedback.textContent = isEditingExisting || existingIndex >= 0
-          ? "Fuente actualizada en el oficio."
-          : "Fuente registrada en el oficio.";
+          ? "Fuente actualizada."
+          : "Fuente registrada.";
       }
       return true;
     };
@@ -2101,6 +2171,9 @@
       }
       if (!pdpDetalleState.length) {
         manualPdpBreakdown.innerHTML = "";
+        if (manualTotalPdpMonto) {
+          manualTotalPdpMonto.textContent = formatMoney(0);
+        }
         renderManualReviewSummary();
         return;
       }
@@ -2172,6 +2245,9 @@
         `<span>Estado</span>` +
         `</div>` +
         cards;
+      if (manualTotalPdpMonto) {
+        manualTotalPdpMonto.textContent = formatMoney(resumen.totalMonto);
+      }
       renderManualReviewSummary();
     };
 
@@ -2181,6 +2257,21 @@
         0,
       )
     );
+
+    const getTotalPdpMonto = () => {
+      const totalPdp = getTotalPdpFromFuentes();
+      if (totalPdp <= 0) {
+        return 0;
+      }
+      const normalized = normalizePdpDetalleState(
+        totalPdp,
+        pdpDetalleState.length ? pdpDetalleState : parsePdpDetalleState(),
+      );
+      return normalized.reduce((sum, item) => {
+        const monto = parseMoneyInput(item.monto);
+        return sum + (monto === null ? 0 : monto);
+      }, 0);
+    };
 
     const renderConceptOptions = (selectedValue = "") => {
       if (!manualPdpConcepto) {
@@ -3447,8 +3538,8 @@
       if (manualSaveBtn) {
         manualSaveBtn.style.display = "";
         manualSaveBtn.textContent = mode === "solventacion"
-          ? "Guardar y concluir solventación"
-          : "Guardar y concluir";
+          ? "Guardar solventación"
+          : "Guardar oficio";
       }
       if (manualValidateBtn) {
         manualValidateBtn.style.display = mode === "solventacion" ? "none" : "";
@@ -3760,11 +3851,11 @@
       }
       if (manualFuenteTipoHint) {
         if (!hasTipo || !hasEnte) {
-          manualFuenteTipoHint.textContent = "Selecciona ente y tipo para consultar fuentes.";
+          manualFuenteTipoHint.textContent = "Selecciona ente y tipo.";
         } else if (!hasObjetivo) {
-          manualFuenteTipoHint.textContent = "Primero indica cuántas fuentes vas a capturar.";
+          manualFuenteTipoHint.textContent = "Define la meta de fuentes.";
         } else {
-          manualFuenteTipoHint.textContent = `Fuentes disponibles para ${manualTipoAuditoria ? (manualTipoAuditoria.value || "el tipo actual") : "el tipo actual"}.`;
+          manualFuenteTipoHint.textContent = `Fuentes para ${manualTipoAuditoria ? (manualTipoAuditoria.value || "el tipo actual") : "el tipo actual"}.`;
         }
       }
       updateContextSummary();
@@ -3837,7 +3928,13 @@
     toggleFuentesByTipo();
     fuentesDetalleState = parseFuentesDetalleState();
     syncFuentesDetalleState();
+    setManualCaptureAsideExpanded(false);
     renderFuentesDetalleRows();
+    if (manualToggleAsideBtn) {
+      manualToggleAsideBtn.addEventListener("click", () => {
+        setManualCaptureAsideExpanded(!manualCaptureAsideExpanded);
+      });
+    }
     if (manualFuentesDetalleList) {
       manualFuentesDetalleList.addEventListener("click", (event) => {
         const target = event.target;
@@ -4526,7 +4623,7 @@
       if (manualTipoAuditoria) {
         manualTipoAuditoria.addEventListener("change", () => {
           if (manualFuenteTipoHint) {
-            manualFuenteTipoHint.textContent = `Fuentes disponibles para ${manualTipoAuditoria.value || "el tipo actual"}.`;
+            manualFuenteTipoHint.textContent = `Fuentes para ${manualTipoAuditoria.value || "el tipo actual"}.`;
           }
           syncManualContextToPrincipal();
           toggleFuentesByTipo();
@@ -4575,7 +4672,7 @@
           const capturadas = Array.isArray(fuentesDetalleState) ? fuentesDetalleState.length : 0;
           if (capturadas <= 0) {
             if (manualFuentesDetalleFeedback) {
-              manualFuentesDetalleFeedback.textContent = "Primero guarda al menos una fuente.";
+              manualFuentesDetalleFeedback.textContent = "Primero guarda una fuente.";
             }
             return;
           }
@@ -4586,7 +4683,7 @@
           syncManualContextToPrincipal();
           toggleFuentesByTipo();
           if (manualFuentesDetalleFeedback) {
-            manualFuentesDetalleFeedback.textContent = "Captura de fuentes finalizada con las fuentes registradas.";
+            manualFuentesDetalleFeedback.textContent = "Se usará el total actual de fuentes.";
           }
         });
       }
@@ -4615,7 +4712,7 @@
       }
       if (manualFuenteTipoHint && manualTipoAuditoria) {
         manualFuenteTipoHint.textContent = (manualTipoAuditoria.value || "").trim()
-          ? `Fuentes disponibles para ${manualTipoAuditoria.value || "el tipo actual"}.`
+          ? `Fuentes para ${manualTipoAuditoria.value || "el tipo actual"}.`
           : "Selecciona ente y tipo para consultar fuentes.";
       }
       if (manualTipoAuditoria && (manualTipoAuditoria.value || "").trim()) {

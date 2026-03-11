@@ -668,7 +668,12 @@ def init_db() -> None:
                 asunto TEXT NOT NULL,
                 ejercicio TEXT NOT NULL,
                 fuente_id INTEGER NOT NULL,
+                fuente_nombre TEXT,
                 periodo TEXT NOT NULL,
+                periodo_titular TEXT,
+                fecha_notificacion TEXT,
+                ramo_33 TEXT NOT NULL DEFAULT 'No',
+                estado TEXT NOT NULL DEFAULT 'E',
                 cantidad_sa INTEGER NOT NULL DEFAULT 0,
                 cantidad_pdp INTEGER NOT NULL DEFAULT 0,
                 cantidad_pras INTEGER NOT NULL DEFAULT 0,
@@ -677,6 +682,8 @@ def init_db() -> None:
                 monto_pdp_emitido REAL NOT NULL DEFAULT 0,
                 monto_pdp_solventado REAL NOT NULL DEFAULT 0,
                 monto_pdp_pendiente REAL NOT NULL DEFAULT 0,
+                fuente_detalle_json TEXT,
+                pdp_detalle_json TEXT,
                 created_by TEXT NOT NULL,
                 created_at TEXT NOT NULL
             )
@@ -739,6 +746,60 @@ def init_db() -> None:
                 WHERE ente_nombre IS NULL
                 """
             )
+        if "fuente_nombre" not in cargas_manuales_columns:
+            conn.execute("ALTER TABLE cargas_manuales ADD COLUMN fuente_nombre TEXT")
+            conn.execute(
+                """
+                UPDATE cargas_manuales
+                SET fuente_nombre = (
+                    SELECT ff.nombre
+                    FROM fuentes_financiamiento AS ff
+                    WHERE ff.id = cargas_manuales.fuente_id
+                    LIMIT 1
+                )
+                WHERE TRIM(COALESCE(fuente_nombre, '')) = ''
+                """
+            )
+        if "periodo_titular" not in cargas_manuales_columns:
+            conn.execute("ALTER TABLE cargas_manuales ADD COLUMN periodo_titular TEXT")
+            conn.execute(
+                """
+                UPDATE cargas_manuales
+                SET periodo_titular = ''
+                WHERE periodo_titular IS NULL
+                """
+            )
+        if "fecha_notificacion" not in cargas_manuales_columns:
+            conn.execute("ALTER TABLE cargas_manuales ADD COLUMN fecha_notificacion TEXT")
+            conn.execute(
+                """
+                UPDATE cargas_manuales
+                SET fecha_notificacion = ''
+                WHERE fecha_notificacion IS NULL
+                """
+            )
+        if "ramo_33" not in cargas_manuales_columns:
+            conn.execute("ALTER TABLE cargas_manuales ADD COLUMN ramo_33 TEXT NOT NULL DEFAULT 'No'")
+        conn.execute(
+            """
+            UPDATE cargas_manuales
+            SET ramo_33 = 'No'
+            WHERE TRIM(COALESCE(ramo_33, '')) = ''
+            """
+        )
+        if "estado" not in cargas_manuales_columns:
+            conn.execute("ALTER TABLE cargas_manuales ADD COLUMN estado TEXT NOT NULL DEFAULT 'E'")
+        conn.execute(
+            """
+            UPDATE cargas_manuales
+            SET estado = 'E'
+            WHERE TRIM(COALESCE(estado, '')) = ''
+            """
+        )
+        if "fuente_detalle_json" not in cargas_manuales_columns:
+            conn.execute("ALTER TABLE cargas_manuales ADD COLUMN fuente_detalle_json TEXT")
+        if "pdp_detalle_json" not in cargas_manuales_columns:
+            conn.execute("ALTER TABLE cargas_manuales ADD COLUMN pdp_detalle_json TEXT")
         if "tipo_anexo_origen" not in existing_columns:
             conn.execute(
                 "ALTER TABLE registros ADD COLUMN tipo_anexo_origen TEXT"
@@ -1116,9 +1177,9 @@ ROUTE_DEPS = {
     "sys": sys,
 }
 
+init_db()
 register_gabo_routes(app, ROUTE_DEPS)
 register_luis_routes(app, ROUTE_DEPS)
 
 if __name__ == "__main__":
-    init_db()
     app.run(debug=True, host="0.0.0.0", port=5008)

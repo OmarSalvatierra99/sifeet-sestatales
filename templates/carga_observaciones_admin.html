@@ -120,6 +120,7 @@
       <div class="table-meta">
         <span id="obsAdminCount">Selecciona filtros; la consulta es automática.</span>
         <div class="obs-admin-actions-inline">
+          <button type="button" class="btn-secondary" id="obsAdminSolveAllBtn">Solventar todo</button>
           <button type="button" class="btn-secondary" id="obsAdminDeleteSelectedBtn">Eliminar seleccionadas</button>
           <button type="button" class="btn-secondary" id="obsAdminDeleteAllBtn">Borrar todo (filtro)</button>
         </div>
@@ -211,6 +212,7 @@
     const metricTotal = document.getElementById("obsAdminMetricTotal");
     const metricPendiente = document.getElementById("obsAdminMetricPendiente");
     const metricSolventado = document.getElementById("obsAdminMetricSolventado");
+    const solveAllBtn = document.getElementById("obsAdminSolveAllBtn");
     const deleteSelectedBtn = document.getElementById("obsAdminDeleteSelectedBtn");
     const deleteAllBtn = document.getElementById("obsAdminDeleteAllBtn");
 
@@ -754,6 +756,49 @@
       }
     };
 
+    const solveAllVisible = async () => {
+      const ids = (Array.isArray(filteredRows) ? filteredRows : [])
+        .map((row) => Number(row.id || 0))
+        .filter((id) => Number.isFinite(id) && id > 0);
+      if (!ids.length) {
+        showStatus("No hay observaciones visibles para solventar.", "info");
+        return;
+      }
+      const confirmed = window.confirm(
+        `¿Marcar ${ids.length} observación(es) visibles como solventadas?` +
+        `\nEn PDP se copiará el monto emitido a monto solventado y el pendiente quedará en 0.`
+      );
+      if (!confirmed) {
+        return;
+      }
+      if (solveAllBtn) {
+        solveAllBtn.disabled = true;
+      }
+      try {
+        const response = await fetch("/carga/observaciones-admin/solventar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "No se pudieron solventar las observaciones visibles.");
+        }
+        await fetchRows({ announce: false });
+        showStatus(
+          `Observaciones solventadas: ${data.updated || ids.length}.`
+          + (data.pdp ? ` PDP actualizadas: ${data.pdp}.` : ""),
+          "success",
+        );
+      } catch (error) {
+        showStatus(error && error.message ? error.message : "Error al solventar observaciones.", "error");
+      } finally {
+        if (solveAllBtn) {
+          solveAllBtn.disabled = false;
+        }
+      }
+    };
+
     const loadEntes = async (selectedValue = "") => {
       if (!ejercicioInput || !enteInput) {
         return;
@@ -983,6 +1028,12 @@
     if (deleteSelectedBtn) {
       deleteSelectedBtn.addEventListener("click", async () => {
         await deleteSelected();
+      });
+    }
+
+    if (solveAllBtn) {
+      solveAllBtn.addEventListener("click", async () => {
+        await solveAllVisible();
       });
     }
 

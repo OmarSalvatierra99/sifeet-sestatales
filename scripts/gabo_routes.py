@@ -992,6 +992,199 @@ def register_gabo_routes(app, deps):
                     ),
                 )
 
+    def serialize_manual_snapshot(payload) -> str:
+        return json.dumps(payload, ensure_ascii=False)
+
+    def parse_pdp_detalle_snapshot(raw_value: str) -> list[dict]:
+        if not (raw_value or "").strip():
+            return []
+        try:
+            payload = json.loads(raw_value)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(payload, list):
+            return []
+        details = []
+        for item in payload:
+            data = item if isinstance(item, dict) else {}
+            monto_raw = data.get("monto")
+            details.append(
+                {
+                    "concepto": " ".join(str(data.get("concepto") or "").split()),
+                    "subconcepto": " ".join(str(data.get("subconcepto") or "").split()),
+                    "fuente": " ".join(str(data.get("fuente") or "").split()),
+                    "monto": "" if monto_raw is None else str(monto_raw).strip(),
+                }
+            )
+        return details
+
+    def infer_manual_estado(fuente_nombre: str) -> str:
+        return (
+            "R"
+            if re.match(r"^(remanentes|rea)\b", (fuente_nombre or "").strip(), flags=re.IGNORECASE)
+            else "E"
+        )
+
+    def build_fuente_detalle_snapshot(
+        *,
+        tipo_auditoria: str,
+        fuente_nombre: str,
+        cantidad_sa: int,
+        cantidad_pdp: int,
+        cantidad_pras: int,
+        cantidad_pefcf: int,
+        cantidad_r: int,
+    ) -> dict[str, object]:
+        return {
+            "tipo_auditoria": tipo_auditoria,
+            "fuente_nombre": fuente_nombre,
+            "cantidad_sa": int(cantidad_sa),
+            "cantidad_pdp": int(cantidad_pdp),
+            "cantidad_pras": int(cantidad_pras),
+            "cantidad_pefcf": int(cantidad_pefcf),
+            "cantidad_r": int(cantidad_r),
+        }
+
+    def count_observaciones_for_manual_scope(
+        db,
+        *,
+        ejercicio: str,
+        ente_id: str,
+        tipo_auditoria: str,
+        oficio: str,
+        fuente_nombre: str,
+        periodo_cedula: str,
+    ) -> int:
+        row = db.execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM observaciones
+            WHERE TRIM(COALESCE(ejercicio, '')) = TRIM(COALESCE(?, ''))
+              AND TRIM(COALESCE(ente_id, '')) = TRIM(COALESCE(?, ''))
+              AND TRIM(COALESCE(tipo_auditoria, '')) = TRIM(COALESCE(?, ''))
+              AND LOWER(TRIM(COALESCE(oficio, ''))) = LOWER(TRIM(COALESCE(?, '')))
+              AND LOWER(TRIM(COALESCE(fuente_financiamiento, ''))) = LOWER(TRIM(COALESCE(?, '')))
+              AND LOWER(TRIM(COALESCE(periodo_cedula, ''))) = LOWER(TRIM(COALESCE(?, '')))
+            """,
+            (ejercicio, ente_id, tipo_auditoria, oficio, fuente_nombre, periodo_cedula),
+        ).fetchone()
+        return int(row["total"] or 0) if row else 0
+
+    def summarize_existing_manual_rows(rows) -> str:
+        return ", ".join(
+            f"{row['tipo_auditoria']} (ID {row['id']}, {row['created_at']})"
+            for row in (rows or [])
+        )
+
+    def repair_existing_manual_rows(db, rows) -> dict[str, int]:
+        repair_ids: list[int] = []
+        for row in rows or []:
+            try:
+                item_id = int(row["id"])
+            except (TypeError, ValueError, KeyError):
+                continue
+            if item_id > 0:
+                repair_ids.append(item_id)
+        if not repair_ids:
+            return {"repaired": 0, "observaciones": 0}
+        return repair_missing_observaciones_from_cargas(
+            db,
+            carga_ids=sorted(set(repair_ids)),
+        )
+
+    def repair_missing_observaciones_from_cargas(
+        db,
+        *,
+        carga_ids: list[int] | None = None,
+    ) -> dict[str, int]:
+        where_sql = ""
+        params: list[object] = []
+        if carga_ids:
+            placeholders = ",".join("?" for _ in carga_ids)
+            where_sql = f"WHERE cm.id IN ({placeholders})"
+            params.extend(int(item) for item in carga_ids)
+        rows = db.execute(
+            f"""
+            SELECT
+                cm.*,
+                TRIM(COALESCE(cm.fuente_nombre, ff.nombre, '')) AS fuente_nombre_resolved,
+                TRIM(COALESCE(ed.ente_numero, '')) AS ente_numero_resolved,
+                TRIM(COALESCE(ed.ente_nombre, cm.ente_nombre, '')) AS ente_nombre_resolved
+            FROM cargas_manuales AS cm
+            LEFT JOIN fuentes_financiamiento AS ff
+              ON ff.id = cm.fuente_id
+            LEFT JOIN entes_detalle AS ed
+              ON TRIM(COALESCE(ed.ejercicio, '')) = TRIM(COALESCE(cm.ejercicio, ''))
+             AND TRIM(COALESCE(ed.ente_id, '')) = TRIM(COALESCE(cm.ente_id, ''))
+            {where_sql}
+            ORDER BY cm.id ASC
+            """,
+            params,
+        ).fetchall()
+        repaired = 0
+        created_rows = 0
+        for row in rows:
+            if (row["asunto"] or "").strip() != "Notificación de Cédula de Resultados":
+                continue
+            expected_total = sum(
+                int(row[column] or 0)
+                for column in ("cantidad_sa", "cantidad_pdp", "cantidad_pras", "cantidad_pefcf", "cantidad_r")
+            )
+            if expected_total <= 0:
+                continue
+            fuente_nombre = (row["fuente_nombre_resolved"] or "").strip()
+            if not fuente_nombre:
+                continue
+            existing_total = count_observaciones_for_manual_scope(
+                db,
+                ejercicio=(row["ejercicio"] or "").strip(),
+                ente_id=normalize_ente_id(row["ente_id"] or ""),
+                tipo_auditoria=(row["tipo_auditoria"] or "").strip(),
+                oficio=(row["numero_oficio"] or "").strip(),
+                fuente_nombre=fuente_nombre,
+                periodo_cedula=" ".join((row["periodo"] or "").split()),
+            )
+            if existing_total == expected_total:
+                continue
+            pdp_details = parse_pdp_detalle_snapshot(row["pdp_detalle_json"] or "")
+            pdp_amounts = [
+                float(str(item.get("monto") or "0").replace("$", "").replace(",", "").strip() or 0.0)
+                for item in pdp_details
+            ]
+            cantidad_pdp = int(row["cantidad_pdp"] or 0)
+            if cantidad_pdp > 0 and not pdp_amounts:
+                monto_total = float(row["monto_pdp_emitido"] or 0.0)
+                pdp_amounts = [monto_total] + [0.0] * max(0, cantidad_pdp - 1)
+            materialize_observaciones_from_manual(
+                db,
+                ejercicio=(row["ejercicio"] or "").strip(),
+                ente_id=normalize_ente_id(row["ente_id"] or ""),
+                ente_numero=(row["ente_numero_resolved"] or "").strip(),
+                ente_nombre=(row["ente_nombre_resolved"] or "").strip(),
+                tipo_auditoria=(row["tipo_auditoria"] or "").strip(),
+                fuente_nombre=fuente_nombre,
+                ramo_33=(row["ramo_33"] or "").strip() or "No",
+                estado=(row["estado"] or "").strip() or infer_manual_estado(fuente_nombre),
+                periodo_cedula=" ".join((row["periodo"] or "").split()),
+                periodo_titular=" ".join((row["periodo_titular"] or "").split()),
+                oficio=(row["numero_oficio"] or "").strip(),
+                fecha_notificacion=(row["fecha_notificacion"] or "").strip(),
+                cantidad_sa=int(row["cantidad_sa"] or 0),
+                cantidad_pdp=cantidad_pdp,
+                cantidad_pras=int(row["cantidad_pras"] or 0),
+                cantidad_pefcf=int(row["cantidad_pefcf"] or 0),
+                cantidad_r=int(row["cantidad_r"] or 0),
+                monto_pdp_solventado=float(row["monto_pdp_solventado"] or 0.0),
+                monto_pdp_pendiente=float(row["monto_pdp_pendiente"] or 0.0),
+                pdp_amounts=pdp_amounts,
+                pdp_details=pdp_details,
+                solventacion_totales_by_anexo={},
+                replace_scope=True,
+            )
+            repaired += 1
+            created_rows += expected_total
+        return {"repaired": repaired, "observaciones": created_rows}
+
     def parse_manual_pdp_details(raw_value: str, cantidad_pdp: int) -> list[dict]:
         if cantidad_pdp <= 0:
             return []
@@ -1958,6 +2151,68 @@ def register_gabo_routes(app, deps):
         db.commit()
         return jsonify({"ok": True, "deleted": total})
 
+    @app.post("/carga/observaciones-admin/solventar")
+    @gabo_required
+    def carga_observaciones_admin_solventar_multiples():
+        payload = request.get_json(silent=True) or {}
+        raw_ids = payload.get("ids")
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return jsonify({"ok": False, "error": "No se recibieron observaciones para solventar."}), 400
+
+        ids: list[int] = []
+        for raw_id in raw_ids:
+            try:
+                item_id = int(raw_id)
+            except (TypeError, ValueError):
+                continue
+            if item_id > 0:
+                ids.append(item_id)
+        ids = sorted(set(ids))
+        if not ids:
+            return jsonify({"ok": False, "error": "Lista de observaciones inválida."}), 400
+
+        placeholders = ", ".join(["?"] * len(ids))
+        db = get_db()
+        count_row = db.execute(
+            f"SELECT COUNT(*) AS total FROM observaciones WHERE id IN ({placeholders})",
+            ids,
+        ).fetchone()
+        total = int((count_row["total"] if count_row else 0) or 0)
+        if total <= 0:
+            return jsonify({"ok": False, "error": "No se encontraron observaciones para solventar."}), 404
+
+        pdp_row = db.execute(
+            f"""
+            SELECT COUNT(*) AS total
+            FROM observaciones
+            WHERE id IN ({placeholders})
+              AND UPPER(TRIM(COALESCE(tipo_anexo, ''))) = 'PDP'
+            """,
+            ids,
+        ).fetchone()
+        total_pdp = int((pdp_row["total"] if pdp_row else 0) or 0)
+
+        db.execute(
+            f"""
+            UPDATE observaciones
+            SET estado = 'Solventado',
+                monto_pdp_solventado = CASE
+                    WHEN UPPER(TRIM(COALESCE(tipo_anexo, ''))) = 'PDP'
+                    THEN COALESCE(monto_pdp_emitido, 0)
+                    ELSE monto_pdp_solventado
+                END,
+                monto_pdp_pendiente = CASE
+                    WHEN UPPER(TRIM(COALESCE(tipo_anexo, ''))) = 'PDP'
+                    THEN 0
+                    ELSE monto_pdp_pendiente
+                END
+            WHERE id IN ({placeholders})
+            """,
+            ids,
+        )
+        db.commit()
+        return jsonify({"ok": True, "updated": total, "pdp": total_pdp})
+
     @app.post("/carga/observaciones-admin/borrar-todo")
     @gabo_required
     def carga_observaciones_admin_borrar_todo():
@@ -2384,6 +2639,17 @@ def register_gabo_routes(app, deps):
                             has_detail_amount = any((item.get("monto") is not None) for item in pdp_details)
                             if has_detail_amount:
                                 pdp_amounts = [(item.get("monto") or 0.0) for item in pdp_details]
+                    fuente_detalle_snapshot = build_fuente_detalle_snapshot(
+                        tipo_auditoria=tipo_auditoria,
+                        fuente_nombre=fuente_nombre,
+                        cantidad_sa=cantidad_sa,
+                        cantidad_pdp=cantidad_pdp,
+                        cantidad_pras=cantidad_pras,
+                        cantidad_pefcf=cantidad_pefcf,
+                        cantidad_r=cantidad_r,
+                    )
+                    fuente_detalle_json = serialize_manual_snapshot(fuente_detalle_snapshot)
+                    pdp_detalle_json = serialize_manual_snapshot(pdp_details if cantidad_pdp > 0 else [])
                     tipos_auditoria = [tipo_auditoria]
                     if manual_edit_id and len(tipos_auditoria) > 1:
                         raise ValueError(
@@ -2460,10 +2726,7 @@ def register_gabo_routes(app, deps):
 
                     if action == "manual_check":
                         if existing_rows:
-                            resumen = ", ".join(
-                                f"{row['tipo_auditoria']} (ID {row['id']}, {row['created_at']})"
-                                for row in existing_rows
-                            )
+                            resumen = summarize_existing_manual_rows(existing_rows)
                             manual_result = {
                                 "ok": False,
                                 "level": "info",
@@ -2478,14 +2741,20 @@ def register_gabo_routes(app, deps):
                     else:
                         if manual_edit_id:
                             if existing_rows:
-                                resumen = ", ".join(
-                                    f"{row['tipo_auditoria']} (ID {row['id']}, {row['created_at']})"
-                                    for row in existing_rows
-                                )
+                                resumen = summarize_existing_manual_rows(existing_rows)
+                                repair_result = repair_existing_manual_rows(db, existing_rows)
+                                if repair_result["repaired"] > 0:
+                                    db.commit()
                                 manual_result = {
                                     "ok": False,
                                     "level": "info",
-                                    "message": f"No se puede actualizar por duplicado: {resumen}.",
+                                    "message": (
+                                        f"No se puede actualizar por duplicado: {resumen}. "
+                                        f"Se reparó la captura existente y se regeneraron "
+                                        f"{repair_result['observaciones']} observaciones para visibilidad."
+                                        if repair_result["repaired"] > 0
+                                        else f"No se puede actualizar por duplicado: {resumen}."
+                                    ),
                                 }
                             else:
                                 db.execute(
@@ -2501,7 +2770,12 @@ def register_gabo_routes(app, deps):
                                         asunto = ?,
                                         ejercicio = ?,
                                         fuente_id = ?,
+                                        fuente_nombre = ?,
                                         periodo = ?,
+                                        periodo_titular = ?,
+                                        fecha_notificacion = ?,
+                                        ramo_33 = ?,
+                                        estado = ?,
                                         cantidad_sa = ?,
                                         cantidad_pdp = ?,
                                         cantidad_pras = ?,
@@ -2510,6 +2784,8 @@ def register_gabo_routes(app, deps):
                                         monto_pdp_emitido = ?,
                                         monto_pdp_solventado = ?,
                                         monto_pdp_pendiente = ?,
+                                        fuente_detalle_json = ?,
+                                        pdp_detalle_json = ?,
                                         created_at = ?
                                     WHERE id = ? AND created_by = ?
                                     """,
@@ -2524,7 +2800,12 @@ def register_gabo_routes(app, deps):
                                         asunto,
                                         ejercicio,
                                         fuente_id,
+                                        fuente_nombre,
                                         periodo,
+                                        periodo_titular,
+                                        fecha_notificacion,
+                                        ramo_33,
+                                        estado,
                                         cantidad_sa,
                                         cantidad_pdp,
                                         cantidad_pras,
@@ -2533,6 +2814,8 @@ def register_gabo_routes(app, deps):
                                         monto_pdp_emitido,
                                         monto_pdp_solventado,
                                         monto_pdp_pendiente,
+                                        fuente_detalle_json,
+                                        pdp_detalle_json,
                                         datetime.now().strftime("%Y-%m-%d %H:%M"),
                                         manual_edit_id,
                                         user["username"],
@@ -2565,6 +2848,11 @@ def register_gabo_routes(app, deps):
                                     replace_scope=True,
                                 )
                                 db.commit()
+                                repair_result = repair_missing_observaciones_from_cargas(
+                                    db, carga_ids=[manual_edit_id]
+                                )
+                                if repair_result["repaired"] > 0:
+                                    db.commit()
                                 form_data["manual_id"] = str(manual_edit_id)
                                 manual_result = {
                                     "ok": True,
@@ -2575,15 +2863,25 @@ def register_gabo_routes(app, deps):
                             tipos_existentes = {row["tipo_auditoria"] for row in existing_rows}
                             tipos_por_insertar = [tipo for tipo in tipos_auditoria if tipo not in tipos_existentes]
                             if not tipos_por_insertar:
-                                resumen = ", ".join(
-                                    f"{row['tipo_auditoria']} (ID {row['id']}, {row['created_at']})"
-                                    for row in existing_rows
-                                )
-                                manual_result = {
-                                    "ok": False,
-                                    "level": "info",
-                                    "message": f"Registro duplicado detectado para: {resumen}.",
-                                }
+                                resumen = summarize_existing_manual_rows(existing_rows)
+                                repair_result = repair_existing_manual_rows(db, existing_rows)
+                                if repair_result["repaired"] > 0:
+                                    db.commit()
+                                    manual_result = {
+                                        "ok": True,
+                                        "level": "success",
+                                        "message": (
+                                            f"El registro ya existía para: {resumen}. "
+                                            f"Se reparó la captura previa y se regeneraron "
+                                            f"{repair_result['observaciones']} observaciones."
+                                        ),
+                                    }
+                                else:
+                                    manual_result = {
+                                        "ok": False,
+                                        "level": "info",
+                                        "message": f"Registro duplicado detectado para: {resumen}.",
+                                    }
                             else:
                                 inserted_ids = []
                                 for tipo_item in tipos_por_insertar:
@@ -2610,7 +2908,12 @@ def register_gabo_routes(app, deps):
                                             asunto,
                                             ejercicio,
                                             fuente_id,
+                                            fuente_nombre,
                                             periodo,
+                                            periodo_titular,
+                                            fecha_notificacion,
+                                            ramo_33,
+                                            estado,
                                             cantidad_sa,
                                             cantidad_pdp,
                                             cantidad_pras,
@@ -2619,10 +2922,12 @@ def register_gabo_routes(app, deps):
                                             monto_pdp_emitido,
                                             monto_pdp_solventado,
                                             monto_pdp_pendiente,
+                                            fuente_detalle_json,
+                                            pdp_detalle_json,
                                             created_by,
                                             created_at
                                         )
-                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                         """,
                                         (
                                             manual_ente_id,
@@ -2635,7 +2940,12 @@ def register_gabo_routes(app, deps):
                                             asunto,
                                             ejercicio,
                                             fuente_id,
+                                            fuente_nombre,
                                             periodo,
+                                            periodo_titular,
+                                            fecha_notificacion,
+                                            ramo_33,
+                                            estado,
                                             cantidad_sa,
                                             cantidad_pdp,
                                             cantidad_pras,
@@ -2644,6 +2954,8 @@ def register_gabo_routes(app, deps):
                                             monto_pdp_emitido,
                                             monto_pdp_solventado,
                                             monto_pdp_pendiente,
+                                            fuente_detalle_json,
+                                            pdp_detalle_json,
                                             user["username"],
                                             datetime.now().strftime("%Y-%m-%d %H:%M"),
                                         ),
@@ -2676,6 +2988,11 @@ def register_gabo_routes(app, deps):
                                         replace_scope=False,
                                     )
                                 db.commit()
+                                repair_result = repair_missing_observaciones_from_cargas(
+                                    db, carga_ids=inserted_ids
+                                )
+                                if repair_result["repaired"] > 0:
+                                    db.commit()
                                 if existing_rows:
                                     existentes = ", ".join(sorted(tipos_existentes))
                                     insertados = ", ".join(tipos_por_insertar)
@@ -2709,6 +3026,7 @@ def register_gabo_routes(app, deps):
                                     and manual_result.get("ok")
                                 ):
                                     extra_inserted = 0
+                                    extra_inserted_ids = []
                                     extra_skipped = 0
                                     for extra_idx, extra_row in enumerate(
                                         fuentes_detalle_rows[1:], start=1
@@ -2782,7 +3100,21 @@ def register_gabo_routes(app, deps):
                                                 float(item.get("monto") or 0.0)
                                                 for item in pdp_details_extra
                                             ]
-                                            db.execute(
+                                            extra_fuente_detalle_json = serialize_manual_snapshot(
+                                                build_fuente_detalle_snapshot(
+                                                    tipo_auditoria=extra_tipo_item,
+                                                    fuente_nombre=extra_fuente_nombre,
+                                                    cantidad_sa=cantidad_sa_extra,
+                                                    cantidad_pdp=cantidad_pdp_extra,
+                                                    cantidad_pras=cantidad_pras_extra,
+                                                    cantidad_pefcf=cantidad_pefcf_extra,
+                                                    cantidad_r=cantidad_r_extra,
+                                                )
+                                            )
+                                            extra_pdp_detalle_json = serialize_manual_snapshot(
+                                                pdp_details_extra if cantidad_pdp_extra > 0 else []
+                                            )
+                                            cursor_extra = db.execute(
                                                 """
                                                 INSERT INTO cargas_manuales (
                                                     ente_id,
@@ -2795,7 +3127,12 @@ def register_gabo_routes(app, deps):
                                                     asunto,
                                                     ejercicio,
                                                     fuente_id,
+                                                    fuente_nombre,
                                                     periodo,
+                                                    periodo_titular,
+                                                    fecha_notificacion,
+                                                    ramo_33,
+                                                    estado,
                                                     cantidad_sa,
                                                     cantidad_pdp,
                                                     cantidad_pras,
@@ -2804,10 +3141,12 @@ def register_gabo_routes(app, deps):
                                                     monto_pdp_emitido,
                                                     monto_pdp_solventado,
                                                     monto_pdp_pendiente,
+                                                    fuente_detalle_json,
+                                                    pdp_detalle_json,
                                                     created_by,
                                                     created_at
                                                 )
-                                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                                 """,
                                                 (
                                                     manual_ente_id,
@@ -2820,7 +3159,12 @@ def register_gabo_routes(app, deps):
                                                     asunto,
                                                     ejercicio,
                                                     extra_fuente_id,
+                                                    extra_fuente_nombre,
                                                     periodo,
+                                                    periodo_titular,
+                                                    fecha_notificacion,
+                                                    ramo_33,
+                                                    estado,
                                                     cantidad_sa_extra,
                                                     cantidad_pdp_extra,
                                                     cantidad_pras_extra,
@@ -2829,10 +3173,13 @@ def register_gabo_routes(app, deps):
                                                     0.0,
                                                     0.0,
                                                     0.0,
+                                                    extra_fuente_detalle_json,
+                                                    extra_pdp_detalle_json,
                                                     user["username"],
                                                     datetime.now().strftime("%Y-%m-%d %H:%M"),
                                                 ),
                                             )
+                                            extra_inserted_ids.append(int(cursor_extra.lastrowid))
                                             materialize_observaciones_from_manual(
                                                 db,
                                                 ejercicio=ejercicio,
@@ -2862,6 +3209,13 @@ def register_gabo_routes(app, deps):
                                             extra_inserted += 1
                                     if extra_inserted > 0:
                                         db.commit()
+                                    extra_repair_ids = inserted_ids + extra_inserted_ids
+                                    if extra_repair_ids:
+                                        repair_result = repair_missing_observaciones_from_cargas(
+                                            db, carga_ids=extra_repair_ids
+                                        )
+                                        if repair_result["repaired"] > 0:
+                                            db.commit()
                                     if manual_result and manual_result.get("ok"):
                                         manual_result["message"] = (
                                             f"{manual_result['message']} "
@@ -2926,6 +3280,10 @@ def register_gabo_routes(app, deps):
                         raise ValueError("Acción de carga no soportada.")
                     script_result = run_loader_command(command)
             except ValueError as exc:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
                 if action == "manual_save":
                     manual_result = {
                         "ok": False,
@@ -2951,6 +3309,38 @@ def register_gabo_routes(app, deps):
                         "command": "",
                         "stdout": "",
                         "stderr": str(exc),
+                    }
+            except Exception as exc:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                error_message = f"Ocurrió un error inesperado: {exc}"
+                if action == "manual_save":
+                    manual_result = {
+                        "ok": False,
+                        "level": "error",
+                        "message": error_message,
+                    }
+                elif action == "manual_check":
+                    manual_result = {
+                        "ok": False,
+                        "level": "error",
+                        "message": error_message,
+                    }
+                elif action == "titular_save":
+                    titular_result = {
+                        "ok": False,
+                        "level": "error",
+                        "message": error_message,
+                    }
+                else:
+                    script_result = {
+                        "ok": False,
+                        "returncode": 1,
+                        "command": "",
+                        "stdout": "",
+                        "stderr": error_message,
                     }
 
         if action == "titular_save" or titular_result is not None:
