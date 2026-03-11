@@ -96,8 +96,24 @@
             </select>
           </div>
         </div>
-        <p class="helper">Consulta automática activada: al cambiar filtros se actualizan las observaciones.</p>
+        <p class="helper">
+          Consulta automática activada: al cambiar filtros se actualizan las observaciones.
+          Los ejercicios 2023 y 2024 quedan solo en consulta para Gabo.
+        </p>
       </form>
+
+      <div class="obs-admin-safety-card" id="obsAdminSafetyCard">
+        <div class="obs-admin-safety-copy">
+          <strong id="obsAdminSafetyTitle">Consulta general</strong>
+          <p id="obsAdminSafetyHint">
+            Las acciones masivas se habilitan cuando defines ente, auditoría, oficio y al menos fuente o periodo.
+          </p>
+        </div>
+        <div class="obs-admin-safety-meta">
+          <span class="loader-obs-chip" id="obsAdminSafetyModeChip">Modo consulta</span>
+          <span class="loader-obs-chip" id="obsAdminSafetyScopeChip">Alcance incompleto</span>
+        </div>
+      </div>
 
       <div class="loader-obs-toolbar obs-admin-toolbar">
         <input id="obs_admin_quick_search" type="text" placeholder="Buscar en resultados (anexo, oficio, fuente, concepto...)">
@@ -120,7 +136,9 @@
       <div class="table-meta">
         <span id="obsAdminCount">Selecciona filtros; la consulta es automática.</span>
         <div class="obs-admin-actions-inline">
+          <button type="button" class="btn-secondary" id="obsAdminBackupBtn">Crear respaldo</button>
           <button type="button" class="btn-secondary" id="obsAdminSolveAllBtn">Solventar todo</button>
+          <button type="button" class="btn-secondary" id="obsAdminPendingAllBtn">Dejar pendientes</button>
           <button type="button" class="btn-secondary" id="obsAdminDeleteSelectedBtn">Eliminar seleccionadas</button>
           <button type="button" class="btn-secondary" id="obsAdminDeleteAllBtn">Borrar todo (filtro)</button>
         </div>
@@ -192,6 +210,8 @@
   </a>
 
   <script>
+    const initialScope = {{ initial_scope | tojson }};
+    const readOnlyEjercicios = new Set({{ read_only_ejercicios | tojson }});
     const filtersForm = document.getElementById("obsAdminFiltersForm");
     const ejercicioInput = document.getElementById("obs_admin_ejercicio");
     const enteInput = document.getElementById("obs_admin_ente_id");
@@ -212,7 +232,13 @@
     const metricTotal = document.getElementById("obsAdminMetricTotal");
     const metricPendiente = document.getElementById("obsAdminMetricPendiente");
     const metricSolventado = document.getElementById("obsAdminMetricSolventado");
+    const safetyTitle = document.getElementById("obsAdminSafetyTitle");
+    const safetyHint = document.getElementById("obsAdminSafetyHint");
+    const safetyModeChip = document.getElementById("obsAdminSafetyModeChip");
+    const safetyScopeChip = document.getElementById("obsAdminSafetyScopeChip");
+    const backupBtn = document.getElementById("obsAdminBackupBtn");
     const solveAllBtn = document.getElementById("obsAdminSolveAllBtn");
+    const pendingAllBtn = document.getElementById("obsAdminPendingAllBtn");
     const deleteSelectedBtn = document.getElementById("obsAdminDeleteSelectedBtn");
     const deleteAllBtn = document.getElementById("obsAdminDeleteAllBtn");
 
@@ -339,6 +365,127 @@
       return params.toString();
     };
 
+    const isReadOnlyEjercicio = (value) => readOnlyEjercicios.has(String(value || "").trim());
+
+    const getReadOnlyMessage = (value) => (
+      `El ejercicio ${String(value || "").trim()} está concluido y solo se puede consultar.`
+    );
+
+    const hasSafeMassScope = (filters) => {
+      const current = filters || readFilters();
+      return !!(
+        current
+        && current.ejercicio
+        && current.ente_id
+        && current.tipo_auditoria
+        && current.oficio
+        && (current.fuente || current.periodo)
+        && !isReadOnlyEjercicio(current.ejercicio)
+      );
+    };
+
+    const describeScope = (filters) => {
+      const current = filters || readFilters();
+      const parts = [];
+      if (current.ejercicio) parts.push(`Ejercicio ${current.ejercicio}`);
+      if (enteInput && current.ente_id) {
+        const selected = enteInput.options[enteInput.selectedIndex];
+        const label = selected ? String(selected.textContent || "").trim() : current.ente_id;
+        parts.push(label || current.ente_id);
+      }
+      if (current.tipo_auditoria) parts.push(current.tipo_auditoria);
+      if (current.oficio) parts.push(`Oficio ${current.oficio}`);
+      if (current.fuente) parts.push(`Fuente ${current.fuente}`);
+      if (current.periodo) parts.push(current.periodo);
+      return parts.join(" · ") || "Sin alcance definido";
+    };
+
+    const setBulkActionState = (button, disabled, title) => {
+      if (!(button instanceof HTMLButtonElement)) {
+        return;
+      }
+      const isBusy = button.dataset.busy === "1";
+      button.disabled = disabled || isBusy;
+      button.title = (disabled && !isBusy) ? (title || "") : "";
+    };
+
+    const updateSafetyState = () => {
+      const filters = readFilters();
+      const readOnly = isReadOnlyEjercicio(filters.ejercicio);
+      const safeScope = hasSafeMassScope(filters);
+      const count = Array.isArray(filteredRows) ? filteredRows.length : 0;
+      const reason = readOnly
+        ? getReadOnlyMessage(filters.ejercicio)
+        : "Para acciones masivas define ente, auditoría, oficio y al menos fuente o periodo.";
+
+      if (safetyTitle) {
+        safetyTitle.textContent = readOnly
+          ? `Ejercicio ${filters.ejercicio || "-"} en solo consulta`
+          : (safeScope ? "Edición habilitada para el alcance actual" : "Consulta con candados activos");
+      }
+      if (safetyHint) {
+        safetyHint.textContent = readOnly
+          ? reason
+          : (safeScope
+            ? `${describeScope(filters)}. Observaciones visibles: ${count}.`
+            : `${describeScope(filters)}. ${reason}`);
+      }
+      if (safetyModeChip) {
+        safetyModeChip.textContent = readOnly ? "Solo consulta" : "Edición habilitada";
+      }
+      if (safetyScopeChip) {
+        safetyScopeChip.textContent = safeScope ? "Acciones masivas listas" : "Alcance incompleto";
+      }
+
+      if (selectAllCheckbox instanceof HTMLInputElement) {
+        selectAllCheckbox.disabled = readOnly;
+        selectAllCheckbox.title = readOnly ? reason : "";
+      }
+      setBulkActionState(solveAllBtn, !safeScope, reason);
+      setBulkActionState(pendingAllBtn, !safeScope, reason);
+      setBulkActionState(deleteAllBtn, !safeScope, reason);
+      setBulkActionState(deleteSelectedBtn, readOnly, readOnly ? reason : "");
+    };
+
+    const ensureFuenteOptionForScope = (targetLabel) => {
+      if (!fuenteInput) {
+        return;
+      }
+      const label = String(targetLabel || "").trim();
+      if (!label) {
+        fuenteInput.value = "";
+        return;
+      }
+      const options = Array.from(fuenteInput.options || []);
+      const exactOption = options.find((option) => String(option.textContent || "").trim().toLowerCase() === label.toLowerCase());
+      if (exactOption) {
+        fuenteInput.value = exactOption.value;
+        return;
+      }
+      const customValue = `__obs__:${label}`;
+      const existingCustom = options.find((option) => String(option.value || "").trim() === customValue);
+      if (!existingCustom) {
+        fuenteInput.insertAdjacentHTML(
+          "beforeend",
+          `<option value="${escapeHtml(customValue)}">${escapeHtml(label)}</option>`,
+        );
+      }
+      fuenteInput.value = customValue;
+    };
+
+    const createManualBackup = async (label) => {
+      const response = await fetch("/carga/respaldo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || data.message || "No se pudo generar el respaldo.");
+      }
+      return String(data.backup_path || "").trim();
+    };
+
     const updateMetrics = (rows) => {
       const safeRows = Array.isArray(rows) ? rows : [];
       const pendientes = safeRows.filter((row) => normalizeEstado(row.estado) === "Pendiente").length;
@@ -413,8 +560,16 @@
     const renderRows = (rows) => {
       if (!Array.isArray(rows) || !rows.length) {
         renderEmptyRow("Sin observaciones para los filtros seleccionados.");
+        updateSafetyState();
         return;
       }
+
+      const currentEjercicio = readFilters().ejercicio;
+      const pageReadOnly = isReadOnlyEjercicio(currentEjercicio);
+      const disabledAttr = pageReadOnly ? " disabled" : "";
+      const disabledTitle = pageReadOnly
+        ? ` title="${escapeHtml(getReadOnlyMessage(currentEjercicio))}"`
+        : "";
 
       tableBody.innerHTML = rows.map((row) => {
         const id = Number(row.id || 0);
@@ -441,7 +596,7 @@
             `<div class="obs-admin-pdp-cell">` +
               `<span>Emitido: <strong>${escapeHtml(formatMoney(emitido))}</strong></span>` +
               `<label for="obs_admin_solventado_${id}">Solventado</label>` +
-              `<input id="obs_admin_solventado_${id}" class="obs-admin-solventado obs-monto-solventado-input" type="text" inputmode="decimal" value="${escapeHtml(solventado.toFixed(2))}" aria-label="Monto solventado PDP">` +
+              `<input id="obs_admin_solventado_${id}" class="obs-admin-solventado obs-monto-solventado-input" type="text" inputmode="decimal" value="${escapeHtml(solventado.toFixed(2))}" aria-label="Monto solventado PDP"${disabledAttr}${disabledTitle}>` +
               `<span>Pendiente: <strong class="obs-admin-pendiente">${escapeHtml(formatMoney(pendiente))}</strong></span>` +
               `<small class="obs-pdp-error obs-admin-row-error" hidden></small>` +
             `</div>`
@@ -457,7 +612,7 @@
 
         return (
           `<tr class="obs-row ${estadoClass}" data-observacion-id="${id}" data-tipo-anexo="${escapeHtml(tipoAnexo)}" data-monto-emitido="${escapeHtml(emitido.toFixed(2))}">` +
-            `<td><input type="checkbox" class="obs-admin-row-check" value="${id}" aria-label="Seleccionar observación ${id}"></td>` +
+            `<td><input type="checkbox" class="obs-admin-row-check" value="${id}" aria-label="Seleccionar observación ${id}"${disabledAttr}${disabledTitle}></td>` +
             `<td>` +
               `<div class="obs-admin-observacion-main">` +
                 `<strong>ID ${id} · ${escapeHtml(observacionLabel)}</strong>` +
@@ -475,7 +630,7 @@
               `</div>` +
             `</td>` +
             `<td>` +
-              `<select class="obs-admin-estado obs-estado-input ${estadoClass}">` +
+              `<select class="obs-admin-estado obs-estado-input ${estadoClass}"${disabledAttr}${disabledTitle}>` +
                 `<option value="Emitido"${estado === "Emitido" ? " selected" : ""}>Emitido</option>` +
                 `<option value="Pendiente"${estado === "Pendiente" ? " selected" : ""}>Pendiente</option>` +
                 `<option value="Solventado"${estado === "Solventado" ? " selected" : ""}>Solventado</option>` +
@@ -484,8 +639,8 @@
             `<td>${pdpCellHtml}</td>` +
             `<td>` +
               `<div class="obs-admin-row-actions">` +
-                `<button type="button" class="btn-secondary btn-compact obs-admin-save-btn">Guardar</button>` +
-                `<button type="button" class="btn-secondary btn-compact obs-admin-delete-btn">Eliminar</button>` +
+                `<button type="button" class="btn-secondary btn-compact obs-admin-save-btn"${disabledAttr}${disabledTitle}>Guardar</button>` +
+                `<button type="button" class="btn-secondary btn-compact obs-admin-delete-btn"${disabledAttr}${disabledTitle}>Eliminar</button>` +
               `</div>` +
             `</td>` +
           `</tr>`
@@ -496,6 +651,7 @@
         updateRowVisualState(row);
       });
       syncSelectAllState();
+      updateSafetyState();
     };
 
     const applyClientFilters = () => {
@@ -552,15 +708,18 @@
           : "";
         countLabel.textContent = `${filteredRows.length} de ${allRows.length} observaciones${latestLabel}.`;
       }
+      updateSafetyState();
     };
 
     const fetchRows = async ({ announce = true } = {}) => {
       const filters = readFilters();
       if (!filters.ejercicio) {
         showStatus("Selecciona un ejercicio para cargar observaciones.", "error");
+        updateSafetyState();
         return;
       }
       renderEmptyRow("Consultando observaciones...");
+      updateSafetyState();
       try {
         const query = buildQueryString(filters);
         const response = await fetch(`/carga/observaciones-admin/datos?${query}`);
@@ -582,6 +741,7 @@
           countLabel.textContent = "Sin resultados.";
         }
         showStatus(error && error.message ? error.message : "Error al consultar observaciones.", "error");
+        updateSafetyState();
       }
     };
 
@@ -625,6 +785,11 @@
         showStatus(payloadResult.error, "error");
         return;
       }
+      const filters = readFilters();
+      if (isReadOnlyEjercicio(filters.ejercicio)) {
+        showStatus(getReadOnlyMessage(filters.ejercicio), "error");
+        return;
+      }
       if (button instanceof HTMLButtonElement) {
         button.disabled = true;
       }
@@ -642,7 +807,11 @@
           throw new Error(data.error || "No se pudo actualizar la observación.");
         }
         await fetchRows({ announce: false });
-        showStatus(`Observación ${payloadResult.id} actualizada.`, "success");
+        showStatus(
+          `Observación ${payloadResult.id} actualizada.`
+          + (data.backup_path ? ` Respaldo: ${data.backup_path}.` : ""),
+          "success",
+        );
       } catch (error) {
         showStatus(error && error.message ? error.message : "Error al guardar cambios.", "error");
       } finally {
@@ -656,6 +825,11 @@
       const id = Number(row.dataset.observacionId || 0);
       if (!id) {
         showStatus("Observación inválida.", "error");
+        return;
+      }
+      const filters = readFilters();
+      if (isReadOnlyEjercicio(filters.ejercicio)) {
+        showStatus(getReadOnlyMessage(filters.ejercicio), "error");
         return;
       }
       const ok = window.confirm(`¿Seguro que deseas eliminar la observación ID ${id}?`);
@@ -675,7 +849,11 @@
           throw new Error(data.error || "No se pudo eliminar la observación.");
         }
         await fetchRows({ announce: false });
-        showStatus(`Observación ${id} eliminada.`, "success");
+        showStatus(
+          `Observación ${id} eliminada.`
+          + (data.backup_path ? ` Respaldo: ${data.backup_path}.` : ""),
+          "success",
+        );
       } catch (error) {
         showStatus(error && error.message ? error.message : "Error al eliminar observación.", "error");
       } finally {
@@ -693,6 +871,11 @@
         .filter((id) => Number.isFinite(id) && id > 0);
       if (!ids.length) {
         showStatus("Selecciona al menos una observación para eliminar.", "info");
+        return;
+      }
+      const filters = readFilters();
+      if (isReadOnlyEjercicio(filters.ejercicio)) {
+        showStatus(getReadOnlyMessage(filters.ejercicio), "error");
         return;
       }
       const confirmed = window.confirm(
@@ -713,7 +896,11 @@
           throw new Error(data.error || "No se pudieron eliminar las observaciones seleccionadas.");
         }
         await fetchRows({ announce: false });
-        showStatus(`Observaciones eliminadas: ${data.deleted || ids.length}.`, "success");
+        showStatus(
+          `Observaciones eliminadas: ${data.deleted || ids.length}.`
+          + (data.backup_path ? ` Respaldo: ${data.backup_path}.` : ""),
+          "success",
+        );
       } catch (error) {
         showStatus(error && error.message ? error.message : "Error al eliminar seleccionadas.", "error");
       } finally {
@@ -725,6 +912,15 @@
       const filters = readFilters();
       if (!filters.ejercicio) {
         showStatus("Debes seleccionar ejercicio para borrar.", "error");
+        return;
+      }
+      if (!hasSafeMassScope(filters)) {
+        showStatus(
+          isReadOnlyEjercicio(filters.ejercicio)
+            ? getReadOnlyMessage(filters.ejercicio)
+            : "Antes de borrar por filtro define ente, auditoría, oficio y al menos fuente o periodo.",
+          "error",
+        );
         return;
       }
       const totalInView = filteredRows.length;
@@ -748,11 +944,16 @@
           throw new Error(data.error || "No se pudo borrar el conjunto filtrado.");
         }
         await fetchRows({ announce: false });
-        showStatus(`Observaciones eliminadas: ${data.deleted || 0}.`, "success");
+        showStatus(
+          `Observaciones eliminadas: ${data.deleted || 0}.`
+          + (data.backup_path ? ` Respaldo: ${data.backup_path}.` : ""),
+          "success",
+        );
       } catch (error) {
         showStatus(error && error.message ? error.message : "Error al borrar por filtros.", "error");
       } finally {
         deleteAllBtn.disabled = false;
+        updateSafetyState();
       }
     };
 
@@ -764,6 +965,16 @@
         showStatus("No hay observaciones visibles para solventar.", "info");
         return;
       }
+      const filters = readFilters();
+      if (!hasSafeMassScope(filters)) {
+        showStatus(
+          isReadOnlyEjercicio(filters.ejercicio)
+            ? getReadOnlyMessage(filters.ejercicio)
+            : "Antes de solventar todo define ente, auditoría, oficio y al menos fuente o periodo.",
+          "error",
+        );
+        return;
+      }
       const confirmed = window.confirm(
         `¿Marcar ${ids.length} observación(es) visibles como solventadas?` +
         `\nEn PDP se copiará el monto emitido a monto solventado y el pendiente quedará en 0.`
@@ -772,13 +983,14 @@
         return;
       }
       if (solveAllBtn) {
+        solveAllBtn.dataset.busy = "1";
         solveAllBtn.disabled = true;
       }
       try {
         const response = await fetch("/carga/observaciones-admin/solventar", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ids }),
+          body: JSON.stringify({ ids, scope: filters }),
         });
         const data = await response.json();
         if (!response.ok || !data.ok) {
@@ -787,15 +999,75 @@
         await fetchRows({ announce: false });
         showStatus(
           `Observaciones solventadas: ${data.updated || ids.length}.`
-          + (data.pdp ? ` PDP actualizadas: ${data.pdp}.` : ""),
+          + (data.pdp ? ` PDP actualizadas: ${data.pdp}.` : "")
+          + (data.backup_path ? ` Respaldo: ${data.backup_path}.` : ""),
           "success",
         );
       } catch (error) {
         showStatus(error && error.message ? error.message : "Error al solventar observaciones.", "error");
       } finally {
         if (solveAllBtn) {
+          delete solveAllBtn.dataset.busy;
           solveAllBtn.disabled = false;
         }
+        updateSafetyState();
+      }
+    };
+
+    const markAllPendingVisible = async () => {
+      const ids = (Array.isArray(filteredRows) ? filteredRows : [])
+        .map((row) => Number(row.id || 0))
+        .filter((id) => Number.isFinite(id) && id > 0);
+      if (!ids.length) {
+        showStatus("No hay observaciones visibles para dejar en pendiente.", "info");
+        return;
+      }
+      const filters = readFilters();
+      if (!hasSafeMassScope(filters)) {
+        showStatus(
+          isReadOnlyEjercicio(filters.ejercicio)
+            ? getReadOnlyMessage(filters.ejercicio)
+            : "Antes de dejar pendientes define ente, auditoría, oficio y al menos fuente o periodo.",
+          "error",
+        );
+        return;
+      }
+      const confirmed = window.confirm(
+        `¿Marcar ${ids.length} observación(es) visibles como pendientes?`
+        + `\nEn PDP se reiniciará el monto solventado a 0 y el pendiente quedará igual al emitido.`
+      );
+      if (!confirmed) {
+        return;
+      }
+      if (pendingAllBtn) {
+        pendingAllBtn.dataset.busy = "1";
+        pendingAllBtn.disabled = true;
+      }
+      try {
+        const response = await fetch("/carga/observaciones-admin/pendiente", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids, scope: filters }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "No se pudieron dejar pendientes las observaciones visibles.");
+        }
+        await fetchRows({ announce: false });
+        showStatus(
+          `Observaciones en pendiente: ${data.updated || ids.length}.`
+          + (data.pdp ? ` PDP reiniciadas: ${data.pdp}.` : "")
+          + (data.backup_path ? ` Respaldo: ${data.backup_path}.` : ""),
+          "success",
+        );
+      } catch (error) {
+        showStatus(error && error.message ? error.message : "Error al dejar observaciones en pendiente.", "error");
+      } finally {
+        if (pendingAllBtn) {
+          delete pendingAllBtn.dataset.busy;
+          pendingAllBtn.disabled = false;
+        }
+        updateSafetyState();
       }
     };
 
@@ -865,12 +1137,48 @@
         const selected = String(selectedValue || "").trim();
         if (selected && options.some((row) => String(row.id || "").trim() === selected)) {
           fuenteInput.value = selected;
+        } else if (selected) {
+          ensureFuenteOptionForScope(selected);
         } else {
           fuenteInput.value = "";
         }
       } catch (_error) {
         fuenteInput.innerHTML = '<option value="">No se pudieron cargar fuentes</option>';
         fuenteInput.value = "";
+      }
+    };
+
+    const applyInitialScope = async () => {
+      const hasInitialScope = Object.values(initialScope || {}).some((value) => String(value || "").trim());
+      if (ejercicioInput && initialScope.ejercicio) {
+        ejercicioInput.value = initialScope.ejercicio;
+      }
+      if (tipoAuditoriaInput && initialScope.tipo_auditoria) {
+        tipoAuditoriaInput.value = initialScope.tipo_auditoria;
+      }
+      if (periodoInput && initialScope.periodo) {
+        periodoInput.value = initialScope.periodo;
+      }
+      if (oficioInput && initialScope.oficio) {
+        oficioInput.value = initialScope.oficio;
+      }
+      if (estadoInput && initialScope.estado) {
+        estadoInput.value = initialScope.estado;
+      }
+      if (tipoAnexoInput && initialScope.tipo_anexo) {
+        tipoAnexoInput.value = initialScope.tipo_anexo;
+      }
+      await loadEntes(initialScope.ente_id || "");
+      if (enteInput && initialScope.ente_id) {
+        enteInput.value = initialScope.ente_id;
+      }
+      await loadFuentes(initialScope.fuente || "");
+      if (fuenteInput && initialScope.fuente) {
+        ensureFuenteOptionForScope(initialScope.fuente);
+      }
+      await fetchRows({ announce: false });
+      if (hasInitialScope) {
+        showStatus("Filtros cargados desde el contexto de captura.", "info");
       }
     };
 
@@ -1037,16 +1345,34 @@
       });
     }
 
+    if (pendingAllBtn) {
+      pendingAllBtn.addEventListener("click", async () => {
+        await markAllPendingVisible();
+      });
+    }
+
     if (deleteAllBtn) {
       deleteAllBtn.addEventListener("click", async () => {
         await deleteAllByFilters();
       });
     }
 
-    loadEntes("").then(async () => {
-      await loadFuentes("");
-      await fetchRows({ announce: false });
-    });
+    if (backupBtn) {
+      backupBtn.addEventListener("click", async () => {
+        backupBtn.disabled = true;
+        try {
+          const backupPath = await createManualBackup("respaldo-manual-admin");
+          showStatus(`Respaldo generado: ${backupPath}.`, "success");
+        } catch (error) {
+          showStatus(error instanceof Error ? error.message : "No se pudo generar el respaldo.", "error");
+        } finally {
+          backupBtn.disabled = false;
+          updateSafetyState();
+        }
+      });
+    }
+
+    applyInitialScope();
   </script>
 </body>
 </html>

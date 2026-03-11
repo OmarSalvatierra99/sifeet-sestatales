@@ -1,9 +1,13 @@
 from datetime import datetime
+import csv
 import json
+from pathlib import Path
 import re
+import sqlite3
 import sys
 
 from flask import jsonify, render_template, request
+from openpyxl import load_workbook
 
 
 def split_periodo_tokens(raw_value: str) -> list[str]:
@@ -57,6 +61,7 @@ def register_gabo_routes(app, deps):
     globals().update(deps)
     TITULAR_EJERCICIO_FIJO = "2025"
     OBSERVACION_ESTADOS_VALIDOS = {"Emitido", "Pendiente", "Solventado"}
+    GABO_READONLY_EJERCICIOS = {"2023", "2024"}
     TITULAR_MONTHS_ES = {
         "01": "enero",
         "02": "febrero",
@@ -89,6 +94,227 @@ def register_gabo_routes(app, deps):
         if key in {"s", "solventado"}:
             return "Solventado"
         return raw
+
+    def _readonly_obs_message(ejercicio: str) -> str:
+        ejercicio_clean = " ".join((ejercicio or "").split())
+        return (
+            f"El ejercicio {ejercicio_clean} está concluido y quedó bloqueado "
+            "para edición en este módulo."
+        )
+
+    def _get_user_username(user=None) -> str:
+        if isinstance(user, dict):
+            return " ".join((user.get("username") or "").split()).lower()
+        current_user = get_current_user()
+        if isinstance(current_user, dict):
+            return " ".join((current_user.get("username") or "").split()).lower()
+        return ""
+
+    def _readonly_ejercicios_for_user(user=None) -> set[str]:
+        if _get_user_username(user) == "gabo":
+            return set(GABO_READONLY_EJERCICIOS)
+        return set()
+
+    def _is_readonly_ejercicio(ejercicio: str, *, user=None) -> bool:
+        ejercicio_clean = " ".join((ejercicio or "").split())
+        return bool(ejercicio_clean and ejercicio_clean in _readonly_ejercicios_for_user(user))
+
+    def _ensure_editable_ejercicio(ejercicio: str, *, user=None) -> None:
+        if _is_readonly_ejercicio(ejercicio, user=user):
+            raise ValueError(_readonly_obs_message(ejercicio))
+
+    def _editable_ejercicios(ejercicios: list[str], *, user=None) -> list[str]:
+        readonly = _readonly_ejercicios_for_user(user)
+        filtered = [item for item in ejercicios if item not in readonly]
+        return filtered or ejercicios
+
+    def _require_safe_bulk_scope(scope: dict, *, action_label: str) -> None:
+        ejercicio = " ".join((scope.get("ejercicio") or "").split())
+        ente_id = normalize_ente_id(scope.get("ente_id", ""))
+        tipo_auditoria = " ".join((scope.get("tipo_auditoria") or "").split())
+        fuente = " ".join((scope.get("fuente") or "").split())
+        periodo = " ".join((scope.get("periodo") or "").split())
+        oficio = " ".join((scope.get("oficio") or "").split())
+        if not ejercicio:
+            raise ValueError("Debes seleccionar ejercicio para continuar.")
+        _ensure_editable_ejercicio(ejercicio)
+        if not ente_id or not tipo_auditoria or not oficio or not (fuente or periodo):
+            raise ValueError(
+                f"Para {action_label} define ente, tipo de auditoría, oficio y al menos fuente o periodo."
+            )
+
+    def _first_readonly_observacion_ejercicio(db, ids: list[int], *, user=None) -> str:
+        readonly = _readonly_ejercicios_for_user(user)
+        if not readonly or not ids:
+            return ""
+        placeholders = ", ".join(["?"] * len(ids))
+        rows = db.execute(
+            f"""
+            SELECT DISTINCT TRIM(COALESCE(ejercicio, '')) AS ejercicio
+            FROM observaciones
+            WHERE id IN ({placeholders})
+            """,
+            ids,
+        ).fetchall()
+        for row in rows:
+            ejercicio = " ".join((row["ejercicio"] or "").split())
+            if ejercicio in readonly:
+                return ejercicio
+        return ""
+
+    def _count_scope_ids(db, ids: list[int], where_clauses: list[str], params: list[str]) -> int:
+        if not ids:
+            return 0
+        placeholders = ", ".join(["?"] * len(ids))
+        where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+        row = db.execute(
+            f"""
+            SELECT COUNT(*) AS total
+            FROM observaciones
+            WHERE id IN ({placeholders})
+              AND {where_sql}
+            """,
+            [*ids, *params],
+        ).fetchone()
+        return int((row["total"] if row else 0) or 0)
+
+    def _snapshot_safe_label(raw_label: str) -> str:
+        clean = re.sub(r"[^a-z0-9]+", "-", (raw_label or "").strip().lower()).strip("-")
+        return clean or "snapshot"
+
+    def _create_db_snapshot(raw_label: str) -> str:
+        timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S-%f")
+        snapshots_dir = Path(BASE_DIR) / "backups" / "db"
+        snapshots_dir.mkdir(parents=True, exist_ok=True)
+        file_name = f"{timestamp}-{_snapshot_safe_label(raw_label)}.sqlite"
+        backup_path = snapshots_dir / file_name
+        source_conn = sqlite3.connect(DB_PATH)
+        try:
+            with sqlite3.connect(str(backup_path)) as backup_conn:
+                source_conn.backup(backup_conn)
+        finally:
+            source_conn.close()
+        try:
+            return str(backup_path.relative_to(BASE_DIR))
+        except ValueError:
+            return str(backup_path)
+
+    def _normalize_excel_cell(value) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, float):
+            if value.is_integer():
+                return str(int(value))
+            return f"{value:.2f}"
+        if isinstance(value, int):
+            return str(value)
+        return " ".join(str(value).replace("\n", " ").split())
+
+    def _parse_excel_pdp_monto(value) -> float | None:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            monto = float(value)
+            return monto if monto >= 0 else None
+        raw = _normalize_excel_cell(value)
+        if not raw:
+            return None
+        normalized = raw.replace("$", "").replace(",", "").replace("MXN", "").replace("mxn", "")
+        normalized = "".join(normalized.split())
+        try:
+            monto = float(normalized)
+        except ValueError:
+            return None
+        return monto if monto >= 0 else None
+
+    def _is_pdp_excel_header_row(values: list[str]) -> bool:
+        joined = " ".join(normalize_text_key(item) for item in values if item).strip()
+        if not joined:
+            return False
+        return ("concepto" in joined and "monto" in joined) or ("irregularidad" in joined and "monto" in joined)
+
+    def _parse_pdp_excel_rows(file_storage) -> tuple[list[str], int]:
+        filename = " ".join((getattr(file_storage, "filename", "") or "").split())
+        extension = Path(filename).suffix.lower()
+        parsed_lines: list[str] = []
+        processed_rows = 0
+
+        if extension == ".csv":
+            stream = file_storage.stream
+            stream.seek(0)
+            decoded = stream.read().decode("utf-8-sig", errors="ignore").splitlines()
+            iterator = csv.reader(decoded)
+            rows = iterator
+        else:
+            if extension not in {".xlsx", ".xlsm", ".xltx", ".xltm"}:
+                raise ValueError("Carga un archivo Excel .xlsx/.xlsm o un .csv.")
+            stream = file_storage.stream
+            stream.seek(0)
+            workbook = load_workbook(stream, read_only=True, data_only=True)
+            try:
+                sheet = workbook.active
+                rows = sheet.iter_rows(values_only=True)
+                for excel_row_number, row in enumerate(rows, start=1):
+                    if excel_row_number > 1200:
+                        break
+                    cells = [_normalize_excel_cell(value) for value in row]
+                    compact_cells = [item for item in cells if item]
+                    if not compact_cells:
+                        continue
+                    processed_rows += 1
+                    if processed_rows == 1 and _is_pdp_excel_header_row(compact_cells):
+                        continue
+                    amount = _parse_excel_pdp_monto(compact_cells[-1])
+                    if amount is None:
+                        raise ValueError(
+                            f"Fila {excel_row_number}: no se encontró un monto válido en la última columna con datos."
+                        )
+                    number = ""
+                    if len(compact_cells) >= 3 and re.fullmatch(r"\d{1,4}", compact_cells[0] or ""):
+                        number = compact_cells[0]
+                        concepto_parts = compact_cells[1:-1]
+                    else:
+                        concepto_parts = compact_cells[:-1]
+                    concepto = " ".join(item for item in concepto_parts if item).strip()
+                    if not concepto:
+                        raise ValueError(f"Fila {excel_row_number}: falta el concepto de irregularidad.")
+                    line = f"{concepto} — ${amount:,.2f}"
+                    if number:
+                        line = f"{number} — {line}"
+                    parsed_lines.append(line)
+            finally:
+                workbook.close()
+            return parsed_lines, processed_rows
+
+        for csv_row_number, row in enumerate(rows, start=1):
+            if csv_row_number > 1200:
+                break
+            compact_cells = [_normalize_excel_cell(value) for value in row if _normalize_excel_cell(value)]
+            if not compact_cells:
+                continue
+            processed_rows += 1
+            if processed_rows == 1 and _is_pdp_excel_header_row(compact_cells):
+                continue
+            amount = _parse_excel_pdp_monto(compact_cells[-1])
+            if amount is None:
+                raise ValueError(
+                    f"Fila {csv_row_number}: no se encontró un monto válido en la última columna con datos."
+                )
+            number = ""
+            if len(compact_cells) >= 3 and re.fullmatch(r"\d{1,4}", compact_cells[0] or ""):
+                number = compact_cells[0]
+                concepto_parts = compact_cells[1:-1]
+            else:
+                concepto_parts = compact_cells[:-1]
+            concepto = " ".join(item for item in concepto_parts if item).strip()
+            if not concepto:
+                raise ValueError(f"Fila {csv_row_number}: falta el concepto de irregularidad.")
+            line = f"{concepto} — ${amount:,.2f}"
+            if number:
+                line = f"{number} — {line}"
+            parsed_lines.append(line)
+
+        return parsed_lines, processed_rows
 
     def _build_titular_form_data(source, *, default_ejercicio: str) -> dict[str, str]:
         ejercicio = " ".join(
@@ -668,6 +894,103 @@ def register_gabo_routes(app, deps):
             "message": "Titulares: registro guardado correctamente en historial y bitácora.",
         }
 
+    def resolve_fuente_catalogo(
+        db,
+        fuente_nombre: str,
+        *,
+        create_missing: bool = False,
+    ) -> tuple[int | None, str]:
+        clean_name = " ".join((fuente_nombre or "").split())
+        if not clean_name:
+            raise ValueError("Debes escribir la nueva fuente.")
+        row = db.execute(
+            """
+            SELECT id, TRIM(COALESCE(nombre, '')) AS nombre
+            FROM fuentes_financiamiento
+            WHERE LOWER(TRIM(nombre)) = LOWER(TRIM(?))
+            LIMIT 1
+            """,
+            (clean_name,),
+        ).fetchone()
+        if row:
+            return int(row["id"]), (row["nombre"] or "").strip()
+        if not create_missing:
+            return None, clean_name
+        cursor = db.execute(
+            """
+            INSERT INTO fuentes_financiamiento (nombre, created_at)
+            VALUES (?, ?)
+            """,
+            (
+                clean_name,
+                datetime.now().strftime("%Y-%m-%d %H:%M"),
+            ),
+        )
+        return int(cursor.lastrowid), clean_name
+
+    def register_fuente_for_ente(
+        db,
+        *,
+        ejercicio: str,
+        ente_id_norm: str,
+        fuente_id: int,
+        tipo_auditoria: str,
+        created_by: str = "",
+    ) -> None:
+        ejercicio_clean = " ".join((ejercicio or "").split())
+        ente_id_clean = normalize_ente_id(ente_id_norm)
+        tipo_clean = normalize_tipo_auditoria(tipo_auditoria)
+        if not ejercicio_clean or not ente_id_clean or not tipo_clean:
+            return
+        if tipo_clean not in {"Financiera", "Obra Pública"}:
+            return
+        try:
+            fuente_id_int = int(fuente_id)
+        except (TypeError, ValueError):
+            return
+        if fuente_id_int <= 0:
+            return
+        existing = db.execute(
+            f"""
+            SELECT 1
+            FROM entes_fuentes
+            WHERE TRIM(COALESCE(ejercicio, '')) = ?
+              AND {normalize_ente_id_sql('ente_id')} = ?
+              AND fuente_id = ?
+              AND TRIM(COALESCE(tipo_auditoria, '')) = ?
+            LIMIT 1
+            """,
+            (
+                ejercicio_clean,
+                ente_id_clean,
+                fuente_id_int,
+                tipo_clean,
+            ),
+        ).fetchone()
+        if existing:
+            return
+        db.execute(
+            """
+            INSERT INTO entes_fuentes (
+                ejercicio,
+                ente_id,
+                fuente_id,
+                tipo_auditoria,
+                created_by,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                ejercicio_clean,
+                ente_id_clean,
+                fuente_id_int,
+                tipo_clean,
+                (created_by or "").strip() or None,
+                datetime.now().strftime("%Y-%m-%d %H:%M"),
+            ),
+        )
+
     def fuentes_por_ente(
         db,
         ejercicio: str,
@@ -705,6 +1028,19 @@ def register_gabo_routes(app, deps):
             """
         ).fetchall()
         catalogo_por_nombre = {row["nombre"].lower(): dict(row) for row in catalogo_rows}
+        entes_fuentes_rows = db.execute(
+            f"""
+            SELECT DISTINCT ff.id, TRIM(COALESCE(ff.nombre, '')) AS nombre
+            FROM entes_fuentes AS ef
+            JOIN fuentes_financiamiento AS ff
+              ON ef.fuente_id = ff.id
+            WHERE TRIM(COALESCE(ef.ejercicio, '')) = ?
+              AND {normalize_ente_id_sql('ef.ente_id')} = ?
+              {tipo_filter_sql.replace('o.', 'ef.')}
+            ORDER BY ff.nombre ASC
+            """,
+            [ejercicio, ente_id_norm, *tipo_filter_params],
+        ).fetchall()
 
         if ente_uid:
             registros_rows = db.execute(
@@ -763,6 +1099,16 @@ def register_gabo_routes(app, deps):
 
         resultado = []
         seen_keys = set()
+        for row in entes_fuentes_rows:
+            nombre = (row["nombre"] or "").strip()
+            if not nombre:
+                continue
+            key = nombre.lower()
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            resultado.append({"id": str(row["id"]), "nombre": nombre})
+
         for row in registros_rows:
             nombre = (row["nombre"] or "").strip()
             if not nombre:
@@ -1480,6 +1826,100 @@ def register_gabo_routes(app, deps):
         rows = fuentes_por_ente(db, ejercicio, ente_id, tipo_auditoria=tipo_auditoria)
         return jsonify([dict(row) for row in rows])
 
+    @app.post("/carga/fuentes-ente/nueva")
+    @gabo_required
+    def carga_fuente_nueva_por_ente():
+        user = get_current_user()
+        payload = request.get_json(silent=True) if request.is_json else None
+        source = payload if isinstance(payload, dict) else request.form
+        ejercicio = " ".join((source.get("ejercicio") or "").split())
+        ente_id = normalize_ente_id(source.get("ente_id") or "")
+        tipo_auditoria = normalize_tipo_auditoria(source.get("tipo_auditoria") or "")
+        fuente_nombre = " ".join((source.get("nombre") or "").split())
+
+        if not ejercicio:
+            return jsonify({"ok": False, "message": "Debes seleccionar el ejercicio."}), 400
+        try:
+            _ensure_editable_ejercicio(ejercicio, user=user)
+        except ValueError as exc:
+            return jsonify({"ok": False, "message": str(exc)}), 403
+        if not ente_id:
+            return jsonify({"ok": False, "message": "Debes seleccionar el ente."}), 400
+        if tipo_auditoria not in {"Financiera", "Obra Pública"}:
+            return jsonify({"ok": False, "message": "Debes seleccionar el tipo de auditoría."}), 400
+        if not fuente_nombre:
+            return jsonify({"ok": False, "message": "Debes escribir la nueva fuente."}), 400
+
+        db = get_db()
+        ente_row = _get_ente_row_by_ejercicio_id(db, ejercicio, ente_id)
+        if not ente_row:
+            return jsonify({"ok": False, "message": "El ente seleccionado no existe para ese ejercicio."}), 404
+
+        try:
+            fuente_id, fuente_nombre_final = resolve_fuente_catalogo(
+                db,
+                fuente_nombre,
+                create_missing=True,
+            )
+            if fuente_id is None:
+                raise ValueError("No se pudo registrar la fuente.")
+            register_fuente_for_ente(
+                db,
+                ejercicio=ejercicio,
+                ente_id_norm=ente_id,
+                fuente_id=fuente_id,
+                tipo_auditoria=tipo_auditoria,
+                created_by=user["username"],
+            )
+            db.commit()
+        except ValueError as exc:
+            db.rollback()
+            return jsonify({"ok": False, "message": str(exc)}), 400
+        except Exception:
+            db.rollback()
+            return jsonify({"ok": False, "message": "No se pudo registrar la fuente."}), 500
+
+        return jsonify(
+            {
+                "ok": True,
+                "id": str(fuente_id),
+                "nombre": fuente_nombre_final,
+                "ente_id": ente_id,
+                "tipo_auditoria": tipo_auditoria,
+            }
+        )
+
+    @app.post("/carga/respaldo")
+    @gabo_required
+    def carga_crear_respaldo():
+        payload = request.get_json(silent=True) or {}
+        etiqueta = " ".join((payload.get("label") or "manual").split())
+        backup_path = _create_db_snapshot(etiqueta or "manual")
+        return jsonify({"ok": True, "backup_path": backup_path})
+
+    @app.post("/carga/pdp-masivo/importar-excel")
+    @gabo_required
+    def carga_pdp_masivo_importar_excel():
+        uploaded = request.files.get("archivo")
+        if uploaded is None or not (uploaded.filename or "").strip():
+            return jsonify({"ok": False, "error": "Selecciona un archivo Excel o CSV."}), 400
+        try:
+            parsed_lines, processed_rows = _parse_pdp_excel_rows(uploaded)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception:
+            return jsonify({"ok": False, "error": "No se pudo leer el archivo Excel."}), 500
+        if not parsed_lines:
+            return jsonify({"ok": False, "error": "El archivo no contiene filas válidas para importar."}), 400
+        return jsonify(
+            {
+                "ok": True,
+                "rows": len(parsed_lines),
+                "processed_rows": processed_rows,
+                "text": "\n".join(parsed_lines),
+            }
+        )
+
     @app.get("/carga/pdp-catalogo")
     @gabo_required
     def carga_pdp_catalogo():
@@ -1672,7 +2112,10 @@ def register_gabo_routes(app, deps):
         db = get_db()
         current = db.execute(
             """
-            SELECT id, TRIM(COALESCE(tipo_anexo, '')) AS tipo_anexo
+            SELECT
+                id,
+                TRIM(COALESCE(tipo_anexo, '')) AS tipo_anexo,
+                TRIM(COALESCE(ejercicio, '')) AS ejercicio
             FROM observaciones
             WHERE id = ?
             LIMIT 1
@@ -1683,12 +2126,18 @@ def register_gabo_routes(app, deps):
             return jsonify({"ok": False, "error": "Observación no encontrada."}), 404
 
         tipo_anexo = (current["tipo_anexo"] or "").strip().upper()
+        ejercicio = " ".join((current["ejercicio"] or "").split())
+        try:
+            _ensure_editable_ejercicio(ejercicio)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 403
         if accion in {"reclasificar_pdp_pras", "reclasificar_pras", "pdp_a_pras"}:
             if tipo_anexo != "PDP":
                 return jsonify(
                     {"ok": False, "error": "Solo se puede reclasificar observaciones PDP."},
                     400,
                 )
+            backup_path = _create_db_snapshot(f"observacion-{observacion_id}-actualizar")
             db.execute(
                 """
                 UPDATE observaciones
@@ -1714,6 +2163,7 @@ def register_gabo_routes(app, deps):
                     "tipo_anexo": "PRAS",
                     "reclasificada": 1,
                     "accion": "reclasificar_pdp_pras",
+                    "backup_path": backup_path,
                 }
             )
 
@@ -1732,6 +2182,7 @@ def register_gabo_routes(app, deps):
                     400,
                 )
             monto_pendiente = monto_emitido - monto_solventado
+            backup_path = _create_db_snapshot(f"observacion-{observacion_id}-actualizar")
             db.execute(
                 """
                 UPDATE observaciones
@@ -1752,6 +2203,7 @@ def register_gabo_routes(app, deps):
                 ),
             )
         else:
+            backup_path = _create_db_snapshot(f"observacion-{observacion_id}-actualizar")
             db.execute(
                 """
                 UPDATE observaciones
@@ -1767,6 +2219,7 @@ def register_gabo_routes(app, deps):
                 "id": observacion_id,
                 "estado": estado,
                 "tipo_anexo": tipo_anexo,
+                "backup_path": backup_path,
             }
         )
 
@@ -1789,12 +2242,30 @@ def register_gabo_routes(app, deps):
         ejercicios = [row["ejercicio"] for row in ejercicios_rows if (row["ejercicio"] or "").strip()]
         if not ejercicios:
             ejercicios = [TITULAR_EJERCICIO_FIJO]
+        initial_scope = {
+            "ejercicio": " ".join((request.args.get("ejercicio") or "").split()),
+            "ente_id": normalize_ente_id(request.args.get("ente_id", "")),
+            "tipo_auditoria": normalize_tipo_auditoria(request.args.get("tipo_auditoria", "")),
+            "fuente": " ".join((request.args.get("fuente") or "").split()),
+            "periodo": " ".join((request.args.get("periodo") or "").split()),
+            "oficio": " ".join((request.args.get("oficio") or "").split()),
+            "estado": _normalize_observacion_estado(request.args.get("estado", "")),
+            "tipo_anexo": " ".join((request.args.get("tipo_anexo") or "").split()).upper(),
+        }
+        if initial_scope["tipo_anexo"] == "PEFCT":
+            initial_scope["tipo_anexo"] = "PEFCF"
+        if initial_scope["tipo_anexo"] not in {"", "SA", "PDP", "PRAS", "PEFCF", "R"}:
+            initial_scope["tipo_anexo"] = ""
+        if initial_scope["estado"] not in {"", *OBSERVACION_ESTADOS_VALIDOS}:
+            initial_scope["estado"] = ""
         return render_template(
             "carga_observaciones_admin.html",
             user=user,
             ejercicios=ejercicios,
-            ejercicio_default=ejercicios[0],
+            ejercicio_default=initial_scope["ejercicio"] if initial_scope["ejercicio"] in ejercicios else ejercicios[0],
             return_vista=return_vista,
+            initial_scope=initial_scope,
+            read_only_ejercicios=sorted(_readonly_ejercicios_for_user(user)),
         )
 
     @app.route("/carga/titulares", methods=["GET", "POST"])
@@ -1813,6 +2284,7 @@ def register_gabo_routes(app, deps):
         ejercicios = [row["ejercicio"] for row in ejercicios_rows if (row["ejercicio"] or "").strip()]
         if not ejercicios:
             ejercicios = [TITULAR_EJERCICIO_FIJO]
+        ejercicios = _editable_ejercicios(ejercicios, user=user)
 
         form_source = request.form if request.method == "POST" else request.args
         requested_default = (
@@ -1833,10 +2305,16 @@ def register_gabo_routes(app, deps):
         titular_result = None
         if request.method == "POST":
             try:
+                _ensure_editable_ejercicio(form_data["titular_ejercicio"], user=user)
+                backup_path = _create_db_snapshot("titulares-save")
                 titular_result = _save_titulares_capture(db, user, form_data)
                 if titular_result.get("ok"):
                     form_data["titular_nombre"] = ""
                     form_data["titular_administrativo"] = ""
+                    titular_result["message"] = (
+                        f"{titular_result.get('message', 'Titulares guardados correctamente.')} "
+                        f"Respaldo: {backup_path}."
+                    ).strip()
             except ValueError as exc:
                 titular_result = {
                     "ok": False,
@@ -1891,6 +2369,10 @@ def register_gabo_routes(app, deps):
 
         if not ejercicio:
             return jsonify({"ok": False, "error": "Selecciona un ejercicio."}), 400
+        try:
+            _ensure_editable_ejercicio(ejercicio)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 403
         if not ente_id:
             return jsonify({"ok": False, "error": "Selecciona un ente."}), 400
         if tipo_auditoria not in {"Financiera", "Obra Pública"}:
@@ -1990,6 +2472,7 @@ def register_gabo_routes(app, deps):
         if duplicate_row:
             return jsonify({"ok": False, "error": "Ya existe otro registro idéntico en historial."}), 400
 
+        backup_path = _create_db_snapshot(f"historial-titulares-{historial_id}-actualizar")
         db.execute(
             """
             UPDATE historial_titulares
@@ -2049,6 +2532,7 @@ def register_gabo_routes(app, deps):
                 "ok": True,
                 "message": "Historial de titulares actualizado correctamente.",
                 "row": updated_row,
+                "backup_path": backup_path,
             }
         )
 
@@ -2108,14 +2592,24 @@ def register_gabo_routes(app, deps):
     def carga_observaciones_admin_borrar(observacion_id: int):
         db = get_db()
         found = db.execute(
-            "SELECT id FROM observaciones WHERE id = ? LIMIT 1",
+            """
+            SELECT id, TRIM(COALESCE(ejercicio, '')) AS ejercicio
+            FROM observaciones
+            WHERE id = ?
+            LIMIT 1
+            """,
             (observacion_id,),
         ).fetchone()
         if not found:
             return jsonify({"ok": False, "error": "Observación no encontrada."}), 404
+        try:
+            _ensure_editable_ejercicio(found["ejercicio"])
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 403
+        backup_path = _create_db_snapshot(f"observacion-{observacion_id}-borrar")
         db.execute("DELETE FROM observaciones WHERE id = ?", (observacion_id,))
         db.commit()
-        return jsonify({"ok": True, "deleted": 1, "id": observacion_id})
+        return jsonify({"ok": True, "deleted": 1, "id": observacion_id, "backup_path": backup_path})
 
     @app.post("/carga/observaciones-admin/borrar")
     @gabo_required
@@ -2137,8 +2631,11 @@ def register_gabo_routes(app, deps):
         if not ids:
             return jsonify({"ok": False, "error": "Lista de observaciones inválida."}), 400
 
-        placeholders = ", ".join(["?"] * len(ids))
         db = get_db()
+        blocked_ejercicio = _first_readonly_observacion_ejercicio(db, ids)
+        if blocked_ejercicio:
+            return jsonify({"ok": False, "error": _readonly_obs_message(blocked_ejercicio)}), 403
+        placeholders = ", ".join(["?"] * len(ids))
         count_row = db.execute(
             f"SELECT COUNT(*) AS total FROM observaciones WHERE id IN ({placeholders})",
             ids,
@@ -2147,15 +2644,17 @@ def register_gabo_routes(app, deps):
         if total <= 0:
             return jsonify({"ok": False, "error": "No se encontraron observaciones para borrar."}), 404
 
+        backup_path = _create_db_snapshot("observaciones-borrar-seleccion")
         db.execute(f"DELETE FROM observaciones WHERE id IN ({placeholders})", ids)
         db.commit()
-        return jsonify({"ok": True, "deleted": total})
+        return jsonify({"ok": True, "deleted": total, "backup_path": backup_path})
 
     @app.post("/carga/observaciones-admin/solventar")
     @gabo_required
     def carga_observaciones_admin_solventar_multiples():
         payload = request.get_json(silent=True) or {}
         raw_ids = payload.get("ids")
+        raw_scope = payload.get("scope") if isinstance(payload.get("scope"), dict) else {}
         if not isinstance(raw_ids, list) or not raw_ids:
             return jsonify({"ok": False, "error": "No se recibieron observaciones para solventar."}), 400
 
@@ -2171,8 +2670,23 @@ def register_gabo_routes(app, deps):
         if not ids:
             return jsonify({"ok": False, "error": "Lista de observaciones inválida."}), 400
 
-        placeholders = ", ".join(["?"] * len(ids))
         db = get_db()
+        try:
+            where_clauses, params, scope, _ = build_observaciones_admin_scope(raw_scope)
+            _require_safe_bulk_scope(scope, action_label="solventar en bloque")
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        if _count_scope_ids(db, ids, where_clauses, params) != len(ids):
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": "Refresca la consulta: el conjunto visible ya no coincide con los filtros activos.",
+                }
+            ), 400
+        blocked_ejercicio = _first_readonly_observacion_ejercicio(db, ids)
+        if blocked_ejercicio:
+            return jsonify({"ok": False, "error": _readonly_obs_message(blocked_ejercicio)}), 403
+        placeholders = ", ".join(["?"] * len(ids))
         count_row = db.execute(
             f"SELECT COUNT(*) AS total FROM observaciones WHERE id IN ({placeholders})",
             ids,
@@ -2192,6 +2706,7 @@ def register_gabo_routes(app, deps):
         ).fetchone()
         total_pdp = int((pdp_row["total"] if pdp_row else 0) or 0)
 
+        backup_path = _create_db_snapshot("observaciones-solventar-todo")
         db.execute(
             f"""
             UPDATE observaciones
@@ -2211,7 +2726,86 @@ def register_gabo_routes(app, deps):
             ids,
         )
         db.commit()
-        return jsonify({"ok": True, "updated": total, "pdp": total_pdp})
+        return jsonify({"ok": True, "updated": total, "pdp": total_pdp, "backup_path": backup_path})
+
+    @app.post("/carga/observaciones-admin/pendiente")
+    @gabo_required
+    def carga_observaciones_admin_pendiente_multiples():
+        payload = request.get_json(silent=True) or {}
+        raw_ids = payload.get("ids")
+        raw_scope = payload.get("scope") if isinstance(payload.get("scope"), dict) else {}
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return jsonify({"ok": False, "error": "No se recibieron observaciones para dejar en pendiente."}), 400
+
+        ids: list[int] = []
+        for raw_id in raw_ids:
+            try:
+                item_id = int(raw_id)
+            except (TypeError, ValueError):
+                continue
+            if item_id > 0:
+                ids.append(item_id)
+        ids = sorted(set(ids))
+        if not ids:
+            return jsonify({"ok": False, "error": "Lista de observaciones inválida."}), 400
+
+        db = get_db()
+        try:
+            where_clauses, params, scope, _ = build_observaciones_admin_scope(raw_scope)
+            _require_safe_bulk_scope(scope, action_label="dejar pendientes en bloque")
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        if _count_scope_ids(db, ids, where_clauses, params) != len(ids):
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": "Refresca la consulta: el conjunto visible ya no coincide con los filtros activos.",
+                }
+            ), 400
+        blocked_ejercicio = _first_readonly_observacion_ejercicio(db, ids)
+        if blocked_ejercicio:
+            return jsonify({"ok": False, "error": _readonly_obs_message(blocked_ejercicio)}), 403
+        placeholders = ", ".join(["?"] * len(ids))
+        count_row = db.execute(
+            f"SELECT COUNT(*) AS total FROM observaciones WHERE id IN ({placeholders})",
+            ids,
+        ).fetchone()
+        total = int((count_row["total"] if count_row else 0) or 0)
+        if total <= 0:
+            return jsonify({"ok": False, "error": "No se encontraron observaciones para dejar en pendiente."}), 404
+
+        pdp_row = db.execute(
+            f"""
+            SELECT COUNT(*) AS total
+            FROM observaciones
+            WHERE id IN ({placeholders})
+              AND UPPER(TRIM(COALESCE(tipo_anexo, ''))) = 'PDP'
+            """,
+            ids,
+        ).fetchone()
+        total_pdp = int((pdp_row["total"] if pdp_row else 0) or 0)
+
+        backup_path = _create_db_snapshot("observaciones-pendiente-todo")
+        db.execute(
+            f"""
+            UPDATE observaciones
+            SET estado = 'Pendiente',
+                monto_pdp_solventado = CASE
+                    WHEN UPPER(TRIM(COALESCE(tipo_anexo, ''))) = 'PDP'
+                    THEN 0
+                    ELSE monto_pdp_solventado
+                END,
+                monto_pdp_pendiente = CASE
+                    WHEN UPPER(TRIM(COALESCE(tipo_anexo, ''))) = 'PDP'
+                    THEN COALESCE(monto_pdp_emitido, 0)
+                    ELSE monto_pdp_pendiente
+                END
+            WHERE id IN ({placeholders})
+            """,
+            ids,
+        )
+        db.commit()
+        return jsonify({"ok": True, "updated": total, "pdp": total_pdp, "backup_path": backup_path})
 
     @app.post("/carga/observaciones-admin/borrar-todo")
     @gabo_required
@@ -2224,15 +2818,10 @@ def register_gabo_routes(app, deps):
 
         if not scope["ejercicio"]:
             return jsonify({"ok": False, "error": "Debes seleccionar ejercicio para borrar."}), 400
-        if extra_filters <= 0:
-            return jsonify(
-                {
-                    "ok": False,
-                    "error": (
-                        "Agrega al menos un filtro adicional (ente, tipo, fuente, periodo, oficio, estado o anexo)."
-                    ),
-                }
-            ), 400
+        try:
+            _require_safe_bulk_scope(scope, action_label="borrar por filtros")
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
 
         where_sql = " AND ".join(where_clauses)
         db = get_db()
@@ -2244,12 +2833,13 @@ def register_gabo_routes(app, deps):
         if total <= 0:
             return jsonify({"ok": True, "deleted": 0})
 
+        backup_path = _create_db_snapshot("observaciones-borrar-filtro")
         db.execute(
             f"DELETE FROM observaciones WHERE {where_sql}",
             params,
         )
         db.commit()
-        return jsonify({"ok": True, "deleted": total})
+        return jsonify({"ok": True, "deleted": total, "backup_path": backup_path})
 
     @app.route("/carga", methods=["GET", "POST"])
     @gabo_required
@@ -2269,6 +2859,7 @@ def register_gabo_routes(app, deps):
         manual_ejercicios = [row["ejercicio"] for row in manual_ejercicios_rows]
         if not manual_ejercicios:
             manual_ejercicios = [TITULAR_EJERCICIO_FIJO]
+        manual_ejercicios = _editable_ejercicios(manual_ejercicios, user=user)
         manual_ejercicio_default = manual_ejercicios[0] if manual_ejercicios else TITULAR_EJERCICIO_FIJO
         fuentes_rows = db.execute(
             """
@@ -2385,10 +2976,18 @@ def register_gabo_routes(app, deps):
     
             try:
                 if action == "titular_save":
+                    _ensure_editable_ejercicio(form_data["titular_ejercicio"], user=user)
+                    backup_path = _create_db_snapshot("titulares-save")
                     titular_result = _save_titulares_capture(db, user, form_data)
+                    if titular_result.get("ok"):
+                        titular_result["message"] = (
+                            f"{titular_result.get('message', 'Titulares guardados correctamente.')} "
+                            f"Respaldo: {backup_path}."
+                        ).strip()
                 elif action in {"manual_check", "manual_save"}:
                     manual_id_raw = form_data["manual_id"]
-                    manual_ente_id = form_data["manual_ente_id"]
+                    manual_ente_id = normalize_ente_id(form_data["manual_ente_id"])
+                    form_data["manual_ente_id"] = manual_ente_id
                     tipo_auditoria = form_data["manual_tipo_auditoria"]
                     tipo_responsable = "Titular"
                     titular_nombre = ""
@@ -2424,6 +3023,7 @@ def register_gabo_routes(app, deps):
                         raise ValueError("Debes capturar el ejercicio.")
                     if ejercicio not in manual_ejercicios:
                         raise ValueError("El ejercicio seleccionado no está disponible.")
+                    _ensure_editable_ejercicio(ejercicio, user=user)
                     if not fecha_notificacion:
                         raise ValueError("Debes capturar la fecha de notificación.")
                     try:
@@ -2437,13 +3037,45 @@ def register_gabo_routes(app, deps):
                         raise ValueError("Debes seleccionar el tipo de auditoría.")
                     if tipo_auditoria not in {"Financiera", "Obra Pública"}:
                         raise ValueError("Tipo de auditoría inválido.")
+                    backup_path = ""
+                    if action == "manual_save":
+                        backup_path = _create_db_snapshot("carga-manual-save")
                     fuente_id = None
                     fuente_nombre = ""
                     usa_fuentes_detalle = (
                         asunto == "Notificación de Cédula de Resultados"
                         and len(fuentes_detalle_rows) > 0
                     )
-                    if usa_fuentes_detalle and manual_edit_id:
+                    if manual_edit_id:
+                        edit_scope_row = db.execute(
+                            """
+                            SELECT
+                                id,
+                                TRIM(COALESCE(ente_id, '')) AS ente_id,
+                                TRIM(COALESCE(numero_oficio, '')) AS numero_oficio,
+                                TRIM(COALESCE(asunto, '')) AS asunto,
+                                TRIM(COALESCE(ejercicio, '')) AS ejercicio,
+                                TRIM(COALESCE(periodo, '')) AS periodo,
+                                TRIM(COALESCE(created_by, '')) AS created_by
+                            FROM cargas_manuales
+                            WHERE id = ?
+                            LIMIT 1
+                            """,
+                            (manual_edit_id,),
+                        ).fetchone()
+                        same_scope = bool(
+                            edit_scope_row
+                            and (edit_scope_row["created_by"] or "").strip() == user["username"]
+                            and normalize_ente_id(edit_scope_row["ente_id"] or "") == normalize_ente_id(manual_ente_id)
+                            and " ".join((edit_scope_row["numero_oficio"] or "").split()).lower() == numero_oficio.lower()
+                            and (edit_scope_row["asunto"] or "").strip() == asunto
+                            and (edit_scope_row["ejercicio"] or "").strip() == ejercicio
+                            and " ".join((edit_scope_row["periodo"] or "").split()).lower() == periodo.lower()
+                        )
+                        if not same_scope:
+                            manual_edit_id = None
+                            form_data["manual_id"] = ""
+                    if manual_edit_id and len(fuentes_detalle_rows) > 1:
                         raise ValueError("La edición con múltiples fuentes no está soportada.")
                     if not usa_fuentes_detalle and not fuente_id_raw:
                         raise ValueError("Debes seleccionar una fuente.")
@@ -2451,90 +3083,44 @@ def register_gabo_routes(app, deps):
                         raise ValueError("Debes escribir la nueva fuente.")
                     if usa_fuentes_detalle:
                         fuente_nombre = fuentes_detalle_rows[0]["fuente_nombre"]
-                        fuente_row = db.execute(
-                            """
-                            SELECT id
-                            FROM fuentes_financiamiento
-                            WHERE LOWER(TRIM(nombre)) = LOWER(TRIM(?))
-                            LIMIT 1
-                            """,
-                            (fuente_nombre,),
-                        ).fetchone()
-                        if fuente_row:
-                            fuente_id = int(fuente_row["id"])
-                        elif action == "manual_save":
-                            cursor_fuente = db.execute(
-                                """
-                                INSERT INTO fuentes_financiamiento (nombre, created_at)
-                                VALUES (?, ?)
-                                """,
-                                (
-                                    fuente_nombre,
-                                    datetime.now().strftime("%Y-%m-%d %H:%M"),
-                                ),
-                            )
-                            fuente_id = int(cursor_fuente.lastrowid)
-                        else:
-                            fuente_id = -1
+                        fuente_id_resolved, fuente_nombre = resolve_fuente_catalogo(
+                            db,
+                            fuente_nombre,
+                            create_missing=action == "manual_save",
+                        )
+                        fuente_id = (
+                            int(fuente_id_resolved)
+                            if fuente_id_resolved is not None
+                            else -1
+                        )
                     elif fuente_id_raw == "__new__":
                         fuente_nombre = fuente_nueva
-                        fuente_row = db.execute(
-                            """
-                            SELECT id
-                            FROM fuentes_financiamiento
-                            WHERE LOWER(TRIM(nombre)) = LOWER(TRIM(?))
-                            LIMIT 1
-                            """,
-                            (fuente_nueva,),
-                        ).fetchone()
-                        if fuente_row:
-                            fuente_id = int(fuente_row["id"])
-                        elif action == "manual_save":
-                            cursor_fuente = db.execute(
-                                """
-                                INSERT INTO fuentes_financiamiento (nombre, created_at)
-                                VALUES (?, ?)
-                                """,
-                                (
-                                    fuente_nueva,
-                                    datetime.now().strftime("%Y-%m-%d %H:%M"),
-                                ),
-                            )
-                            fuente_id = int(cursor_fuente.lastrowid)
-                        else:
-                            # En verificación no insertamos todavía una fuente nueva.
-                            fuente_id = -1
+                        fuente_id_resolved, fuente_nombre = resolve_fuente_catalogo(
+                            db,
+                            fuente_nueva,
+                            create_missing=action == "manual_save",
+                        )
+                        fuente_id = (
+                            int(fuente_id_resolved)
+                            if fuente_id_resolved is not None
+                            else -1
+                        )
                     else:
                         if fuente_id_raw.startswith("__obs__:"):
                             fuente_obs = " ".join(fuente_id_raw.replace("__obs__:", "", 1).split())
                             if not fuente_obs:
                                 raise ValueError("Debes seleccionar una fuente válida.")
                             fuente_nombre = fuente_obs
-                            fuente_row = db.execute(
-                                """
-                                SELECT id
-                                FROM fuentes_financiamiento
-                                WHERE LOWER(TRIM(nombre)) = LOWER(TRIM(?))
-                                LIMIT 1
-                                """,
-                                (fuente_obs,),
-                            ).fetchone()
-                            if fuente_row:
-                                fuente_id = int(fuente_row["id"])
-                            elif action == "manual_save":
-                                cursor_fuente = db.execute(
-                                    """
-                                    INSERT INTO fuentes_financiamiento (nombre, created_at)
-                                    VALUES (?, ?)
-                                    """,
-                                    (
-                                        fuente_obs,
-                                        datetime.now().strftime("%Y-%m-%d %H:%M"),
-                                    ),
-                                )
-                                fuente_id = int(cursor_fuente.lastrowid)
-                            else:
-                                fuente_id = -1
+                            fuente_id_resolved, fuente_nombre = resolve_fuente_catalogo(
+                                db,
+                                fuente_obs,
+                                create_missing=action == "manual_save",
+                            )
+                            fuente_id = (
+                                int(fuente_id_resolved)
+                                if fuente_id_resolved is not None
+                                else -1
+                            )
                         else:
                             try:
                                 fuente_id = int(fuente_id_raw)
@@ -2560,7 +3146,7 @@ def register_gabo_routes(app, deps):
                         (ejercicio, manual_ente_id),
                     ).fetchone()
                     if not ente_row:
-                        raise ValueError("El ente seleccionado no existe para ejercicio 2025.")
+                        raise ValueError(f"El ente seleccionado no existe para ejercicio {ejercicio}.")
                     if fuente_id is not None and fuente_id >= 0:
                         fuente_nombre_row = db.execute(
                             """
@@ -2821,6 +3407,14 @@ def register_gabo_routes(app, deps):
                                         user["username"],
                                     ),
                                 )
+                                register_fuente_for_ente(
+                                    db,
+                                    ejercicio=ejercicio,
+                                    ente_id_norm=manual_ente_id,
+                                    fuente_id=fuente_id,
+                                    tipo_auditoria=tipos_auditoria[0],
+                                    created_by=user["username"],
+                                )
                                 materialize_observaciones_from_manual(
                                     db,
                                     ejercicio=ejercicio,
@@ -2895,6 +3489,14 @@ def register_gabo_routes(app, deps):
                                             float(item.get("monto") or 0.0)
                                             for item in pdp_details_tipo_item
                                         ]
+                                    register_fuente_for_ente(
+                                        db,
+                                        ejercicio=ejercicio,
+                                        ente_id_norm=manual_ente_id,
+                                        fuente_id=fuente_id,
+                                        tipo_auditoria=tipo_item,
+                                        created_by=user["username"],
+                                    )
                                     cursor = db.execute(
                                         """
                                         INSERT INTO cargas_manuales (
@@ -3046,20 +3648,24 @@ def register_gabo_routes(app, deps):
                                         if extra_fuente_db:
                                             extra_fuente_id = int(extra_fuente_db["id"])
                                         else:
-                                            cursor_fuente_extra = db.execute(
-                                                """
-                                                INSERT INTO fuentes_financiamiento (nombre, created_at)
-                                                VALUES (?, ?)
-                                                """,
-                                                (
-                                                    extra_fuente_nombre,
-                                                    datetime.now().strftime("%Y-%m-%d %H:%M"),
-                                                ),
+                                            extra_fuente_id, extra_fuente_nombre = resolve_fuente_catalogo(
+                                                db,
+                                                extra_fuente_nombre,
+                                                create_missing=True,
                                             )
-                                            extra_fuente_id = int(cursor_fuente_extra.lastrowid)
+                                            if extra_fuente_id is None:
+                                                continue
                                         extra_tipo = extra_row["tipo_auditoria"]
                                         extra_tipos = [extra_tipo]
                                         for extra_tipo_item in extra_tipos:
+                                            register_fuente_for_ente(
+                                                db,
+                                                ejercicio=ejercicio,
+                                                ente_id_norm=manual_ente_id,
+                                                fuente_id=extra_fuente_id,
+                                                tipo_auditoria=extra_tipo_item,
+                                                created_by=user["username"],
+                                            )
                                             duplicate_extra = db.execute(
                                                 """
                                                 SELECT id
@@ -3222,6 +3828,10 @@ def register_gabo_routes(app, deps):
                                             f"Fuentes adicionales: {extra_inserted} agregadas"
                                             + (f", {extra_skipped} omitidas por duplicado." if extra_skipped else ".")
                                         )
+                    if action == "manual_save" and manual_result and manual_result.get("ok") and backup_path:
+                        manual_result["message"] = (
+                            f"{manual_result.get('message', '').strip()} Respaldo: {backup_path}."
+                        ).strip()
                 else:
                     command = [sys.executable]
                     if action == "template_generate":

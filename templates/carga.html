@@ -38,16 +38,17 @@
       </div>
       <div class="loader-expediente-shell">
         <div class="record-form filters-form loader-principal-form">
-          <div class="loader-expediente-inline-head">
-            <div class="loader-expediente-inline-title">
-              <span class="loader-current-mode-label">Carga activa</span>
-              <strong>{{ "Carga de titulares" if initial_loader_mode == "titulares" else "Notificación de Cédula de Resultados" }}</strong>
+            <div class="loader-expediente-inline-head">
+              <div class="loader-expediente-inline-title">
+                <span class="loader-current-mode-label">Carga activa</span>
+                <strong>{{ "Carga de titulares" if initial_loader_mode == "titulares" else "Notificación de Cédula de Resultados" }}</strong>
+              </div>
+              <div class="loader-expediente-mini-meta">
+                <span class="loader-obs-chip">Estado <strong>Emitido</strong></span>
+                <span class="loader-obs-chip">Flujo <strong>Fuente por fuente</strong></span>
+                <button type="button" class="btn-secondary btn-compact" id="loaderCreateBackupBtn">Crear respaldo</button>
+              </div>
             </div>
-            <div class="loader-expediente-mini-meta">
-              <span class="loader-obs-chip">Estado <strong>Emitido</strong></span>
-              <span class="loader-obs-chip">Flujo <strong>Fuente por fuente</strong></span>
-            </div>
-          </div>
           <div class="loader-expediente-collection">
             <section class="loader-expediente-group">
               <div class="loader-expediente-group-head">
@@ -160,7 +161,7 @@
         </div>
       {% endif %}
       <form class="record-form loader-manual-form" method="POST" autocomplete="off" id="manualCaptureForm">
-        <input type="hidden" name="manual_id" value="{{ form_data.manual_id }}">
+        <input type="hidden" id="manual_id" name="manual_id" value="{{ form_data.manual_id }}">
         <input id="manual_ejercicio" name="manual_ejercicio" type="hidden" value="{{ form_data.manual_ejercicio }}">
         <input id="manual_ente_id" name="manual_ente_id" type="hidden" value="{{ form_data.manual_ente_id }}">
         <input id="manual_asunto" name="manual_asunto" type="hidden" value="{{ form_data.manual_asunto }}">
@@ -309,8 +310,6 @@
 
                 <div class="loader-step-nav loader-step-nav-inline">
                   <button type="button" class="btn-primary" id="manualAddNewFuenteBtnInline">Guardar fuente</button>
-                  <button type="button" class="btn-secondary" id="manualCancelFuenteEditBtn" hidden>Cancelar edición</button>
-                  <button type="button" class="btn-secondary" id="manualFinishFuentesBtn">Usar total actual</button>
                 </div>
 
                 <div class="form-grid loader-manual-grid-3" id="manual_pdp_single_editor" style="display:none;" aria-hidden="true">
@@ -337,6 +336,38 @@
                 >
                   <h3>Detalle PDP</h3>
                   <p class="helper">Captura concepto y monto; el selector indica la fuente correspondiente.</p>
+                  <div class="loader-pdp-bulk-card">
+                    <div class="loader-pdp-bulk-head">
+                      <div>
+                        <h4>Carga masiva</h4>
+                        <p class="helper">
+                          Pega una línea por observación. Ejemplos: <code>7. Volúmenes de obra pagados no ejecutados 7542.75</code>
+                          o <code>7 — Volúmenes de obra pagados no ejecutados — $7,542.75</code>. Si esta fuente está dentro de un acumulado, también puedes numerar desde <code>1</code>.
+                        </p>
+                      </div>
+                      <div class="loader-pdp-bulk-actions">
+                        <label class="btn-secondary btn-compact loader-pdp-bulk-file-btn" for="manual_pdp_bulk_file">Seleccionar Excel</label>
+                        <button type="button" class="btn-secondary btn-compact" id="manualPdpBulkImportBtn">Importar archivo</button>
+                        <button type="button" class="btn-secondary btn-compact" id="manualPdpBulkApplyPendingBtn">Aplicar a pendientes</button>
+                        <button type="button" class="btn-secondary btn-compact" id="manualPdpBulkOverwriteBtn">Reemplazar todo</button>
+                      </div>
+                    </div>
+                    <div class="field loader-pdp-bulk-import-row">
+                      <label for="manual_pdp_bulk_file">Archivo Excel o CSV</label>
+                      <input id="manual_pdp_bulk_file" type="file" accept=".xlsx,.xlsm,.csv">
+                    </div>
+                    <div class="field">
+                      <label for="manual_pdp_bulk_text">Texto masivo</label>
+                      <textarea
+                        id="manual_pdp_bulk_text"
+                        rows="6"
+                        placeholder="7. Volúmenes de obra pagados no ejecutados 7542.75&#10;8. Procesos constructivos deficientes que causan afectaciones físicas en las obras públicas 99,379.22"
+                      ></textarea>
+                    </div>
+                    <p class="helper loader-pdp-bulk-feedback" id="manual_pdp_bulk_feedback">
+                      Puedes usar número con <code>—</code>, tabulador, <code>|</code> o solo dejar el monto al final de cada línea. La numeración puede ser local de la fuente activa.
+                    </p>
+                  </div>
                   <div id="manual_pdp_breakdown" class="loader-fuentes-list"></div>
                 </div>
               </div>
@@ -398,9 +429,17 @@
           <div class="loader-step-nav loader-step-nav-submit">
             <button class="btn-primary" type="submit" name="action" value="manual_save" id="manualSaveBtn">Guardar oficio</button>
           </div>
+          <div class="loader-draft-bar">
+            <p class="helper loader-draft-status" id="manualDraftStatus">Guardado temporal local listo.</p>
+            <div class="loader-draft-actions">
+              <button class="btn-secondary btn-compact" type="button" id="wizardSaveDraftBtnManual">Guardar temporal</button>
+              <button class="btn-secondary btn-compact" type="button" id="wizardRestoreDraftBtn">Recuperar borrador</button>
+              <button class="btn-secondary btn-compact" type="button" id="wizardClearDraftBtn">Limpiar borrador</button>
+            </div>
+          </div>
         </section>
         {% if form_data.manual_id %}
-          <p class="helper">Modo edición activo (ID {{ form_data.manual_id }}).</p>
+          <p class="helper" id="manualEditHint">Modo edición activo (ID {{ form_data.manual_id }}).</p>
         {% endif %}
       </form>
     </section>
@@ -519,8 +558,10 @@
     <span>{% if initial_loader_mode == 'titulares' %}Volver a cédula{% else %}Cargar titulares{% endif %}</span>
   </a>
   <a
+    id="loaderOpenObsAdminBtn"
     class="floating-clear-btn loader-obs-admin-btn"
     href="{{ url_for('carga_observaciones_admin', return_vista=initial_loader_mode) }}"
+    data-base-href="{{ url_for('carga_observaciones_admin') }}"
     aria-label="Editar o borrar observaciones"
   >
     <span class="floating-clear-icon" aria-hidden="true">
@@ -529,7 +570,7 @@
         <path d="M20.71 7.04a1 1 0 0 0 0-1.41L18.37 3.3a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.84Z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </span>
-    <span>Editar/Borrar obs.</span>
+    <span data-loader-obs-admin-label>Editar/Borrar obs.</span>
   </a>
   <script>
     const loaderModeButtons = Array.from(document.querySelectorAll("[data-loader-mode-target]"));
@@ -610,6 +651,8 @@
     const titularEjercicio = document.getElementById("titular_ejercicio");
     const titularEnte = document.getElementById("titular_ente_id");
     const loaderOpenTitularesBtn = document.getElementById("loaderOpenTitularesBtn");
+    const loaderOpenObsAdminBtn = document.getElementById("loaderOpenObsAdminBtn");
+    const loaderCreateBackupBtn = document.getElementById("loaderCreateBackupBtn");
 
     const principalEjercicio = document.getElementById("principal_ejercicio");
     const principalEnte = document.getElementById("principal_ente_id");
@@ -680,13 +723,22 @@
     const manualPdpSelector = document.getElementById("manual_pdp_selector");
     const manualPdpConcepto = document.getElementById("manual_pdp_concepto");
     const manualPdpMonto = document.getElementById("manual_pdp_monto");
+    const manualPdpBulkText = document.getElementById("manual_pdp_bulk_text");
+    const manualPdpBulkFile = document.getElementById("manual_pdp_bulk_file");
+    const manualPdpBulkFeedback = document.getElementById("manual_pdp_bulk_feedback");
+    const manualPdpBulkImportBtn = document.getElementById("manualPdpBulkImportBtn");
+    const manualPdpBulkApplyPendingBtn = document.getElementById("manualPdpBulkApplyPendingBtn");
+    const manualPdpBulkOverwriteBtn = document.getElementById("manualPdpBulkOverwriteBtn");
     const manualPdpBreakdown = document.getElementById("manual_pdp_breakdown");
     const manualSolventacionDetalleBlock = document.getElementById("manual-solventacion-detalle");
     const manualSolventacionDetalleJson = document.getElementById("manual_solventacion_detalle_json");
     const manualSolventacionError = document.getElementById("manual_solventacion_error");
     const manualFechaNotificacion = document.getElementById("manual_fecha_notificacion");
+    const manualIdInput = document.getElementById("manual_id");
+    const manualEditHint = document.getElementById("manualEditHint");
     const manualCaptureForm = document.getElementById("manualCaptureForm");
     const manualSaveBtn = document.getElementById("manualSaveBtn");
+    const manualDraftStatus = document.getElementById("manualDraftStatus");
     const manualValidateBtn = document.getElementById("manualValidateBtn");
     const manualBackToStage1Btn = document.getElementById("manualBackToStage1Btn");
     const manualActionsHelper = document.getElementById("manualActionsHelper");
@@ -702,7 +754,9 @@
     const obsMetricTotal = document.getElementById("obsMetricTotal");
     const obsMetricPendiente = document.getElementById("obsMetricPendiente");
     const obsMetricSolventado = document.getElementById("obsMetricSolventado");
-    const cedulaInputs = blockCedula ? Array.from(blockCedula.querySelectorAll("input")) : [];
+    const cedulaInputs = blockCedula
+      ? Array.from(blockCedula.querySelectorAll("input")).filter((input) => input !== manualFuenteNuevaInput)
+      : [];
     const solventacionRows = manualSolventacionDetalleBlock
       ? Array.from(manualSolventacionDetalleBlock.querySelectorAll("[data-solv-row]"))
       : [];
@@ -724,6 +778,7 @@
     let fuentesDetalleState = [];
     let editingFuenteIndex = null;
     let manualCaptureAsideExpanded = false;
+    let draftAutosaveTimer = null;
     const solventacionTipos = ["PDP", "PEFCF", "PRAS", "R", "SA"];
     const contextDraftKey = "sifeet_manual_context_draft";
     let wizardStageProgress = { manual: false, titulares: false };
@@ -923,9 +978,6 @@
       const usingNewSource = (principalFuente.value || "").trim() === "__new__";
       principalFuenteNuevaWrap.style.display = usingNewSource ? "" : "none";
       principalFuenteNuevaInput.disabled = !usingNewSource;
-      if (!usingNewSource) {
-        principalFuenteNuevaInput.value = "";
-      }
     };
 
     const getSelectedOptionLabel = (field, emptyLabel = "-") => {
@@ -975,6 +1027,33 @@
       }
       const option = document.createElement("option");
       option.value = optionValue;
+      option.textContent = cleanName;
+      const newOption = Array.from(field.options || []).find((opt) => opt.value === NEW_SOURCE_VALUE);
+      if (newOption && newOption.parentNode) {
+        newOption.parentNode.insertBefore(option, newOption);
+      } else {
+        field.appendChild(option);
+      }
+    };
+
+    const ensureFuenteOption = (field, optionValue, fuenteNombre) => {
+      if (!field) {
+        return;
+      }
+      const cleanValue = String(optionValue || "").trim();
+      const cleanName = String(fuenteNombre || "").split(/\s+/).filter(Boolean).join(" ");
+      if (!cleanValue || !cleanName) {
+        return;
+      }
+      const existingOption = Array.from(field.options || []).find((opt) => (
+        String(opt.value || "").trim() === cleanValue
+      ));
+      if (existingOption) {
+        existingOption.textContent = cleanName;
+        return;
+      }
+      const option = document.createElement("option");
+      option.value = cleanValue;
       option.textContent = cleanName;
       const newOption = Array.from(field.options || []).find((opt) => opt.value === NEW_SOURCE_VALUE);
       if (newOption && newOption.parentNode) {
@@ -1052,6 +1131,73 @@
         : baseHref;
     };
 
+    const createLoaderBackup = async (label) => {
+      const response = await fetch("/carga/respaldo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || data.message || "No se pudo generar el respaldo.");
+      }
+      return String(data.backup_path || "").trim();
+    };
+
+    const resolveObsAdminTipoAuditoria = () => {
+      const manualTipo = manualTipoAuditoria ? String(manualTipoAuditoria.value || "").trim() : "";
+      if (manualTipo) {
+        return manualTipo;
+      }
+      const principalTipo = principalTipoAuditoria ? String(principalTipoAuditoria.value || "").trim() : "";
+      return isMixedScopeTipo(principalTipo) ? "" : principalTipo;
+    };
+
+    const updateObsAdminOpenLink = () => {
+      if (!loaderOpenObsAdminBtn || !loaderOpenObsAdminBtn.dataset.baseHref) {
+        return;
+      }
+      const url = new URL(loaderOpenObsAdminBtn.dataset.baseHref, window.location.origin);
+      const returnVista = (document.body.dataset.loaderMode || "manual") === "titulares" ? "titulares" : "manual";
+      url.searchParams.set("return_vista", returnVista);
+
+      const ejercicio = principalEjercicio ? String(principalEjercicio.value || "").trim() : "";
+      const enteId = principalEnte ? String(principalEnte.value || "").trim() : "";
+      const tipoAuditoria = resolveObsAdminTipoAuditoria();
+      const oficio = principalNumeroOficio ? String(principalNumeroOficio.value || "").trim() : "";
+      const periodo = principalPeriodo ? String(principalPeriodo.value || "").trim() : "";
+      const fuenteNombre = resolveManualFuenteNombre() || resolvePrincipalFuenteNombre();
+
+      if (ejercicio) {
+        url.searchParams.set("ejercicio", ejercicio);
+      }
+      if (enteId) {
+        url.searchParams.set("ente_id", enteId);
+      }
+      if (tipoAuditoria) {
+        url.searchParams.set("tipo_auditoria", tipoAuditoria);
+      }
+      if (oficio) {
+        url.searchParams.set("oficio", oficio);
+      }
+      if (periodo) {
+        url.searchParams.set("periodo", periodo);
+      }
+      if (fuenteNombre) {
+        url.searchParams.set("fuente", fuenteNombre);
+      }
+
+      loaderOpenObsAdminBtn.href = `${url.pathname}?${url.searchParams.toString()}`;
+      const label = loaderOpenObsAdminBtn.querySelector("[data-loader-obs-admin-label]");
+      const hasDirectScope = !!(ejercicio && enteId && tipoAuditoria && oficio && (fuenteNombre || periodo));
+      if (label) {
+        label.textContent = hasDirectScope ? "Editar este oficio" : "Editar/Borrar obs.";
+      }
+      loaderOpenObsAdminBtn.title = hasDirectScope
+        ? "Abrir edición con los filtros del contexto activo."
+        : "Abrir edición de observaciones.";
+    };
+
     const updateContextSummary = () => {
       const enteLabel = getSelectedOptionLabel(principalEnte);
       const fuenteLabel = resolveManualFuenteNombre() || resolvePrincipalFuenteNombre() || "-";
@@ -1089,6 +1235,7 @@
         manualContextSummaryFuentes.textContent = String(principalFuentesObjetivo ? principalFuentesObjetivo.value || "-" : "-");
       }
       updateTitularesOpenLink();
+      updateObsAdminOpenLink();
       renderManualReviewSummary();
     };
 
@@ -1164,6 +1311,15 @@
       return true;
     };
 
+    const clearManualEditState = () => {
+      if (manualIdInput) {
+        manualIdInput.value = "";
+      }
+      if (manualEditHint) {
+        manualEditHint.hidden = true;
+      }
+    };
+
     const collectNamedFields = (formElement) => {
       const values = {};
       if (!formElement) {
@@ -1172,7 +1328,7 @@
       const fields = Array.from(formElement.querySelectorAll("input[name], select[name], textarea[name]"));
       fields.forEach((field) => {
         const name = String(field.name || "").trim();
-        if (!name || name === "action") {
+        if (!name || name === "action" || name === "manual_id") {
           return;
         }
         if (field instanceof HTMLInputElement && (field.type === "checkbox" || field.type === "radio")) {
@@ -1323,16 +1479,26 @@
       isSyncingContextFields = false;
     };
 
+    let principalEntesFetchId = 0;
+
     const loadPrincipalEntes = async (selectedEnteId = "") => {
       if (!principalEjercicio || !principalEnte) {
         syncPrincipalFiltersToForms({ syncTitular: true });
         return;
       }
+      const requestId = ++principalEntesFetchId;
       const ejercicio = String(principalEjercicio.value || "").trim();
+      const desiredSelection = String(
+        selectedEnteId
+        || principalEnte.value
+        || principalEnte.dataset.selected
+        || ""
+      ).trim();
       principalEnte.innerHTML = '<option value="">Cargando entes...</option>';
       if (!ejercicio) {
         principalEnte.innerHTML = '<option value="">Selecciona un ente</option>';
         principalEnte.value = "";
+        principalEnte.dataset.selected = "";
         syncPrincipalFiltersToForms({ syncTitular: true });
         return;
       }
@@ -1342,27 +1508,100 @@
           throw new Error("No se pudo cargar entes");
         }
         const rows = await response.json();
+        if (requestId !== principalEntesFetchId) {
+          return;
+        }
         if (!Array.isArray(rows) || !rows.length) {
           principalEnte.innerHTML = '<option value="">Sin entes para ese ejercicio</option>';
           principalEnte.value = "";
+          principalEnte.dataset.selected = "";
           syncPrincipalFiltersToForms({ syncTitular: true });
           return;
         }
         principalEnte.innerHTML = '<option value="">Selecciona un ente</option>' + rows.map((row) => (
           `<option value="${row.ente_id}">${row.ente_numero || ""} - ${row.ente_nombre || ""}</option>`
         )).join("");
-        const normalizedSelection = (selectedEnteId || "").trim();
+        const normalizedSelection = desiredSelection;
         if (normalizedSelection && rows.some((row) => String(row.ente_id || "").trim() === normalizedSelection)) {
           principalEnte.value = normalizedSelection;
         } else {
           principalEnte.value = "";
         }
+        principalEnte.dataset.selected = String(principalEnte.value || "").trim();
       } catch (_error) {
+        if (requestId !== principalEntesFetchId) {
+          return;
+        }
         principalEnte.innerHTML = '<option value="">No se pudieron cargar entes</option>';
         principalEnte.value = "";
+        principalEnte.dataset.selected = "";
       }
       syncPrincipalFiltersToForms({ syncTitular: true });
     };
+
+    const formatDraftSavedAt = (rawValue) => {
+      const parsed = rawValue ? new Date(rawValue) : null;
+      if (!(parsed instanceof Date) || Number.isNaN(parsed.getTime())) {
+        return "";
+      }
+      try {
+        return new Intl.DateTimeFormat("es-MX", {
+          day: "2-digit",
+          month: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        }).format(parsed);
+      } catch (_error) {
+        return parsed.toISOString().slice(0, 16).replace("T", " ");
+      }
+    };
+
+    const updateManualDraftStatus = (message, tone = "info") => {
+      if (!manualDraftStatus) {
+        return;
+      }
+      manualDraftStatus.textContent = message;
+      manualDraftStatus.dataset.tone = tone;
+    };
+
+    const readWizardDraftPayload = () => {
+      try {
+        const raw = localStorage.getItem(gaboWizardDraftKey) || "";
+        if (!raw) {
+          return null;
+        }
+        const payload = JSON.parse(raw);
+        return payload && typeof payload === "object" ? payload : null;
+      } catch (_error) {
+        return null;
+      }
+    };
+
+    const syncManualDraftStatus = (payload = null) => {
+      const draftPayload = payload && typeof payload === "object" ? payload : readWizardDraftPayload();
+      if (!draftPayload) {
+        updateManualDraftStatus(
+          "Guardado temporal local activo. Si falla el oficio, puedes recuperar el borrador.",
+          "info",
+        );
+        return false;
+      }
+      const stamp = formatDraftSavedAt(draftPayload.saved_at || "");
+      updateManualDraftStatus(
+        `Guardado temporal local activo${stamp ? ` · Último respaldo ${stamp}` : ""}.`,
+        "success",
+      );
+      return true;
+    };
+
+    function scheduleDraftAutosave() {
+      if (draftAutosaveTimer) {
+        window.clearTimeout(draftAutosaveTimer);
+      }
+      draftAutosaveTimer = window.setTimeout(() => {
+        saveWizardDraft({ announce: false });
+      }, 450);
+    }
 
     const saveWizardDraft = ({ announce = true } = {}) => {
       const payload = {
@@ -1379,11 +1618,13 @@
       };
       try {
         localStorage.setItem(gaboWizardDraftKey, JSON.stringify(payload));
+        syncManualDraftStatus(payload);
         if (announce) {
           showWizardToast("Guardado.", "success");
         }
         return true;
       } catch (_error) {
+        updateManualDraftStatus("No se pudo guardar temporalmente en este navegador.", "error");
         if (announce) {
           showWizardToast("No se pudo guardar el borrador en este navegador.", "error");
         }
@@ -1391,23 +1632,13 @@
       }
     };
 
-    const restoreWizardDraft = () => {
-      let raw = "";
-      try {
-        raw = localStorage.getItem(gaboWizardDraftKey) || "";
-      } catch (_error) {
-        showWizardToast("No se pudo acceder al almacenamiento local.", "error");
-        return false;
-      }
-      if (!raw) {
-        showWizardToast("No hay borrador guardado para restaurar.", "info");
-        return false;
-      }
-      let payload = null;
-      try {
-        payload = JSON.parse(raw);
-      } catch (_error) {
-        showWizardToast("El borrador está corrupto y no se pudo restaurar.", "error");
+    const restoreWizardDraft = ({ announce = true } = {}) => {
+      const payload = readWizardDraftPayload();
+      if (!payload) {
+        updateManualDraftStatus("No hay borrador temporal local disponible.", "info");
+        if (announce) {
+          showWizardToast("No hay borrador guardado para restaurar.", "info");
+        }
         return false;
       }
       const manualFormValues = payload && typeof payload.manual_form === "object" ? payload.manual_form : {};
@@ -1517,18 +1748,27 @@
         updateContextSummary();
         updateWizardModeAvailability();
       }, 900);
-      showWizardToast("Borrador restaurado correctamente.", "success");
+      syncManualDraftStatus(payload);
+      if (announce) {
+        showWizardToast("Borrador restaurado correctamente.", "success");
+      }
       return true;
     };
 
-    const clearWizardDraft = () => {
+    const clearWizardDraft = ({ announce = true } = {}) => {
       try {
         localStorage.removeItem(gaboWizardDraftKey);
       } catch (_error) {
-        showWizardToast("No se pudo limpiar el borrador.", "error");
+        updateManualDraftStatus("No se pudo limpiar el borrador temporal.", "error");
+        if (announce) {
+          showWizardToast("No se pudo limpiar el borrador.", "error");
+        }
         return false;
       }
-      showWizardToast("Borrador eliminado.", "info");
+      updateManualDraftStatus("Borrador temporal local eliminado.", "info");
+      if (announce) {
+        showWizardToast("Borrador eliminado.", "info");
+      }
       return true;
     };
 
@@ -1560,6 +1800,7 @@
         return;
       }
       manualFuentesDetalleJson.value = JSON.stringify(fuentesDetalleState);
+      scheduleDraftAutosave();
     };
 
     const readFuentesObjetivo = ({ fallback = 0 } = {}) => {
@@ -1699,7 +1940,7 @@
           + Number(item.cantidad_r || 0),
         0,
       );
-      const totalPdp = getTotalPdpFromFuentes();
+      const totalPdp = getTotalPdpTargetCount();
       const totalPdpMonto = getTotalPdpMonto();
       const normalizedPdp = normalizePdpDetalleState(
         totalPdp,
@@ -1803,7 +2044,7 @@
         manualTotalObservaciones.textContent = String(totalObs);
       }
       if (manualTotalPdp) {
-        manualTotalPdp.textContent = String(getTotalPdpFromFuentes());
+        manualTotalPdp.textContent = String(getTotalPdpTargetCount());
       }
       if (manualTotalPdpMonto) {
         manualTotalPdpMonto.textContent = formatMoney(getTotalPdpMonto());
@@ -2021,6 +2262,37 @@
       ))
     );
 
+    const getCurrentPdpSourceScope = () => {
+      const tipo = (manualTipoAuditoria ? manualTipoAuditoria.value : "").trim();
+      const fuenteNombre = resolveManualFuenteNombre();
+      if (!tipo || !fuenteNombre || !Array.isArray(fuentesDetalleState) || !fuentesDetalleState.length) {
+        return null;
+      }
+      const sourceIndex = Number.isInteger(editingFuenteIndex) && editingFuenteIndex >= 0
+        ? editingFuenteIndex
+        : findFuenteDetalleIndex(tipo, fuenteNombre);
+      if (!Number.isInteger(sourceIndex) || sourceIndex < 0 || sourceIndex >= fuentesDetalleState.length) {
+        return null;
+      }
+      let startIndex = 0;
+      for (let idx = 0; idx < fuentesDetalleState.length; idx += 1) {
+        const item = fuentesDetalleState[idx] || {};
+        const count = Math.max(0, Number.parseInt(String(item.cantidad_pdp || 0), 10) || 0);
+        if (idx === sourceIndex) {
+          return {
+            sourceIndex,
+            count,
+            startIndex,
+            endIndex: startIndex + count - 1,
+            startLabel: startIndex + 1,
+            endLabel: startIndex + count,
+          };
+        }
+        startIndex += count;
+      }
+      return null;
+    };
+
     const upsertCurrentFuenteDetalle = ({ showFeedback = false, allowCreate = false } = {}) => {
       const tipo = (manualTipoAuditoria ? manualTipoAuditoria.value : "").trim();
       const objetivoFuentes = readFuentesObjetivo({ fallback: 1 });
@@ -2158,11 +2430,303 @@
       return normalized;
     };
 
+    const normalizeInlineText = (value) => (
+      String(value || "").split(/\s+/).filter(Boolean).join(" ")
+    );
+
+    const isPdpDetalleItemComplete = (item) => {
+      const concepto = String(item && item.concepto || "").trim();
+      const monto = parseMoneyInput(item && item.monto || "");
+      return !!concepto && monto !== null;
+    };
+
+    const setPdpBulkFeedback = (message, level = "info") => {
+      if (!manualPdpBulkFeedback) {
+        return;
+      }
+      manualPdpBulkFeedback.textContent = message || "";
+      manualPdpBulkFeedback.dataset.level = level;
+    };
+
+    const parsePdpBulkMonto = (rawValue) => (
+      parseMoneyInput(String(rawValue || "").replace(/\bmxn\b/gi, "").trim())
+    );
+
+    const splitPdpBulkParts = (rawValue, pattern) => (
+      String(rawValue || "")
+        .split(pattern)
+        .map((part) => normalizeInlineText(part))
+        .filter(Boolean)
+    );
+
+    const splitPdpBulkDashParts = (rawValue) => (
+      splitPdpBulkParts(rawValue, /\s+[—–-]\s+/)
+    );
+
+    const parsePdpBulkLine = (rawLine, lineNumber) => {
+      let line = String(rawLine || "").trim();
+      if (!line) {
+        return null;
+      }
+
+      let targetIndex = null;
+      const tabPartsWithIndex = splitPdpBulkParts(line, /\t+/);
+      if (tabPartsWithIndex.length >= 3 && /^\d+$/.test(tabPartsWithIndex[0] || "")) {
+        targetIndex = Number.parseInt(tabPartsWithIndex[0], 10) - 1;
+        line = tabPartsWithIndex.slice(1).join("\t");
+      } else {
+        const pipePartsWithIndex = splitPdpBulkParts(line, /\s*[|;]\s*/);
+        if (pipePartsWithIndex.length >= 3 && /^\d+$/.test(pipePartsWithIndex[0] || "")) {
+          targetIndex = Number.parseInt(pipePartsWithIndex[0], 10) - 1;
+          line = pipePartsWithIndex.slice(1).join(" | ");
+        } else {
+          const dashPartsWithIndex = splitPdpBulkDashParts(line);
+          if (dashPartsWithIndex.length >= 3 && /^\d+$/.test(dashPartsWithIndex[0] || "")) {
+            targetIndex = Number.parseInt(dashPartsWithIndex[0], 10) - 1;
+            line = dashPartsWithIndex.slice(1).join(" — ");
+          } else {
+            const numberedMatch = line.match(/^(\d{1,4})\s*[\.\)\-:]+\s*(.+)$/);
+            if (numberedMatch) {
+              targetIndex = Number.parseInt(numberedMatch[1], 10) - 1;
+              line = String(numberedMatch[2] || "").trim();
+            }
+          }
+        }
+      }
+
+      let concepto = "";
+      let montoRaw = "";
+      const tabParts = splitPdpBulkParts(line, /\t+/);
+      if (tabParts.length >= 2) {
+        montoRaw = tabParts.pop() || "";
+        concepto = tabParts.join(" ");
+      } else {
+        const delimitedParts = splitPdpBulkParts(line, /\s*[|;]\s*/);
+        if (delimitedParts.length >= 2) {
+          montoRaw = delimitedParts.pop() || "";
+          concepto = delimitedParts.join(" ");
+        } else {
+          const dashParts = splitPdpBulkDashParts(line);
+          if (dashParts.length >= 2) {
+            montoRaw = dashParts.pop() || "";
+            concepto = dashParts.join(" — ");
+          } else {
+            const trailingAmountMatch = line.match(
+              /^(.*?)(?:\s+)(\$?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?(?:\s*MXN)?)$/i
+            );
+            if (trailingAmountMatch) {
+              concepto = normalizeInlineText(trailingAmountMatch[1]);
+              montoRaw = String(trailingAmountMatch[2] || "").trim();
+            }
+          }
+        }
+      }
+
+      if (!concepto || !montoRaw) {
+        throw new Error(
+          `Línea ${lineNumber}: usa "1 — Concepto — $123.45", "1. Concepto 123.45" o "Concepto | 123.45".`
+        );
+      }
+
+      const monto = parsePdpBulkMonto(montoRaw);
+      if (monto === null) {
+        throw new Error(`Línea ${lineNumber}: el monto PDP no es válido.`);
+      }
+
+      return {
+        targetIndex,
+        targetNumber: targetIndex === null ? null : targetIndex + 1,
+        concepto: normalizeInlineText(concepto),
+        subconcepto: "",
+        monto: monto.toFixed(2),
+      };
+    };
+
+    const applyPdpBulkText = ({ overwrite = false } = {}) => {
+      const totalPdp = getTotalPdpTargetCount();
+      if (totalPdp <= 0) {
+        const message = "Primero define observaciones PDP en las fuentes de financiamiento.";
+        setPdpBulkFeedback(message, "error");
+        showWizardToast(message, "error");
+        return;
+      }
+
+      const rawText = String(manualPdpBulkText ? manualPdpBulkText.value : "").trim();
+      if (!rawText) {
+        const message = "Pega al menos una línea con concepto y monto PDP.";
+        setPdpBulkFeedback(message, "error");
+        showWizardToast(message, "error");
+        return;
+      }
+
+      const lines = rawText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      let entries = [];
+      try {
+        entries = lines.map((line, idx) => parsePdpBulkLine(line, idx + 1)).filter(Boolean);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "No se pudo interpretar el texto masivo PDP.";
+        setPdpBulkFeedback(message, "error");
+        showWizardToast(message, "error");
+        return;
+      }
+
+      if (!entries.length) {
+        const message = "No se encontraron líneas válidas para cargar.";
+        setPdpBulkFeedback(message, "error");
+        showWizardToast(message, "error");
+        return;
+      }
+
+      const currentSourceScope = getCurrentPdpSourceScope();
+      const explicitEntries = entries.filter((entry) => entry.targetIndex !== null);
+      const canMapExplicitEntriesToActiveSource = !!(
+        currentSourceScope
+        && currentSourceScope.count > 0
+        && explicitEntries.length
+        && explicitEntries.every((entry) => {
+          const targetNumber = Number(entry.targetNumber);
+          return Number.isFinite(targetNumber) && targetNumber >= 1 && targetNumber <= currentSourceScope.count;
+        })
+        && Math.min(...explicitEntries.map((entry) => Number(entry.targetNumber))) === 1
+      );
+      if (canMapExplicitEntriesToActiveSource) {
+        explicitEntries.forEach((entry) => {
+          entry.targetIndex = currentSourceScope.startIndex + (Number(entry.targetNumber) - 1);
+        });
+      }
+
+      const nextState = normalizePdpDetalleState(
+        totalPdp,
+        (
+          overwrite
+          && (!canMapExplicitEntriesToActiveSource || !currentSourceScope)
+        )
+          ? []
+          : (pdpDetalleState.length ? pdpDetalleState : parsePdpDetalleState()),
+      );
+      if (overwrite && canMapExplicitEntriesToActiveSource && currentSourceScope) {
+        for (let idx = currentSourceScope.startIndex; idx <= currentSourceScope.endIndex; idx += 1) {
+          nextState[idx] = { concepto: "", subconcepto: "", monto: "" };
+        }
+      }
+      const touchedIndices = new Set();
+      const implicitEntries = [];
+
+      for (const entry of entries) {
+        if (entry.targetIndex === null) {
+          implicitEntries.push(entry);
+          continue;
+        }
+        if (entry.targetIndex < 0 || entry.targetIndex >= totalPdp) {
+          const message = `La observación PDP ${entry.targetIndex + 1} no existe en este oficio.`;
+          setPdpBulkFeedback(message, "error");
+          showWizardToast(message, "error");
+          return;
+        }
+        if (touchedIndices.has(entry.targetIndex)) {
+          const message = `La observación PDP ${entry.targetIndex + 1} está repetida en el texto masivo.`;
+          setPdpBulkFeedback(message, "error");
+          showWizardToast(message, "error");
+          return;
+        }
+        touchedIndices.add(entry.targetIndex);
+        nextState[entry.targetIndex] = {
+          concepto: entry.concepto,
+          subconcepto: "",
+          monto: entry.monto,
+        };
+      }
+
+      const availableIndices = nextState
+        .map((item, idx) => ({ item, idx }))
+        .filter(({ item, idx }) => !touchedIndices.has(idx) && (overwrite || !isPdpDetalleItemComplete(item)))
+        .map(({ idx }) => idx);
+
+      if (implicitEntries.length > availableIndices.length) {
+        const message = overwrite
+          ? "El texto contiene más líneas que observaciones PDP disponibles."
+          : "El texto contiene más líneas que observaciones PDP pendientes.";
+        setPdpBulkFeedback(message, "error");
+        showWizardToast(message, "error");
+        return;
+      }
+
+      implicitEntries.forEach((entry, idx) => {
+        const targetIndex = availableIndices[idx];
+        touchedIndices.add(targetIndex);
+        nextState[targetIndex] = {
+          concepto: entry.concepto,
+          subconcepto: "",
+          monto: entry.monto,
+        };
+      });
+
+      pdpDetalleState = nextState;
+      if (touchedIndices.size) {
+        pdpDetalleIndex = Math.min(...Array.from(touchedIndices));
+      }
+      syncPdpDetalleJson();
+      renderPdpDetalleMenu();
+      renderPreviewTable();
+      updateManualSaveState();
+      updateWizardModeAvailability();
+
+      const pendientes = pdpDetalleState.filter((item) => !isPdpDetalleItemComplete(item)).length;
+      const activeSourceRangeMessage = canMapExplicitEntriesToActiveSource && currentSourceScope
+        ? ` Rango activo: ${currentSourceScope.startLabel}-${currentSourceScope.endLabel}.`
+        : "";
+      const message = overwrite
+        ? `Se reemplazaron ${touchedIndices.size} observación(es) PDP. Pendientes: ${pendientes}.${activeSourceRangeMessage}`
+        : `Se aplicaron ${touchedIndices.size} línea(s) al detalle PDP. Pendientes: ${pendientes}.${activeSourceRangeMessage}`;
+      setPdpBulkFeedback(message, "success");
+      showWizardToast(message, "success");
+    };
+
+    const importPdpBulkFile = async () => {
+      const file = manualPdpBulkFile && manualPdpBulkFile.files ? manualPdpBulkFile.files[0] : null;
+      if (!file) {
+        const message = "Selecciona primero un archivo Excel o CSV.";
+        setPdpBulkFeedback(message, "error");
+        showWizardToast(message, "error");
+        return;
+      }
+      const formData = new FormData();
+      formData.append("archivo", file);
+      if (manualPdpBulkImportBtn) {
+        manualPdpBulkImportBtn.disabled = true;
+      }
+      try {
+        const response = await fetch("/carga/pdp-masivo/importar-excel", {
+          method: "POST",
+          body: formData,
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "No se pudo interpretar el archivo.");
+        }
+        if (manualPdpBulkText) {
+          manualPdpBulkText.value = String(data.text || "").trim();
+        }
+        const message = `Archivo procesado: ${data.rows || 0} fila(s) listas para revisar y aplicar.`;
+        setPdpBulkFeedback(message, "success");
+        showWizardToast(message, "success");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "No se pudo importar el archivo.";
+        setPdpBulkFeedback(message, "error");
+        showWizardToast(message, "error");
+      } finally {
+        if (manualPdpBulkImportBtn) {
+          manualPdpBulkImportBtn.disabled = false;
+        }
+      }
+    };
+
     const syncPdpDetalleJson = () => {
       if (!manualPdpDetalleJson) {
         return;
       }
       manualPdpDetalleJson.value = JSON.stringify(pdpDetalleState);
+      scheduleDraftAutosave();
     };
 
     const renderPdpBreakdown = () => {
@@ -2258,8 +2822,17 @@
       )
     );
 
+    const getTotalPdpTargetCount = () => {
+      const totalPdpFuentes = getTotalPdpFromFuentes();
+      const cantidadManual = Math.max(
+        0,
+        Number.parseInt(String(manualCantidadPdp ? manualCantidadPdp.value : "0").trim(), 10) || 0,
+      );
+      return totalPdpFuentes > 0 ? totalPdpFuentes : cantidadManual;
+    };
+
     const getTotalPdpMonto = () => {
-      const totalPdp = getTotalPdpFromFuentes();
+      const totalPdp = getTotalPdpTargetCount();
       if (totalPdp <= 0) {
         return 0;
       }
@@ -3470,7 +4043,7 @@
       Array.isArray(observacionesAllRows) && observacionesAllRows.length > 0
     );
     const isPdpDetalleCompleto = () => {
-      const totalPdp = getTotalPdpFromFuentes();
+      const totalPdp = getTotalPdpTargetCount();
       if (totalPdp <= 0) {
         return true;
       }
@@ -3583,7 +4156,7 @@
         }
         return false;
       }
-      const totalPdp = getTotalPdpFromFuentes();
+      const totalPdp = getTotalPdpTargetCount();
       if (totalPdp > 0) {
         const normalizedPdp = normalizePdpDetalleState(
           totalPdp,
@@ -3799,6 +4372,7 @@
       if (targetMode === "manual" || targetMode === "solventacion") {
         setManualStep(1);
       }
+      updateObsAdminOpenLink();
       updateManualStageActions();
       updateWizardModeAvailability();
       saveWizardDraft({ announce: false });
@@ -3829,18 +4403,12 @@
       }
       if (manualFuenteNuevaInput) {
         manualFuenteNuevaInput.disabled = !usingManualNewSource;
-        if (!usingManualNewSource) {
-          manualFuenteNuevaInput.value = "";
-        }
       }
       if (!canShowFuentes && principalFuente) {
         principalFuente.value = "";
       }
       if (principalFuente) {
         principalFuente.disabled = !canShowFuentes;
-      }
-      if (!canShowFuentes && principalFuenteNuevaInput) {
-        principalFuenteNuevaInput.value = "";
       }
       togglePrincipalNuevaFuente();
       if (manualAddNewFuenteBtnInline) {
@@ -3979,6 +4547,7 @@
     }
     if (manualAddNewFuenteBtnInline && manualFuente) {
       manualAddNewFuenteBtnInline.addEventListener("click", () => {
+        syncManualContextToPrincipal();
         const added = addFuenteDetalleRow();
         if (!added) {
           return;
@@ -4010,6 +4579,14 @@
           manualCaptureForm.dataset.skipSolventacionSync = "";
           return;
         }
+        if (principalEnte) {
+          principalEnte.dataset.selected = String(principalEnte.value || "").trim();
+        }
+        syncManualContextToPrincipal();
+        syncPrincipalFiltersToForms({ syncTitular: false });
+        syncFuentesDetalleState();
+        syncPdpDetalleJson();
+        saveContextDraft();
         const submitter = event.submitter instanceof HTMLElement ? event.submitter : null;
         const action = submitter && submitter.getAttribute("name") === "action"
           ? (submitter.getAttribute("value") || "").trim()
@@ -4018,12 +4595,14 @@
         if (mode === "cedula" && hasCurrentFuenteCaptureReady()) {
           const synced = upsertCurrentFuenteDetalle({ showFeedback: true, allowCreate: true });
           if (!synced) {
+            saveWizardDraft({ announce: false });
             event.preventDefault();
             setManualStep(2);
             updateWizardModeAvailability();
             return;
           }
         }
+        saveWizardDraft({ announce: false });
         const validStage = mode === "cedula"
           ? validateStage1({ showFeedback: true })
           : validateStage2({ showFeedback: true });
@@ -4214,16 +4793,6 @@
         saveWizardDraft({ announce: false });
       });
     }
-
-    let draftAutosaveTimer = null;
-    const scheduleDraftAutosave = () => {
-      if (draftAutosaveTimer) {
-        window.clearTimeout(draftAutosaveTimer);
-      }
-      draftAutosaveTimer = window.setTimeout(() => {
-        saveWizardDraft({ announce: false });
-      }, 450);
-    };
     [manualCaptureForm, titularCaptureForm].forEach((formElement) => {
       if (!formElement) {
         return;
@@ -4233,15 +4802,26 @@
     });
 
     try {
-      const hasDraft = !!localStorage.getItem(gaboWizardDraftKey);
+      const draftPayload = readWizardDraftPayload();
+      const hasDraft = !!draftPayload;
       const hasCurrentValues = !!(
         (manualNumeroOficio && String(manualNumeroOficio.value || "").trim())
         || (titularNombre && String(titularNombre.value || "").trim())
       );
-      void hasDraft;
-      void hasCurrentValues;
+      const hasStructuredManualState = !!(
+        (Array.isArray(fuentesDetalleState) && fuentesDetalleState.length)
+        || (Array.isArray(pdpDetalleState) && pdpDetalleState.length)
+      );
+      if (hasDraft) {
+        syncManualDraftStatus(draftPayload);
+      } else {
+        syncManualDraftStatus(null);
+      }
+      if (hasDraft && !hasCurrentValues && !hasStructuredManualState) {
+        restoreWizardDraft({ announce: false });
+      }
     } catch (_error) {
-      // No-op if browser storage is unavailable.
+      updateManualDraftStatus("No se pudo acceder al guardado temporal local.", "error");
     }
 
     if (manualEjercicio && manualEnte) {
@@ -4407,6 +4987,29 @@
         }
       });
     }
+    if (manualPdpBulkText) {
+      manualPdpBulkText.addEventListener("input", () => {
+        setPdpBulkFeedback(
+          "Puedes usar número con —, tabulador, | o solo dejar el monto al final de cada línea. La numeración puede ser local de la fuente activa.",
+          "info",
+        );
+      });
+    }
+    if (manualPdpBulkImportBtn) {
+      manualPdpBulkImportBtn.addEventListener("click", async () => {
+        await importPdpBulkFile();
+      });
+    }
+    if (manualPdpBulkApplyPendingBtn) {
+      manualPdpBulkApplyPendingBtn.addEventListener("click", () => {
+        applyPdpBulkText({ overwrite: false });
+      });
+    }
+    if (manualPdpBulkOverwriteBtn) {
+      manualPdpBulkOverwriteBtn.addEventListener("click", () => {
+        applyPdpBulkText({ overwrite: true });
+      });
+    }
     if (manualCantidadPdp) {
       const handleCantidadPdpChange = () => {
         upsertCurrentFuenteDetalle();
@@ -4448,6 +5051,12 @@
 
     if (manualEjercicio && manualEnte && manualFuente) {
       let fuentesFetchId = 0;
+      const resolveLiveFuenteSelection = (fallback = "") => String(
+        (manualFuente ? manualFuente.dataset.pendingValue || manualFuente.value || manualFuente.dataset.selected || "" : "")
+        || (principalFuente ? principalFuente.dataset.pendingValue || principalFuente.value || principalFuente.dataset.selected || "" : "")
+        || fallback
+        || ""
+      ).trim();
 
       const toggleNuevaFuente = () => {
         if (!manualFuente || !manualFuenteNuevaWrap || !manualFuenteNuevaInput) {
@@ -4456,9 +5065,6 @@
         const usingNewSource = (manualFuente.value || "").trim() === NEW_SOURCE_VALUE;
         manualFuenteNuevaWrap.style.display = usingNewSource ? "" : "none";
         manualFuenteNuevaInput.disabled = !usingNewSource;
-        if (!usingNewSource) {
-          manualFuenteNuevaInput.value = "";
-        }
       };
 
       const buildFuenteSelectMarkup = (rows, emptyLabel) => (
@@ -4509,12 +5115,7 @@
           manualEnte.value = enteId;
         }
         const tipoAuditoria = (manualTipoAuditoria ? (manualTipoAuditoria.value || "").trim() : "");
-        const desiredSelection = String(
-          selectedFuenteId
-          || (manualFuente ? manualFuente.dataset.pendingValue || manualFuente.dataset.selected || manualFuente.value : "")
-          || (principalFuente ? principalFuente.dataset.pendingValue || principalFuente.dataset.selected || principalFuente.value : "")
-          || ""
-        ).trim();
+        const desiredSelection = resolveLiveFuenteSelection(selectedFuenteId);
         if (!ejercicio || !enteId) {
           syncFuenteControlsState([], "Selecciona un ente primero");
           renderPdpDetalleMenu();
@@ -4537,31 +5138,151 @@
             return;
           }
           const rows = await response.json();
+          const liveSelection = resolveLiveFuenteSelection(desiredSelection);
           if (!Array.isArray(rows) || !rows.length) {
-            syncFuenteControlsState([], "Sin fuentes para este ente", desiredSelection);
+            syncFuenteControlsState([], "Sin fuentes para este ente", liveSelection);
             return;
           }
-          syncFuenteControlsState(rows, "Selecciona una fuente", desiredSelection);
+          syncFuenteControlsState(rows, "Selecciona una fuente", liveSelection);
           loadCurrentFuenteDetalleToInputs({ resetIfMissing: false });
           renderPdpDetalleMenu();
         } catch (error) {
-          syncFuenteControlsState([], "No se pudieron cargar fuentes", desiredSelection);
+          syncFuenteControlsState([], "No se pudieron cargar fuentes", resolveLiveFuenteSelection(desiredSelection));
           loadCurrentFuenteDetalleToInputs({ resetIfMissing: false });
           renderPdpDetalleMenu();
         }
       };
 
+      const registerNewFuenteForEnte = async () => {
+        const ejercicio = (manualEjercicio ? (manualEjercicio.value || "") : "").trim();
+        const enteId = (
+          (manualEnte ? (manualEnte.value || "") : "")
+          || (principalEnte ? (principalEnte.value || "") : "")
+        ).trim();
+        const tipoAuditoria = (manualTipoAuditoria ? (manualTipoAuditoria.value || "") : "").trim();
+        const fuenteNombre = resolveManualFuenteNombre();
+
+        if (!ejercicio || !enteId || !tipoAuditoria) {
+          if (manualFuentesDetalleFeedback) {
+            manualFuentesDetalleFeedback.textContent = "Primero define ejercicio, ente y tipo.";
+          }
+          showWizardToast("Completa el contexto antes de registrar una fuente.", "info");
+          return null;
+        }
+        if (!fuenteNombre) {
+          if (manualFuentesDetalleFeedback) {
+            manualFuentesDetalleFeedback.textContent = "Escribe el nombre de la nueva fuente.";
+          }
+          if (manualFuenteNuevaInput && typeof manualFuenteNuevaInput.focus === "function") {
+            manualFuenteNuevaInput.focus();
+          }
+          return null;
+        }
+
+        try {
+          const body = new URLSearchParams({
+            ejercicio,
+            ente_id: enteId,
+            tipo_auditoria: tipoAuditoria,
+            nombre: fuenteNombre,
+          });
+          const response = await fetch("/carga/fuentes-ente/nueva", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+            },
+            body: body.toString(),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok || !payload || !payload.ok) {
+            throw new Error((payload && payload.message) || "No se pudo registrar la fuente.");
+          }
+          const fuenteId = String(payload.id || "").trim();
+          const fuenteLabel = String(payload.nombre || fuenteNombre).trim();
+          if (!fuenteId || !fuenteLabel) {
+            throw new Error("No se pudo registrar la fuente.");
+          }
+
+          ensureFuenteOption(manualFuente, fuenteId, fuenteLabel);
+          ensureFuenteOption(principalFuente, fuenteId, fuenteLabel);
+          if (manualFuente) {
+            manualFuente.dataset.pendingValue = fuenteId;
+            manualFuente.value = fuenteId;
+          }
+          if (principalFuente) {
+            principalFuente.dataset.pendingValue = fuenteId;
+            principalFuente.value = fuenteId;
+          }
+          if (manualFuenteNuevaInput) {
+            manualFuenteNuevaInput.value = "";
+          }
+          if (principalFuenteNuevaInput) {
+            principalFuenteNuevaInput.value = "";
+          }
+          toggleNuevaFuente();
+          togglePrincipalNuevaFuente();
+
+          await loadFuentesByEnte(fuenteId);
+
+          ensureFuenteOption(manualFuente, fuenteId, fuenteLabel);
+          ensureFuenteOption(principalFuente, fuenteId, fuenteLabel);
+          if (manualFuente && optionExists(manualFuente, fuenteId)) {
+            manualFuente.value = fuenteId;
+          }
+          if (principalFuente && optionExists(principalFuente, fuenteId)) {
+            principalFuente.value = fuenteId;
+          }
+          toggleCantidadesByFuente();
+          loadCurrentFuenteDetalleToInputs({ resetIfMissing: false });
+          renderPdpDetalleMenu();
+          updateContextSummary();
+          if (manualFuentesDetalleFeedback) {
+            manualFuentesDetalleFeedback.textContent = `Fuente "${fuenteLabel}" registrada para este ente.`;
+          }
+          showWizardToast("Fuente registrada para este ente.", "success");
+          return { id: fuenteId, nombre: fuenteLabel };
+        } catch (error) {
+          if (manualFuentesDetalleFeedback) {
+            manualFuentesDetalleFeedback.textContent = error instanceof Error
+              ? error.message
+              : "No se pudo registrar la fuente.";
+          }
+          showWizardToast(
+            error instanceof Error ? error.message : "No se pudo registrar la fuente.",
+            "error",
+          );
+          return null;
+        }
+      };
+
       if (principalEjercicio && principalEnte) {
         principalEjercicio.addEventListener("change", () => {
+          clearManualEditState();
           loadPrincipalEntes("");
         });
         principalEnte.addEventListener("change", () => {
+          clearManualEditState();
+          principalEnte.dataset.selected = String(principalEnte.value || "").trim();
           syncPrincipalFiltersToForms({ syncTitular: true });
-          updateWizardModeAvailability();
-        });
-      }
+        updateWizardModeAvailability();
+      });
+    }
+    if (loaderCreateBackupBtn) {
+      loaderCreateBackupBtn.addEventListener("click", async () => {
+        loaderCreateBackupBtn.disabled = true;
+        try {
+          const backupPath = await createLoaderBackup("respaldo-manual-carga");
+          showWizardToast(`Respaldo generado: ${backupPath}.`, "success");
+        } catch (error) {
+          showWizardToast(error instanceof Error ? error.message : "No se pudo generar el respaldo.", "error");
+        } finally {
+          loaderCreateBackupBtn.disabled = false;
+        }
+      });
+    }
       if (principalTipoAuditoria) {
         principalTipoAuditoria.addEventListener("change", () => {
+          clearManualEditState();
           syncPrincipalFiltersToForms({ syncTitular: true });
         });
       }
@@ -4577,16 +5298,19 @@
       }
       if (principalNumeroOficio) {
         principalNumeroOficio.addEventListener("input", () => {
+          clearManualEditState();
           syncPrincipalFiltersToForms({ syncTitular: false });
         });
       }
       if (principalPeriodo) {
         principalPeriodo.addEventListener("input", () => {
+          clearManualEditState();
           syncPrincipalFiltersToForms({ syncTitular: false });
         });
       }
       if (principalFechaNotificacion) {
         principalFechaNotificacion.addEventListener("change", () => {
+          clearManualEditState();
           const normalizedDate = normalizeFechaIso(principalFechaNotificacion.value || "");
           if (normalizedDate) {
             principalFechaNotificacion.value = normalizedDate;
@@ -4702,9 +5426,14 @@
         manualFuenteNuevaInput.addEventListener("input", () => {
           syncManualContextToPrincipal();
           toggleCantidadesByFuente();
-          upsertCurrentFuenteDetalle();
+          renderManualReviewSummary();
           renderPdpDetalleMenu();
-          fetchCedulaScopeOptions();
+        });
+        manualFuenteNuevaInput.addEventListener("change", () => {
+          syncManualContextToPrincipal();
+          toggleCantidadesByFuente();
+          loadCurrentFuenteDetalleToInputs({ resetIfMissing: false });
+          renderPdpDetalleMenu();
           if (getManualMode() === "cedula") {
             fetchObservacionesCargadas();
           }
@@ -4741,7 +5470,7 @@
         });
       }
       if (principalEjercicio && principalEnte) {
-        loadPrincipalEntes(principalEnte.dataset.selected || principalEnte.value || "");
+        loadPrincipalEntes(principalEnte.value || principalEnte.dataset.selected || "");
       } else {
         fetchCedulaScopeOptions();
         if (getManualMode() === "cedula") {
@@ -4893,6 +5622,7 @@
       syncManualContextToPrincipal();
       toggleObservacionesCargadas();
       renderPreviewTable();
+      updateObsAdminOpenLink();
     }
   </script>
 </body>

@@ -590,6 +590,20 @@ def init_db() -> None:
         )
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS entes_fuentes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ejercicio TEXT NOT NULL,
+                ente_id TEXT NOT NULL,
+                fuente_id INTEGER NOT NULL,
+                tipo_auditoria TEXT NOT NULL,
+                created_by TEXT,
+                created_at TEXT NOT NULL,
+                UNIQUE(ejercicio, ente_id, fuente_id, tipo_auditoria)
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS catalogo_irregularidades (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 concepto TEXT NOT NULL UNIQUE,
@@ -1028,6 +1042,12 @@ def init_db() -> None:
             """
             CREATE INDEX IF NOT EXISTS idx_entes_uid
             ON entes_detalle (ente_uid)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_entes_fuentes_scope
+            ON entes_fuentes (ejercicio, ente_id, tipo_auditoria, fuente_id)
             """
         )
         conn.execute(
