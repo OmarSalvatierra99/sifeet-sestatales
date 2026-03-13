@@ -1,5 +1,4 @@
 from datetime import datetime
-import csv
 import json
 from pathlib import Path
 import re
@@ -7,7 +6,6 @@ import sqlite3
 import sys
 
 from flask import jsonify, render_template, request
-from openpyxl import load_workbook
 
 
 def split_periodo_tokens(raw_value: str) -> list[str]:
@@ -198,123 +196,6 @@ def register_gabo_routes(app, deps):
             return str(backup_path.relative_to(BASE_DIR))
         except ValueError:
             return str(backup_path)
-
-    def _normalize_excel_cell(value) -> str:
-        if value is None:
-            return ""
-        if isinstance(value, float):
-            if value.is_integer():
-                return str(int(value))
-            return f"{value:.2f}"
-        if isinstance(value, int):
-            return str(value)
-        return " ".join(str(value).replace("\n", " ").split())
-
-    def _parse_excel_pdp_monto(value) -> float | None:
-        if value is None:
-            return None
-        if isinstance(value, (int, float)):
-            monto = float(value)
-            return monto if monto >= 0 else None
-        raw = _normalize_excel_cell(value)
-        if not raw:
-            return None
-        normalized = raw.replace("$", "").replace(",", "").replace("MXN", "").replace("mxn", "")
-        normalized = "".join(normalized.split())
-        try:
-            monto = float(normalized)
-        except ValueError:
-            return None
-        return monto if monto >= 0 else None
-
-    def _is_pdp_excel_header_row(values: list[str]) -> bool:
-        joined = " ".join(normalize_text_key(item) for item in values if item).strip()
-        if not joined:
-            return False
-        return ("concepto" in joined and "monto" in joined) or ("irregularidad" in joined and "monto" in joined)
-
-    def _parse_pdp_excel_rows(file_storage) -> tuple[list[str], int]:
-        filename = " ".join((getattr(file_storage, "filename", "") or "").split())
-        extension = Path(filename).suffix.lower()
-        parsed_lines: list[str] = []
-        processed_rows = 0
-
-        if extension == ".csv":
-            stream = file_storage.stream
-            stream.seek(0)
-            decoded = stream.read().decode("utf-8-sig", errors="ignore").splitlines()
-            iterator = csv.reader(decoded)
-            rows = iterator
-        else:
-            if extension not in {".xlsx", ".xlsm", ".xltx", ".xltm"}:
-                raise ValueError("Carga un archivo Excel .xlsx/.xlsm o un .csv.")
-            stream = file_storage.stream
-            stream.seek(0)
-            workbook = load_workbook(stream, read_only=True, data_only=True)
-            try:
-                sheet = workbook.active
-                rows = sheet.iter_rows(values_only=True)
-                for excel_row_number, row in enumerate(rows, start=1):
-                    if excel_row_number > 1200:
-                        break
-                    cells = [_normalize_excel_cell(value) for value in row]
-                    compact_cells = [item for item in cells if item]
-                    if not compact_cells:
-                        continue
-                    processed_rows += 1
-                    if processed_rows == 1 and _is_pdp_excel_header_row(compact_cells):
-                        continue
-                    amount = _parse_excel_pdp_monto(compact_cells[-1])
-                    if amount is None:
-                        raise ValueError(
-                            f"Fila {excel_row_number}: no se encontró un monto válido en la última columna con datos."
-                        )
-                    number = ""
-                    if len(compact_cells) >= 3 and re.fullmatch(r"\d{1,4}", compact_cells[0] or ""):
-                        number = compact_cells[0]
-                        concepto_parts = compact_cells[1:-1]
-                    else:
-                        concepto_parts = compact_cells[:-1]
-                    concepto = " ".join(item for item in concepto_parts if item).strip()
-                    if not concepto:
-                        raise ValueError(f"Fila {excel_row_number}: falta el concepto de irregularidad.")
-                    line = f"{concepto} — ${amount:,.2f}"
-                    if number:
-                        line = f"{number} — {line}"
-                    parsed_lines.append(line)
-            finally:
-                workbook.close()
-            return parsed_lines, processed_rows
-
-        for csv_row_number, row in enumerate(rows, start=1):
-            if csv_row_number > 1200:
-                break
-            compact_cells = [_normalize_excel_cell(value) for value in row if _normalize_excel_cell(value)]
-            if not compact_cells:
-                continue
-            processed_rows += 1
-            if processed_rows == 1 and _is_pdp_excel_header_row(compact_cells):
-                continue
-            amount = _parse_excel_pdp_monto(compact_cells[-1])
-            if amount is None:
-                raise ValueError(
-                    f"Fila {csv_row_number}: no se encontró un monto válido en la última columna con datos."
-                )
-            number = ""
-            if len(compact_cells) >= 3 and re.fullmatch(r"\d{1,4}", compact_cells[0] or ""):
-                number = compact_cells[0]
-                concepto_parts = compact_cells[1:-1]
-            else:
-                concepto_parts = compact_cells[:-1]
-            concepto = " ".join(item for item in concepto_parts if item).strip()
-            if not concepto:
-                raise ValueError(f"Fila {csv_row_number}: falta el concepto de irregularidad.")
-            line = f"{concepto} — ${amount:,.2f}"
-            if number:
-                line = f"{number} — {line}"
-            parsed_lines.append(line)
-
-        return parsed_lines, processed_rows
 
     def _build_titular_form_data(source, *, default_ejercicio: str) -> dict[str, str]:
         ejercicio = " ".join(
@@ -1896,29 +1777,6 @@ def register_gabo_routes(app, deps):
         etiqueta = " ".join((payload.get("label") or "manual").split())
         backup_path = _create_db_snapshot(etiqueta or "manual")
         return jsonify({"ok": True, "backup_path": backup_path})
-
-    @app.post("/carga/pdp-masivo/importar-excel")
-    @gabo_required
-    def carga_pdp_masivo_importar_excel():
-        uploaded = request.files.get("archivo")
-        if uploaded is None or not (uploaded.filename or "").strip():
-            return jsonify({"ok": False, "error": "Selecciona un archivo Excel o CSV."}), 400
-        try:
-            parsed_lines, processed_rows = _parse_pdp_excel_rows(uploaded)
-        except ValueError as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 400
-        except Exception:
-            return jsonify({"ok": False, "error": "No se pudo leer el archivo Excel."}), 500
-        if not parsed_lines:
-            return jsonify({"ok": False, "error": "El archivo no contiene filas válidas para importar."}), 400
-        return jsonify(
-            {
-                "ok": True,
-                "rows": len(parsed_lines),
-                "processed_rows": processed_rows,
-                "text": "\n".join(parsed_lines),
-            }
-        )
 
     @app.get("/carga/pdp-catalogo")
     @gabo_required

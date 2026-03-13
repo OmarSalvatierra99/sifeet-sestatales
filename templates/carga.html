@@ -202,7 +202,7 @@
             <p id="manualStep2Help">Selecciona fuente y cantidades.</p>
           </div>
 
-          <div class="loader-capture-shell">
+          <div class="loader-capture-shell" id="manualCaptureShell">
             <div class="loader-capture-main">
               <div class="loader-manual-subsection loader-context-review-card loader-context-review-card-compact">
                 <div class="loader-source-editor-head loader-context-card-head loader-source-editor-head-compact">
@@ -329,112 +329,124 @@
                   </div>
                 </div>
 
-                <div
+                <details
                   id="manual-pdp-detalle"
-                  class="loader-pdp-inline-block"
+                  class="loader-pdp-inline-block loader-pdp-panel"
                   style="{% if form_data.manual_asunto != 'Notificación de Cédula de Resultados' or (form_data.manual_cantidad_pdp|int) <= 0 %}display:none;{% endif %}"
+                  open
                 >
-                  <h3>Detalle PDP</h3>
-                  <p class="helper">Captura concepto y monto; el selector indica la fuente correspondiente.</p>
-                  <div class="loader-pdp-bulk-card">
-                    <div class="loader-pdp-bulk-head">
-                      <div>
-                        <h4>Carga masiva</h4>
-                        <p class="helper">
-                          Pega una línea por observación. Ejemplos: <code>7. Volúmenes de obra pagados no ejecutados 7542.75</code>
-                          o <code>7 — Volúmenes de obra pagados no ejecutados — $7,542.75</code>. Si esta fuente está dentro de un acumulado, también puedes numerar desde <code>1</code>.
-                        </p>
+                  <summary class="loader-pdp-panel-summary">
+                    <div class="loader-pdp-panel-summary-main">
+                      <strong>Detalle PDP</strong>
+                      <span>Captura concepto y monto; el selector indica la fuente correspondiente.</span>
+                    </div>
+                  </summary>
+                  <div class="loader-pdp-panel-body">
+                    <div class="loader-pdp-bulk-card">
+                      <div class="loader-pdp-bulk-head">
+                        <div>
+                          <h4>Carga masiva</h4>
+                          <p class="helper">
+                            Pega una línea por observación. Ejemplos: <code>7. Volúmenes de obra pagados no ejecutados 7542.75</code>
+                            o <code>7 — Volúmenes de obra pagados no ejecutados — $7,542.75</code>. Si esta fuente está dentro de un acumulado, también puedes numerar desde <code>1</code>.
+                          </p>
+                        </div>
+                        <div class="loader-pdp-bulk-actions">
+                          <button type="button" class="btn-secondary btn-compact" id="manualPdpBulkApplyPendingBtn">Aplicar a pendientes</button>
+                          <button type="button" class="btn-secondary btn-compact" id="manualPdpBulkOverwriteBtn">Reemplazar todo</button>
+                        </div>
                       </div>
-                      <div class="loader-pdp-bulk-actions">
-                        <label class="btn-secondary btn-compact loader-pdp-bulk-file-btn" for="manual_pdp_bulk_file">Seleccionar Excel</label>
-                        <button type="button" class="btn-secondary btn-compact" id="manualPdpBulkImportBtn">Importar archivo</button>
-                        <button type="button" class="btn-secondary btn-compact" id="manualPdpBulkApplyPendingBtn">Aplicar a pendientes</button>
-                        <button type="button" class="btn-secondary btn-compact" id="manualPdpBulkOverwriteBtn">Reemplazar todo</button>
+                      <div class="field">
+                        <label for="manual_pdp_bulk_text">Texto masivo</label>
+                        <textarea
+                          id="manual_pdp_bulk_text"
+                          rows="6"
+                          placeholder="7. Volúmenes de obra pagados no ejecutados 7542.75&#10;8. Procesos constructivos deficientes que causan afectaciones físicas en las obras públicas 99,379.22"
+                        ></textarea>
                       </div>
+                      <p class="helper loader-pdp-bulk-feedback" id="manual_pdp_bulk_feedback">
+                        Puedes usar número con <code>—</code>, tabulador, <code>|</code> o solo dejar el monto al final de cada línea. La numeración puede ser local de la fuente activa.
+                      </p>
                     </div>
-                    <div class="field loader-pdp-bulk-import-row">
-                      <label for="manual_pdp_bulk_file">Archivo Excel o CSV</label>
-                      <input id="manual_pdp_bulk_file" type="file" accept=".xlsx,.xlsm,.csv">
-                    </div>
-                    <div class="field">
-                      <label for="manual_pdp_bulk_text">Texto masivo</label>
-                      <textarea
-                        id="manual_pdp_bulk_text"
-                        rows="6"
-                        placeholder="7. Volúmenes de obra pagados no ejecutados 7542.75&#10;8. Procesos constructivos deficientes que causan afectaciones físicas en las obras públicas 99,379.22"
-                      ></textarea>
-                    </div>
-                    <p class="helper loader-pdp-bulk-feedback" id="manual_pdp_bulk_feedback">
-                      Puedes usar número con <code>—</code>, tabulador, <code>|</code> o solo dejar el monto al final de cada línea. La numeración puede ser local de la fuente activa.
-                    </p>
+                    <div id="manual_pdp_breakdown" class="loader-fuentes-list"></div>
                   </div>
-                  <div id="manual_pdp_breakdown" class="loader-fuentes-list"></div>
-                </div>
+                </details>
               </div>
             </div>
 
-            <aside class="loader-capture-aside">
-              <div class="loader-manual-subsection loader-capture-summary-card">
-                <div class="loader-capture-summary-head">
-                  <div>
-                    <h3>Resumen de captura</h3>
-                    <p class="helper loader-fuentes-progress-inline" id="manual_fuentes_progress"></p>
+            <aside class="loader-capture-aside" id="manualCaptureAside">
+              <button
+                type="button"
+                class="loader-capture-aside-toggle"
+                id="manualToggleAsideBtn"
+                aria-expanded="false"
+                aria-controls="manualCaptureAsideDetails"
+                aria-label="Mostrar u ocultar resumen de captura"
+              >
+                <span class="loader-capture-aside-toggle-title">Resumen de captura</span>
+              </button>
+              <section id="manualCaptureAsideDetails" class="loader-capture-details-panel" hidden>
+                <div class="loader-manual-subsection loader-capture-summary-card">
+                  <div class="loader-capture-summary-head">
+                    <div>
+                      <h3>Resumen de captura</h3>
+                      <p class="helper loader-fuentes-progress-inline" id="manual_fuentes_progress"></p>
+                    </div>
                   </div>
-                  <button
-                    type="button"
-                    class="btn-secondary btn-compact"
-                    id="manualToggleAsideBtn"
-                    aria-expanded="false"
-                    aria-controls="manualCaptureAsideDetails"
-                  >
-                    Mostrar desglose
-                  </button>
+                  <div class="loader-capture-summary-menu">
+                    <article class="loader-capture-summary-row">
+                      <span>Estado</span>
+                      <strong id="manualAsideEstadoSummary">Emitido</strong>
+                    </article>
+                    <article class="loader-capture-summary-row">
+                      <span>Alcance</span>
+                      <strong id="manualAsideAlcanceSummary">Pendiente</strong>
+                    </article>
+                    <article class="loader-capture-summary-row">
+                      <span>Oficio</span>
+                      <strong id="manualAsideOficioSummary">Faltan datos</strong>
+                    </article>
+                    <article class="loader-capture-summary-row">
+                      <span>Fuentes</span>
+                      <strong id="manualAsideFuentesSummary">0 / 1</strong>
+                    </article>
+                    <article class="loader-capture-summary-row">
+                      <span>Obs.</span>
+                      <strong id="manualAsideObsSummary">0</strong>
+                    </article>
+                    <article class="loader-capture-summary-row">
+                      <span>PDP</span>
+                      <strong id="manualAsidePdpSummary">Sin PDP</strong>
+                    </article>
+                    <article class="loader-capture-summary-row">
+                      <span>Activa</span>
+                      <strong id="manualAsideActivaSummary">Sin fuente</strong>
+                    </article>
+                  </div>
+                  <p class="helper" id="manual_fuentes_detalle_feedback"></p>
                 </div>
-                <div class="loader-capture-summary-pills">
-                  <article class="loader-capture-summary-pill">
-                    <span>Fuentes</span>
-                    <strong id="manualAsideFuentesSummary">0 / 1</strong>
-                  </article>
-                  <article class="loader-capture-summary-pill">
-                    <span>Obs.</span>
-                    <strong id="manualAsideObsSummary">0</strong>
-                  </article>
-                  <article class="loader-capture-summary-pill">
-                    <span>PDP</span>
-                    <strong id="manualAsidePdpSummary">Sin PDP</strong>
-                  </article>
-                  <article class="loader-capture-summary-pill loader-capture-summary-pill-wide">
-                    <span>Activa</span>
-                    <strong id="manualAsideActivaSummary">Sin fuente</strong>
-                  </article>
+
+                <div class="loader-manual-subsection loader-fuentes-summary-card">
+                  <h3>Fuentes capturadas</h3>
+                  <div id="manualFuentesDetalleList" class="loader-fuentes-board"></div>
                 </div>
-                <p class="helper" id="manual_fuentes_detalle_feedback"></p>
-              </div>
+                <div class="loader-manual-subsection loader-review-card loader-review-card-compact">
+                  <h3>Checklist</h3>
+                  <div id="manualReviewChecklist" class="loader-review-list">
+                    <p class="muted">Sin captura activa.</p>
+                  </div>
+                </div>
+              </section>
             </aside>
           </div>
-
-          <section id="manualCaptureAsideDetails" class="loader-capture-details-panel" hidden>
-            <div class="loader-manual-subsection loader-fuentes-summary-card">
-              <h3>Fuentes capturadas</h3>
-              <div id="manualFuentesDetalleList" class="loader-fuentes-board"></div>
-            </div>
-            <div class="loader-manual-subsection loader-review-card loader-review-card-compact">
-              <h3>Estado</h3>
-              <div id="manualReviewChecklist" class="loader-review-list">
-                <p class="muted">Sin captura activa.</p>
-              </div>
-            </div>
-          </section>
 
           <div class="loader-step-nav loader-step-nav-submit">
             <button class="btn-primary" type="submit" name="action" value="manual_save" id="manualSaveBtn">Guardar oficio</button>
           </div>
           <div class="loader-draft-bar">
-            <p class="helper loader-draft-status" id="manualDraftStatus">Guardado temporal local listo.</p>
+            <p class="helper loader-draft-status" id="manualDraftStatus">Guardado temporal local disponible en este navegador.</p>
             <div class="loader-draft-actions">
               <button class="btn-secondary btn-compact" type="button" id="wizardSaveDraftBtnManual">Guardar temporal</button>
-              <button class="btn-secondary btn-compact" type="button" id="wizardRestoreDraftBtn">Recuperar borrador</button>
-              <button class="btn-secondary btn-compact" type="button" id="wizardClearDraftBtn">Limpiar borrador</button>
             </div>
           </div>
         </section>
@@ -577,8 +589,6 @@
     const loaderModePanels = Array.from(document.querySelectorAll("[data-loader-mode-panel]"));
     const validLoaderModes = new Set(["manual", "titulares"]);
     const wizardToast = document.getElementById("wizardToast");
-    const wizardRestoreDraftBtn = document.getElementById("wizardRestoreDraftBtn");
-    const wizardClearDraftBtn = document.getElementById("wizardClearDraftBtn");
     const gaboWizardDraftKey = "sifeet_gabo_wizard_draft_v1";
     let wizardToastTimer = null;
 
@@ -689,6 +699,8 @@
     const manualAddNewFuenteBtnInline = document.getElementById("manualAddNewFuenteBtnInline");
     const manualCancelFuenteEditBtn = document.getElementById("manualCancelFuenteEditBtn");
     const manualFinishFuentesBtn = document.getElementById("manualFinishFuentesBtn");
+    const manualCaptureShell = document.getElementById("manualCaptureShell");
+    const manualCaptureAside = document.getElementById("manualCaptureAside");
     const manualToggleAsideBtn = document.getElementById("manualToggleAsideBtn");
     const manualFuenteEditorMode = document.getElementById("manualFuenteEditorMode");
     const manualFuenteTipoHint = document.getElementById("manual_fuente_tipo_hint");
@@ -697,6 +709,9 @@
     const manualFuentesDetalleList = document.getElementById("manualFuentesDetalleList");
     const manualCaptureAsideDetails = document.getElementById("manualCaptureAsideDetails");
     const manualFuentesProgress = document.getElementById("manual_fuentes_progress");
+    const manualAsideEstadoSummary = document.getElementById("manualAsideEstadoSummary");
+    const manualAsideAlcanceSummary = document.getElementById("manualAsideAlcanceSummary");
+    const manualAsideOficioSummary = document.getElementById("manualAsideOficioSummary");
     const manualAsideFuentesSummary = document.getElementById("manualAsideFuentesSummary");
     const manualAsideObsSummary = document.getElementById("manualAsideObsSummary");
     const manualAsidePdpSummary = document.getElementById("manualAsidePdpSummary");
@@ -724,9 +739,7 @@
     const manualPdpConcepto = document.getElementById("manual_pdp_concepto");
     const manualPdpMonto = document.getElementById("manual_pdp_monto");
     const manualPdpBulkText = document.getElementById("manual_pdp_bulk_text");
-    const manualPdpBulkFile = document.getElementById("manual_pdp_bulk_file");
     const manualPdpBulkFeedback = document.getElementById("manual_pdp_bulk_feedback");
-    const manualPdpBulkImportBtn = document.getElementById("manualPdpBulkImportBtn");
     const manualPdpBulkApplyPendingBtn = document.getElementById("manualPdpBulkApplyPendingBtn");
     const manualPdpBulkOverwriteBtn = document.getElementById("manualPdpBulkOverwriteBtn");
     const manualPdpBreakdown = document.getElementById("manual_pdp_breakdown");
@@ -782,7 +795,6 @@
     const solventacionTipos = ["PDP", "PEFCF", "PRAS", "R", "SA"];
     const contextDraftKey = "sifeet_manual_context_draft";
     let wizardStageProgress = { manual: false, titulares: false };
-    let isRestoringDraft = false;
     const titularCaptureForm = document.getElementById("titularCaptureForm");
     const titularTipoAuditoria = document.getElementById("titular_tipo_auditoria");
     const titularPeriodoInforme = document.getElementById("titular_periodo_informe");
@@ -1581,7 +1593,7 @@
       const draftPayload = payload && typeof payload === "object" ? payload : readWizardDraftPayload();
       if (!draftPayload) {
         updateManualDraftStatus(
-          "Guardado temporal local activo. Si falla el oficio, puedes recuperar el borrador.",
+          "Guardado temporal local disponible en este navegador.",
           "info",
         );
         return false;
@@ -1626,150 +1638,10 @@
       } catch (_error) {
         updateManualDraftStatus("No se pudo guardar temporalmente en este navegador.", "error");
         if (announce) {
-          showWizardToast("No se pudo guardar el borrador en este navegador.", "error");
+          showWizardToast("No se pudo guardar temporalmente en este navegador.", "error");
         }
         return false;
       }
-    };
-
-    const restoreWizardDraft = ({ announce = true } = {}) => {
-      const payload = readWizardDraftPayload();
-      if (!payload) {
-        updateManualDraftStatus("No hay borrador temporal local disponible.", "info");
-        if (announce) {
-          showWizardToast("No hay borrador guardado para restaurar.", "info");
-        }
-        return false;
-      }
-      const manualFormValues = payload && typeof payload.manual_form === "object" ? payload.manual_form : {};
-      const titularFormValues = payload && typeof payload.titular_form === "object" ? payload.titular_form : {};
-      isRestoringDraft = true;
-      applyNamedFields(manualFormValues);
-      applyNamedFields(titularFormValues);
-      if (Array.isArray(payload.fuentes_detalle)) {
-        fuentesDetalleState = payload.fuentes_detalle.map((row) => ({
-          tipo_auditoria: String(row.tipo_auditoria || "").trim(),
-          fuente_nombre: String(row.fuente_nombre || "").trim(),
-          cantidad_sa: Math.max(0, Number.parseInt(String(row.cantidad_sa || "0"), 10) || 0),
-          cantidad_pdp: Math.max(0, Number.parseInt(String(row.cantidad_pdp || "0"), 10) || 0),
-          cantidad_pras: Math.max(0, Number.parseInt(String(row.cantidad_pras || "0"), 10) || 0),
-          cantidad_pefcf: Math.max(0, Number.parseInt(String(row.cantidad_pefcf || "0"), 10) || 0),
-          cantidad_r: Math.max(0, Number.parseInt(String(row.cantidad_r || "0"), 10) || 0),
-        }));
-      }
-      if (Array.isArray(payload.pdp_detalle)) {
-        pdpDetalleState = payload.pdp_detalle.map((row) => ({
-          concepto: String(row.concepto || "").trim(),
-          subconcepto: String(row.subconcepto || "").trim(),
-          monto: String(row.monto ?? "").trim(),
-        }));
-      }
-      if (manualSolventacionDetalleJson && typeof payload.solventacion_detalle_json === "string") {
-        manualSolventacionDetalleJson.value = payload.solventacion_detalle_json;
-      }
-      if (payload && payload.stage_progress && typeof payload.stage_progress === "object") {
-        wizardStageProgress = {
-          manual: !!payload.stage_progress.manual,
-          solventacion: !!payload.stage_progress.solventacion,
-          titulares: !!payload.stage_progress.titulares,
-        };
-      }
-      if (principalEjercicio && manualFormValues.manual_ejercicio) {
-        principalEjercicio.value = String(manualFormValues.manual_ejercicio || "").trim();
-      }
-      if (principalEnte) {
-        principalEnte.dataset.selected = String(manualFormValues.manual_ente_id || "").trim();
-      }
-      if (principalTipoAuditoria) {
-        const tiposFuentes = Array.isArray(payload.fuentes_detalle)
-          ? Array.from(new Set(
-              payload.fuentes_detalle
-                .map((row) => String(row && row.tipo_auditoria ? row.tipo_auditoria : "").trim())
-                .filter(Boolean)
-            ))
-          : [];
-        const restoredScopeTipo = tiposFuentes.length > 1
-          ? MIXED_TIPO_AUDITORIA
-          : (
-              tiposFuentes[0]
-              || manualFormValues.manual_tipo_auditoria
-              || titularFormValues.titular_tipo_auditoria
-              || ""
-            );
-        principalTipoAuditoria.value = String(restoredScopeTipo || "").trim();
-      }
-      if (principalFuente) {
-        principalFuente.dataset.selected = String(manualFormValues.manual_fuente_id || "").trim();
-      }
-      if (principalFuenteNuevaInput) {
-        principalFuenteNuevaInput.value = String(manualFormValues.manual_fuente_nueva || "").trim();
-      }
-      if (principalNumeroOficio) {
-        principalNumeroOficio.value = String(manualFormValues.manual_numero_oficio || "").trim();
-      }
-      if (principalPeriodo) {
-        principalPeriodo.value = String(manualFormValues.manual_periodo || "").trim();
-      }
-      if (principalFechaNotificacion) {
-        principalFechaNotificacion.value = normalizeFechaIso(manualFormValues.manual_fecha_notificacion || "");
-      }
-      if (principalFuentesObjetivo) {
-        principalFuentesObjetivo.value = String(manualFormValues.manual_fuentes_objetivo || "1").trim() || "1";
-      }
-      togglePrincipalNuevaFuente();
-      updateContextSummary();
-      if (principalEjercicio && principalEnte) {
-        loadPrincipalEntes(principalEnte.dataset.selected || "");
-      } else if (manualEjercicio) {
-        manualEjercicio.dispatchEvent(new Event("change", { bubbles: true }));
-      }
-      if (manualAsunto) {
-        manualAsunto.dispatchEvent(new Event("change", { bubbles: true }));
-      }
-      updateSourceTypeOptions({ preserveSelection: true });
-      if (manualTipoAuditoria) {
-        manualTipoAuditoria.dispatchEvent(new Event("change", { bubbles: true }));
-      }
-      if (manualFuente) {
-        manualFuente.dispatchEvent(new Event("change", { bubbles: true }));
-      }
-      editingFuenteIndex = null;
-      renderFuentesDetalleRows();
-      renderPdpDetalleMenu();
-      renderPreviewTable();
-      updateSolventacionDetalleState();
-      const draftMode = validLoaderModes.has(payload.loader_mode) ? payload.loader_mode : "manual";
-      setLoaderMode(draftMode);
-      setManualStep(payload.manual_step || 1);
-      setSelectValueWhenReady(manualFuente, manualFormValues.manual_fuente_id || "", 10);
-      setSelectValueWhenReady(principalFuente, manualFormValues.manual_fuente_id || "", 10);
-      window.setTimeout(() => {
-        isRestoringDraft = false;
-        updateContextSummary();
-        updateWizardModeAvailability();
-      }, 900);
-      syncManualDraftStatus(payload);
-      if (announce) {
-        showWizardToast("Borrador restaurado correctamente.", "success");
-      }
-      return true;
-    };
-
-    const clearWizardDraft = ({ announce = true } = {}) => {
-      try {
-        localStorage.removeItem(gaboWizardDraftKey);
-      } catch (_error) {
-        updateManualDraftStatus("No se pudo limpiar el borrador temporal.", "error");
-        if (announce) {
-          showWizardToast("No se pudo limpiar el borrador.", "error");
-        }
-        return false;
-      }
-      updateManualDraftStatus("Borrador temporal local eliminado.", "info");
-      if (announce) {
-        showWizardToast("Borrador eliminado.", "info");
-      }
-      return true;
     };
 
     const parseFuentesDetalleState = () => {
@@ -1854,13 +1726,16 @@
 
     const setManualCaptureAsideExpanded = (expanded) => {
       manualCaptureAsideExpanded = !!expanded;
+      if (manualCaptureShell) {
+        manualCaptureShell.classList.toggle("is-aside-expanded", manualCaptureAsideExpanded);
+      }
+      if (manualCaptureAside) {
+        manualCaptureAside.classList.toggle("is-expanded", manualCaptureAsideExpanded);
+      }
       if (manualCaptureAsideDetails) {
         manualCaptureAsideDetails.hidden = !manualCaptureAsideExpanded;
       }
       if (manualToggleAsideBtn) {
-        manualToggleAsideBtn.textContent = manualCaptureAsideExpanded
-          ? "Ocultar desglose"
-          : "Mostrar desglose";
         manualToggleAsideBtn.setAttribute("aria-expanded", manualCaptureAsideExpanded ? "true" : "false");
       }
       if (manualCaptureAsideExpanded && manualCaptureAsideDetails && typeof manualCaptureAsideDetails.scrollIntoView === "function") {
@@ -1929,6 +1804,7 @@
       if (!manualReviewChecklist) {
         return;
       }
+      const statusLabel = getManualMode() === "solventacion" ? "Solventación" : "Emitido";
       const objetivo = readFuentesObjetivo({ fallback: 1 });
       const capturadas = Array.isArray(fuentesDetalleState) ? fuentesDetalleState.length : 0;
       const totalObs = (Array.isArray(fuentesDetalleState) ? fuentesDetalleState : []).reduce(
@@ -1962,7 +1838,21 @@
         && editingFuenteIndex < fuentesDetalleState.length
         ? (fuentesDetalleState[editingFuenteIndex] || null)
         : null;
+      const oficioDetail = oficio && periodo && fecha
+        ? `${oficio} · ${periodo} · ${formatFechaForSummary(fecha)}`
+        : "Faltan datos";
+      const activaDetail = editingItem
+        ? `Editando #${editingFuenteIndex + 1} · ${editingItem.fuente_nombre}`
+        : (fuenteActiva || "Sin fuente");
+      const pdpDetail = totalPdp > 0
+        ? `${pdpCompletas} / ${totalPdp} completas · ${formatMoney(totalPdpMonto)}`
+        : "Sin PDP";
       const rows = [
+        {
+          ok: true,
+          label: "Estado",
+          detail: statusLabel,
+        },
         {
           ok: !!scopeTipo,
           label: "Alcance",
@@ -1971,9 +1861,7 @@
         {
           ok: !!oficio && !!periodo && !!fecha,
           label: "Oficio",
-          detail: oficio && periodo && fecha
-            ? `${oficio} · ${periodo} · ${formatFechaForSummary(fecha)}`
-            : "Faltan datos",
+          detail: oficioDetail,
         },
         {
           ok: capturadas > 0,
@@ -1988,18 +1876,23 @@
         {
           ok: totalPdp === 0 || pdpCompletas === totalPdp,
           label: "PDP",
-          detail: totalPdp > 0
-            ? `${pdpCompletas} / ${totalPdp} completas · ${formatMoney(totalPdpMonto)}`
-            : "Sin PDP",
+          detail: pdpDetail,
         },
         {
           ok: !!fuenteActiva || !!editingItem || capturadas > 0,
           label: "Activa",
-          detail: editingItem
-            ? `Editando #${editingFuenteIndex + 1} · ${editingItem.fuente_nombre}`
-            : (fuenteActiva || "Sin fuente"),
+          detail: activaDetail,
         },
       ];
+      if (manualAsideEstadoSummary) {
+        manualAsideEstadoSummary.textContent = statusLabel;
+      }
+      if (manualAsideAlcanceSummary) {
+        manualAsideAlcanceSummary.textContent = scopeTipo || "Pendiente";
+      }
+      if (manualAsideOficioSummary) {
+        manualAsideOficioSummary.textContent = oficioDetail;
+      }
       if (manualAsideFuentesSummary) {
         manualAsideFuentesSummary.textContent = `${capturadas} / ${objetivo}`;
       }
@@ -2007,14 +1900,10 @@
         manualAsideObsSummary.textContent = String(totalObs);
       }
       if (manualAsidePdpSummary) {
-        manualAsidePdpSummary.textContent = totalPdp > 0
-          ? `${pdpCompletas} / ${totalPdp} · ${formatMoney(totalPdpMonto)}`
-          : "Sin PDP";
+        manualAsidePdpSummary.textContent = pdpDetail;
       }
       if (manualAsideActivaSummary) {
-        manualAsideActivaSummary.textContent = editingItem
-          ? `Editando #${editingFuenteIndex + 1} · ${editingItem.fuente_nombre}`
-          : (fuenteActiva || "Sin fuente");
+        manualAsideActivaSummary.textContent = activaDetail;
       }
       manualReviewChecklist.innerHTML = rows.map((row) => (
         `<article class="loader-review-item ${row.ok ? "is-ok" : "is-warn"}">`
@@ -2682,51 +2571,18 @@
       showWizardToast(message, "success");
     };
 
-    const importPdpBulkFile = async () => {
-      const file = manualPdpBulkFile && manualPdpBulkFile.files ? manualPdpBulkFile.files[0] : null;
-      if (!file) {
-        const message = "Selecciona primero un archivo Excel o CSV.";
-        setPdpBulkFeedback(message, "error");
-        showWizardToast(message, "error");
-        return;
-      }
-      const formData = new FormData();
-      formData.append("archivo", file);
-      if (manualPdpBulkImportBtn) {
-        manualPdpBulkImportBtn.disabled = true;
-      }
-      try {
-        const response = await fetch("/carga/pdp-masivo/importar-excel", {
-          method: "POST",
-          body: formData,
-        });
-        const data = await response.json();
-        if (!response.ok || !data.ok) {
-          throw new Error(data.error || "No se pudo interpretar el archivo.");
-        }
-        if (manualPdpBulkText) {
-          manualPdpBulkText.value = String(data.text || "").trim();
-        }
-        const message = `Archivo procesado: ${data.rows || 0} fila(s) listas para revisar y aplicar.`;
-        setPdpBulkFeedback(message, "success");
-        showWizardToast(message, "success");
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "No se pudo importar el archivo.";
-        setPdpBulkFeedback(message, "error");
-        showWizardToast(message, "error");
-      } finally {
-        if (manualPdpBulkImportBtn) {
-          manualPdpBulkImportBtn.disabled = false;
-        }
-      }
-    };
-
     const syncPdpDetalleJson = () => {
       if (!manualPdpDetalleJson) {
         return;
       }
       manualPdpDetalleJson.value = JSON.stringify(pdpDetalleState);
       scheduleDraftAutosave();
+    };
+
+    const expandPdpDetallePanel = () => {
+      if (manualPdpDetalleBlock && "open" in manualPdpDetalleBlock) {
+        manualPdpDetalleBlock.open = true;
+      }
     };
 
     const renderPdpBreakdown = () => {
@@ -2760,6 +2616,8 @@
         const complete = !!concepto && monto !== null;
         const montoValue = monto === null ? "" : monto.toFixed(2);
         const montoDisplay = monto === null ? "" : formatMoneyInput(montoValue);
+        const conceptoDisplay = concepto || "Sin concepto capturado";
+        const montoSummary = monto === null ? "Sin monto" : formatMoney(monto);
         const conceptOptions = ['<option value="">Selecciona un concepto</option>']
           .concat(
             (Array.isArray(pdpConceptCatalog) ? pdpConceptCatalog : []).map((conceptoItem) => (
@@ -2777,10 +2635,21 @@
           );
         }
         return (
-          `<article class="loader-fuente-item loader-pdp-item">` +
+          `<details class="loader-fuente-item loader-pdp-item ${complete ? "is-complete" : "is-pending"}"${complete ? "" : " open"}>` +
+          `<summary class="loader-pdp-summary">` +
+          `<div class="loader-pdp-summary-main">` +
+          `<strong>${escapeHtml(pdpSelectorLabels[idx] || `Observación PDP ${idx + 1}`)}</strong>` +
+          `<span>${escapeHtml(conceptoDisplay)}</span>` +
+          `</div>` +
+          `<div class="loader-pdp-summary-meta">` +
+          `<span class="loader-source-stat">${escapeHtml(montoSummary)}</span>` +
+          `<span class="obs-status-pill ${complete ? "is-solventado" : "is-pendiente"}">${complete ? "Registrado" : "Pendiente"}</span>` +
+          `</div>` +
+          `</summary>` +
           `<div class="loader-pdp-grid">` +
           `<div class="loader-pdp-cell loader-pdp-label">` +
           `<strong>${escapeHtml(pdpSelectorLabels[idx] || `Observación PDP ${idx + 1}`)}</strong>` +
+          `<span class="loader-pdp-label-helper">${escapeHtml(conceptoDisplay)}</span>` +
           `</div>` +
           `<div class="loader-pdp-cell">` +
           `<select class="pdp-breakdown-concepto-input" data-pdp-index="${idx}" aria-label="Concepto de la observación PDP ${idx + 1}">${conceptOptions.join("")}</select>` +
@@ -2792,7 +2661,7 @@
           `<span class="obs-status-pill ${complete ? "is-solventado" : "is-pendiente"}">${complete ? "Registrado" : "Pendiente"}</span>` +
           `</div>` +
           `</div>` +
-          `</article>`
+          `</details>`
         );
       }).join("");
 
@@ -2802,13 +2671,7 @@
         `<span class="loader-obs-chip">Registradas: <strong>${resumen.registradas}</strong></span>` +
         `<span class="loader-obs-chip">Monto total PDP: <strong>${escapeHtml(formatMoney(resumen.totalMonto))}</strong></span>` +
         `</div>` +
-        `<div class="loader-pdp-header" aria-hidden="true">` +
-        `<span>Observación</span>` +
-        `<span>Concepto</span>` +
-        `<span>Monto PDP</span>` +
-        `<span>Estado</span>` +
-        `</div>` +
-        cards;
+        `<div class="loader-pdp-accordion-list">${cards}</div>`;
       if (manualTotalPdpMonto) {
         manualTotalPdpMonto.textContent = formatMoney(resumen.totalMonto);
       }
@@ -3202,6 +3065,7 @@
       if (!manualAsunto || !manualPdpDetalleBlock || !manualCantidadPdp || !manualPdpSelector) {
         return;
       }
+      const wasHidden = manualPdpDetalleBlock.style.display === "none";
       const isCedula = (manualAsunto.value || "").trim() === asuntoCedula;
       const totalPdpFuentes = getTotalPdpFromFuentes();
       const cantidadManual = Math.max(0, Number.parseInt((manualCantidadPdp.value || "0").trim(), 10) || 0);
@@ -3219,6 +3083,9 @@
       }
 
       manualPdpDetalleBlock.style.display = "";
+      if (wasHidden && "open" in manualPdpDetalleBlock) {
+        manualPdpDetalleBlock.open = true;
+      }
       setPdpFieldsDisabled(false);
       let runningOffset = 0;
       const selectorLabels = [];
@@ -4172,6 +4039,7 @@
           if (showFeedback) {
             pdpDetalleState = normalizedPdp;
             syncPdpDetalleJson();
+            expandPdpDetallePanel();
             renderPdpDetalleMenu();
             if (manualPdpSelector) {
               manualPdpSelector.value = String(missingIndex);
@@ -4769,18 +4637,6 @@
         saveWizardDraft({ announce: true });
       });
     }
-    if (wizardRestoreDraftBtn) {
-      wizardRestoreDraftBtn.addEventListener("click", () => {
-        restoreWizardDraft();
-        updateManualStageActions();
-        updateWizardModeAvailability();
-      });
-    }
-    if (wizardClearDraftBtn) {
-      wizardClearDraftBtn.addEventListener("click", () => {
-        clearWizardDraft();
-      });
-    }
 
     if (titularCaptureForm) {
       titularCaptureForm.addEventListener("submit", (event) => {
@@ -4803,22 +4659,10 @@
 
     try {
       const draftPayload = readWizardDraftPayload();
-      const hasDraft = !!draftPayload;
-      const hasCurrentValues = !!(
-        (manualNumeroOficio && String(manualNumeroOficio.value || "").trim())
-        || (titularNombre && String(titularNombre.value || "").trim())
-      );
-      const hasStructuredManualState = !!(
-        (Array.isArray(fuentesDetalleState) && fuentesDetalleState.length)
-        || (Array.isArray(pdpDetalleState) && pdpDetalleState.length)
-      );
-      if (hasDraft) {
+      if (draftPayload) {
         syncManualDraftStatus(draftPayload);
       } else {
         syncManualDraftStatus(null);
-      }
-      if (hasDraft && !hasCurrentValues && !hasStructuredManualState) {
-        restoreWizardDraft({ announce: false });
       }
     } catch (_error) {
       updateManualDraftStatus("No se pudo acceder al guardado temporal local.", "error");
@@ -4993,11 +4837,6 @@
           "Puedes usar número con —, tabulador, | o solo dejar el monto al final de cada línea. La numeración puede ser local de la fuente activa.",
           "info",
         );
-      });
-    }
-    if (manualPdpBulkImportBtn) {
-      manualPdpBulkImportBtn.addEventListener("click", async () => {
-        await importPdpBulkFile();
       });
     }
     if (manualPdpBulkApplyPendingBtn) {
