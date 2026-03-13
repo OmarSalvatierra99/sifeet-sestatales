@@ -30,6 +30,11 @@
   </header>
 
   <main class="page-content">
+    <nav class="mode-switch" aria-label="Modos de consulta">
+      <a class="mode-switch-link is-active" href="{{ url_for('index') }}">Consulta operativa</a>
+      <a class="mode-switch-link" href="{{ url_for('comparativo_anual') }}">Comparativo anual</a>
+    </nav>
+
     <section class="panel filter-panel">
       <div class="panel-header">
         <h2>Filtros</h2>
@@ -197,11 +202,6 @@
           <h2>Pendientes por periodo</h2>
           <p>Detalle de pendientes y numerales no solventadas por cédula para el ente seleccionado.</p>
         </div>
-        <div class="obs-export-card">
-          <h3>Exportar pendientes por periodo</h3>
-          <p>Descarga en Excel la misma tabla de pendientes con los filtros activos.</p>
-          <button class="btn-secondary" type="button" id="pendientes_periodo_export">Exportar a Excel</button>
-        </div>
         <div class="table-wrap" id="pendientesPeriodoWrap">
           <table class="table-compact pendientes-periodo-table">
             <thead>
@@ -236,17 +236,24 @@
             </tbody>
           </table>
         </div>
+        <div class="panel-inline-actions">
+          <button class="panel-action-btn" type="button" id="pendientes_periodo_export">
+            <span class="floating-clear-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M12 4v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                <path d="M8 10l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M5 18h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <span>Exportar a Excel</span>
+          </button>
+        </div>
       </section>
 
       <section class="panel observaciones-panel">
         <div class="panel-header">
           <h2>Observaciones por ejercicio</h2>
           <p>Detalle de observaciones con responsables y exportación según los filtros activos.</p>
-        </div>
-        <div class="obs-export-card">
-          <h3>Exportar observaciones</h3>
-          <p>Descarga en Excel las observaciones usando los filtros activos.</p>
-          <button class="btn-secondary" type="button" id="obs_export">Exportar a Excel</button>
         </div>
         <div class="obs-responsables" id="obsResponsables">
           <h3>Titulares y administrativos del periodo</h3>
@@ -301,6 +308,18 @@
           <button class="btn-secondary" type="button" id="obsPrev">Anterior</button>
           <span id="obsPageInfo">Página 1 de 1</span>
           <button class="btn-secondary" type="button" id="obsNext">Siguiente</button>
+        </div>
+        <div class="panel-inline-actions">
+          <button class="panel-action-btn" type="button" id="obs_export">
+            <span class="floating-clear-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M12 4v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                <path d="M8 10l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M5 18h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <span>Exportar a Excel</span>
+          </button>
         </div>
       </section>
     </section>
@@ -367,7 +386,7 @@
     <span>Limpiar filtros</span>
   </button>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
   <script>
     const mainEjercicio = document.getElementById("main_ejercicio");
     const obsEnteInput = document.getElementById("obs_ente_id");

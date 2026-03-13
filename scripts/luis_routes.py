@@ -12,6 +12,8 @@ def register_luis_routes(app, deps):
     globals().update(deps)
     dashboard_cache: dict[str, tuple[float, dict]] = {}
     dashboard_cache_ttl_seconds = 45
+    comparison_cache: dict[str, tuple[float, dict]] = {}
+    comparison_cache_ttl_seconds = 45
     filter_order = (
         "ente_id",
         "tipo_auditoria",
@@ -31,6 +33,22 @@ def register_luis_routes(app, deps):
         "ramo_33": "Ramo 33",
         "concepto_irregularidad": "Concepto de irregularidad",
         "periodo_cedula": "Cedula de resultados",
+    }
+    comparison_filter_order = (
+        "ente_uid",
+        "tipo_auditoria",
+        "tipo_anexo",
+        "estado",
+        "fuente_financiamiento",
+        "ramo_33",
+    )
+    comparison_filter_labels = {
+        "ente_uid": "Ente",
+        "tipo_auditoria": "Tipo de auditoria",
+        "tipo_anexo": "Tipo de anexo",
+        "estado": "Estado",
+        "fuente_financiamiento": "Fuente de financiamiento",
+        "ramo_33": "Ramo 33",
     }
 
     def parse_multi_values(param_name: str, normalizer=None):
@@ -121,6 +139,641 @@ def register_luis_routes(app, deps):
 
     def selected_values_for_key(selected_filters: dict[str, list[str]], key: str):
         return selected_filters.get(key, []) or []
+
+    def get_available_comparison_years(db) -> list[str]:
+        rows = db.execute(
+            """
+            SELECT DISTINCT TRIM(COALESCE(ejercicio, '')) AS ejercicio
+            FROM observaciones
+            WHERE TRIM(COALESCE(ejercicio, '')) != ''
+            ORDER BY ejercicio
+            """
+        ).fetchall()
+        return [row["ejercicio"] for row in rows if (row["ejercicio"] or "").strip()]
+
+    def parse_comparison_years(available_years: list[str]) -> list[str]:
+        requested = []
+        seen = set()
+        for param_name in ("anios", "ejercicio"):
+            for raw in request.args.getlist(param_name):
+                clean = (raw or "").strip()
+                if not clean or clean in seen:
+                    continue
+                seen.add(clean)
+                requested.append(clean)
+        valid_years = [year for year in requested if year in available_years]
+        if valid_years:
+            valid_set = set(valid_years)
+            return [year for year in available_years if year in valid_set]
+        if not available_years:
+            return []
+        default_size = 2 if len(available_years) >= 2 else 1
+        return available_years[:default_size]
+
+    def parse_comparison_filters():
+        return {
+            "ente_uid": parse_multi_values("ente_uid"),
+            "tipo_auditoria": parse_multi_values("tipo_auditoria", normalize_tipo_auditoria),
+            "tipo_anexo": parse_multi_values("tipo_anexo"),
+            "estado": parse_multi_values("estado"),
+            "fuente_financiamiento": parse_multi_values("fuente_financiamiento"),
+            "ramo_33": parse_multi_values("ramo_33"),
+            "universo": (
+                "complete"
+                if (request.args.get("universo", "").strip().lower() in {"common", "complete", "presentes"})
+                else "all"
+            ),
+        }
+
+    def build_comparison_base_sql(selected_years: list[str]):
+        if not selected_years:
+            return (
+                """
+                SELECT
+                    '' AS ejercicio,
+                    '' AS ente_uid,
+                    '' AS ente_numero,
+                    '' AS ente_nombre,
+                    '' AS tipo_auditoria,
+                    '' AS tipo_anexo,
+                    '' AS estado,
+                    '' AS fuente_financiamiento,
+                    '' AS ramo_33,
+                    0 AS monto_pdp_emitido,
+                    0 AS monto_pdp_solventado,
+                    0 AS monto_pdp_pendiente
+                WHERE 1 = 0
+                """,
+                [],
+            )
+
+        placeholders = ", ".join(["?"] * len(selected_years))
+        return (
+            f"""
+            SELECT
+                TRIM(COALESCE(o.ejercicio, '')) AS ejercicio,
+                COALESCE(
+                    NULLIF(TRIM(COALESCE(ed.ente_uid, '')), ''),
+                    '__NOUID__:' || TRIM(COALESCE(o.ente_id, ''))
+                ) AS ente_uid,
+                TRIM(
+                    COALESCE(
+                        NULLIF(TRIM(COALESCE(ed.ente_numero, '')), ''),
+                        NULLIF(TRIM(COALESCE(o.ente_numero, '')), ''),
+                        ''
+                    )
+                ) AS ente_numero,
+                TRIM(
+                    COALESCE(
+                        NULLIF(TRIM(COALESCE(ed.ente_nombre, '')), ''),
+                        NULLIF(TRIM(COALESCE(o.ente_nombre, '')), ''),
+                        NULLIF(TRIM(COALESCE(o.ente_id, '')), ''),
+                        'Sin ente'
+                    )
+                ) AS ente_nombre,
+                TRIM(COALESCE(o.tipo_auditoria, '')) AS tipo_auditoria,
+                TRIM(COALESCE(o.tipo_anexo, '')) AS tipo_anexo,
+                TRIM(COALESCE(o.estado, '')) AS estado,
+                TRIM(COALESCE(o.fuente_financiamiento, '')) AS fuente_financiamiento,
+                TRIM(COALESCE(o.ramo_33, '')) AS ramo_33,
+                COALESCE(o.monto_pdp_emitido, 0) AS monto_pdp_emitido,
+                COALESCE(o.monto_pdp_solventado, 0) AS monto_pdp_solventado,
+                COALESCE(o.monto_pdp_pendiente, 0) AS monto_pdp_pendiente
+            FROM observaciones AS o
+            LEFT JOIN entes_detalle AS ed
+              ON TRIM(COALESCE(ed.ejercicio, '')) = TRIM(COALESCE(o.ejercicio, ''))
+             AND ed.ente_id = o.ente_id
+            WHERE TRIM(COALESCE(o.ejercicio, '')) IN ({placeholders})
+            """,
+            list(selected_years),
+        )
+
+    def build_comparison_scope_cache_key(
+        selected_filters: dict[str, list[str] | str],
+        *,
+        exclude_key: str = "",
+    ):
+        return (
+            exclude_key,
+            selected_filters.get("universo", "all"),
+            tuple(selected_filters.get("ente_uid", []) or []),
+            tuple(selected_filters.get("tipo_auditoria", []) or []),
+            tuple(selected_filters.get("tipo_anexo", []) or []),
+            tuple(selected_filters.get("estado", []) or []),
+            tuple(selected_filters.get("fuente_financiamiento", []) or []),
+            tuple(selected_filters.get("ramo_33", []) or []),
+        )
+
+    def fetch_comparison_base_rows(db, selected_years: list[str]) -> list[dict]:
+        if not selected_years:
+            return []
+        base_sql, base_params = build_comparison_base_sql(selected_years)
+        rows = db.execute(base_sql, base_params).fetchall()
+        return [dict(row) for row in rows]
+
+    def row_matches_comparison_filters(
+        row: dict,
+        selected_filters: dict[str, list[str] | str],
+        *,
+        exclude_key: str = "",
+    ) -> bool:
+        for key in comparison_filter_order:
+            if key == exclude_key:
+                continue
+            values = selected_filters.get(key, [])
+            if not isinstance(values, list) or not values:
+                continue
+            if (row.get(key) or "") not in values:
+                return False
+        return True
+
+    def compute_common_comparison_entity_uids(
+        rows: list[dict],
+        selected_years: list[str],
+    ) -> set[str]:
+        if not selected_years:
+            return set()
+        required_years = set(selected_years)
+        years_by_uid: dict[str, set[str]] = {}
+        for row in rows:
+            ente_uid = (row.get("ente_uid") or "").strip()
+            ejercicio = (row.get("ejercicio") or "").strip()
+            if not ente_uid or not ejercicio:
+                continue
+            if ejercicio not in required_years:
+                continue
+            years_by_uid.setdefault(ente_uid, set()).add(ejercicio)
+        return {
+            ente_uid
+            for ente_uid, years_present in years_by_uid.items()
+            if years_present == required_years
+        }
+
+    def build_comparison_scope_from_rows(
+        base_rows: list[dict],
+        selected_years: list[str],
+        selected_filters: dict[str, list[str] | str],
+        *,
+        exclude_key: str = "",
+        scope_cache: dict | None = None,
+    ) -> dict:
+        cache_key = build_comparison_scope_cache_key(
+            selected_filters,
+            exclude_key=exclude_key,
+        )
+        if scope_cache is not None and cache_key in scope_cache:
+            return scope_cache[cache_key]
+
+        filtered_rows = [
+            row
+            for row in base_rows
+            if row_matches_comparison_filters(
+                row,
+                selected_filters,
+                exclude_key=exclude_key,
+            )
+        ]
+
+        common_uids: set[str] = set()
+        if selected_filters.get("universo") == "complete" and selected_years:
+            common_uids = compute_common_comparison_entity_uids(filtered_rows, selected_years)
+            if common_uids:
+                filtered_rows = [
+                    row
+                    for row in filtered_rows
+                    if (row.get("ente_uid") or "").strip() in common_uids
+                ]
+            else:
+                filtered_rows = []
+
+        payload = {
+            "rows": filtered_rows,
+            "common_uids": common_uids,
+        }
+        if scope_cache is not None:
+            scope_cache[cache_key] = payload
+        return payload
+
+    def collect_comparison_distinct_values(rows: list[dict], column: str) -> list[str]:
+        values = sorted(
+            {
+                (row.get(column) or "").strip()
+                for row in rows
+                if (row.get(column) or "").strip()
+            }
+        )
+        return values
+
+    def aggregate_comparison_rows_by_entity(scope_rows: list[dict]) -> list[dict]:
+        grouped: dict[tuple[str, str], dict] = {}
+        for row in scope_rows:
+            ente_uid = (row.get("ente_uid") or "").strip()
+            ejercicio = (row.get("ejercicio") or "").strip()
+            if not ente_uid or not ejercicio:
+                continue
+            key = (ente_uid, ejercicio)
+            item = grouped.setdefault(
+                key,
+                {
+                    "ente_uid": ente_uid,
+                    "ejercicio": ejercicio,
+                    "ente_numero": "",
+                    "ente_nombre": "",
+                    "total_observaciones": 0,
+                },
+            )
+            ente_numero = (row.get("ente_numero") or "").strip()
+            ente_nombre = (row.get("ente_nombre") or "").strip()
+            if ente_numero and not item["ente_numero"]:
+                item["ente_numero"] = ente_numero
+            if ente_nombre:
+                item["ente_nombre"] = ente_nombre
+            item["total_observaciones"] += 1
+        return list(grouped.values())
+
+    def summarize_comparison_scope(scope_rows: list[dict], selected_years: list[str]) -> dict:
+        metrics_by_year = {
+            year: {
+                "emitidas": 0,
+                "solventadas": 0,
+                "pendientes": 0,
+                "monto_pdp_emitido": 0.0,
+                "monto_pdp_solventado": 0.0,
+                "monto_pdp_pendiente": 0.0,
+            }
+            for year in selected_years
+        }
+        status_totals: dict[tuple[str, str], int] = {}
+        anexo_totals: dict[tuple[str, str], int] = {}
+        stacked_by_anexo: dict[tuple[str, str], dict] = {}
+
+        for row in scope_rows:
+            ejercicio = (row.get("ejercicio") or "").strip()
+            if ejercicio not in metrics_by_year:
+                continue
+
+            metrics = metrics_by_year[ejercicio]
+            metrics["emitidas"] += 1
+            estado = (row.get("estado") or "").strip()
+            estado_key = estado.lower()
+            if estado_key == "solventado":
+                metrics["solventadas"] += 1
+            elif estado_key == "pendiente":
+                metrics["pendientes"] += 1
+
+            metrics["monto_pdp_emitido"] += float(row.get("monto_pdp_emitido") or 0)
+            metrics["monto_pdp_solventado"] += float(row.get("monto_pdp_solventado") or 0)
+            metrics["monto_pdp_pendiente"] += float(row.get("monto_pdp_pendiente") or 0)
+
+            if estado:
+                status_key = (ejercicio, estado)
+                status_totals[status_key] = status_totals.get(status_key, 0) + 1
+
+            tipo_anexo = (row.get("tipo_anexo") or "").strip()
+            if not tipo_anexo:
+                continue
+
+            anexo_key = (ejercicio, tipo_anexo)
+            anexo_totals[anexo_key] = anexo_totals.get(anexo_key, 0) + 1
+
+            stacked_item = stacked_by_anexo.setdefault(
+                anexo_key,
+                {
+                    "ejercicio": ejercicio,
+                    "tipo_anexo": tipo_anexo,
+                    "solventadas": 0,
+                    "pendientes": 0,
+                },
+            )
+            if estado_key == "solventado":
+                stacked_item["solventadas"] += 1
+            elif estado_key == "pendiente":
+                stacked_item["pendientes"] += 1
+
+        kpis_by_year = []
+        totals_by_year = []
+        pdp_amounts_by_year = []
+        for year in selected_years:
+            row = metrics_by_year.get(year, {})
+            emitidas = int(row.get("emitidas", 0))
+            solventadas = int(row.get("solventadas", 0))
+            pendientes = int(row.get("pendientes", 0))
+            monto_pdp_emitido = float(row.get("monto_pdp_emitido", 0))
+            monto_pdp_solventado = float(row.get("monto_pdp_solventado", 0))
+            monto_pdp_pendiente = float(row.get("monto_pdp_pendiente", 0))
+            porcentaje_solventacion = (solventadas / emitidas * 100) if emitidas else 0.0
+            kpis_by_year.append(
+                {
+                    "ejercicio": year,
+                    "emitidas": emitidas,
+                    "solventadas": solventadas,
+                    "pendientes": pendientes,
+                    "porcentaje_solventacion": porcentaje_solventacion,
+                    "monto_pdp_emitido": monto_pdp_emitido,
+                    "monto_pdp_solventado": monto_pdp_solventado,
+                    "monto_pdp_pendiente": monto_pdp_pendiente,
+                }
+            )
+            totals_by_year.append(
+                {
+                    "ejercicio": year,
+                    "total_observaciones": emitidas,
+                }
+            )
+            pdp_amounts_by_year.append(
+                {
+                    "ejercicio": year,
+                    "emitido": monto_pdp_emitido,
+                    "solventado": monto_pdp_solventado,
+                    "pendiente": monto_pdp_pendiente,
+                }
+            )
+
+        status_by_year = [
+            {
+                "ejercicio": ejercicio,
+                "estado": estado,
+                "total": total,
+            }
+            for (ejercicio, estado), total in sorted(status_totals.items())
+        ]
+        anexo_totals_by_year = [
+            {
+                "ejercicio": ejercicio,
+                "tipo_anexo": tipo_anexo,
+                "total": total,
+            }
+            for (ejercicio, tipo_anexo), total in sorted(anexo_totals.items())
+        ]
+        stacked_by_anexo_rows = [
+            {
+                "ejercicio": item["ejercicio"],
+                "tipo_anexo": item["tipo_anexo"],
+                "solventadas": int(item["solventadas"]),
+                "pendientes": int(item["pendientes"]),
+            }
+            for item in sorted(
+                stacked_by_anexo.values(),
+                key=lambda row: (row["ejercicio"], row["tipo_anexo"]),
+            )
+        ]
+        return {
+            "kpis_by_year": kpis_by_year,
+            "totals_by_year": totals_by_year,
+            "status_by_year": status_by_year,
+            "anexo_totals_by_year": anexo_totals_by_year,
+            "stacked_by_anexo": stacked_by_anexo_rows,
+            "pdp_amounts_by_year": pdp_amounts_by_year,
+        }
+
+    def apply_comparison_filter_clause(
+        clauses: list[str],
+        params: list,
+        key: str,
+        values: list[str],
+    ):
+        if not values:
+            return
+        placeholders = ", ".join(["?"] * len(values))
+        column_map = {
+            "ente_uid": "ente_uid",
+            "tipo_auditoria": "tipo_auditoria",
+            "tipo_anexo": "tipo_anexo",
+            "estado": "estado",
+            "fuente_financiamiento": "fuente_financiamiento",
+            "ramo_33": "ramo_33",
+        }
+        column = column_map.get(key)
+        if not column:
+            return
+        clauses.append(f"{column} IN ({placeholders})")
+        params.extend(values)
+
+    def build_comparison_where(
+        selected_filters: dict[str, list[str] | str],
+        *,
+        exclude_key: str = "",
+    ):
+        clauses: list[str] = []
+        params: list = []
+        for key in comparison_filter_order:
+            if key == exclude_key:
+                continue
+            values = selected_filters.get(key, [])
+            if isinstance(values, list):
+                apply_comparison_filter_clause(clauses, params, key, values)
+        return " AND ".join(clauses), params
+
+    def fetch_common_comparison_entity_uids(
+        db,
+        selected_years: list[str],
+        selected_filters: dict[str, list[str] | str],
+        *,
+        exclude_key: str = "",
+    ) -> list[str]:
+        base_sql, base_params = build_comparison_base_sql(selected_years)
+        where_sql, where_params = build_comparison_where(
+            selected_filters,
+            exclude_key=exclude_key,
+        )
+        where_clause = f"WHERE {where_sql}" if where_sql else ""
+        rows = db.execute(
+            f"""
+            SELECT ente_uid
+            FROM ({base_sql}) AS comparison_base
+            {where_clause}
+            GROUP BY ente_uid
+            HAVING COUNT(DISTINCT ejercicio) = ?
+            ORDER BY ente_uid
+            """,
+            [*base_params, *where_params, len(selected_years)],
+        ).fetchall()
+        return [row["ente_uid"] for row in rows if (row["ente_uid"] or "").strip()]
+
+    def build_comparison_scope_query(
+        db,
+        selected_years: list[str],
+        selected_filters: dict[str, list[str] | str],
+        *,
+        exclude_key: str = "",
+    ):
+        base_sql, base_params = build_comparison_base_sql(selected_years)
+        where_sql, where_params = build_comparison_where(
+            selected_filters,
+            exclude_key=exclude_key,
+        )
+        clauses: list[str] = []
+        params = [*base_params]
+        if where_sql:
+            clauses.append(where_sql)
+            params.extend(where_params)
+
+        if selected_filters.get("universo") == "complete" and selected_years:
+            common_uids = fetch_common_comparison_entity_uids(
+                db,
+                selected_years,
+                selected_filters,
+                exclude_key=exclude_key,
+            )
+            if common_uids:
+                placeholders = ", ".join(["?"] * len(common_uids))
+                clauses.append(f"ente_uid IN ({placeholders})")
+                params.extend(common_uids)
+            else:
+                clauses.append("1 = 0")
+
+        scope_sql = f"SELECT * FROM ({base_sql}) AS comparison_base_scope"
+        if clauses:
+            scope_sql += f" WHERE {' AND '.join(clauses)}"
+        return scope_sql, params
+
+    def build_comparison_ente_options(rows, selected_years: list[str]):
+        year_priority = {year: idx for idx, year in enumerate(selected_years)}
+        grouped: dict[str, dict] = {}
+        for row in rows:
+            ente_uid = (row["ente_uid"] or "").strip()
+            if not ente_uid:
+                continue
+            item = grouped.setdefault(
+                ente_uid,
+                {
+                    "ente_uid": ente_uid,
+                    "ente_numero": "",
+                    "ente_nombre": "",
+                    "aliases": [],
+                    "years_present": set(),
+                    "label_rank": -1,
+                },
+            )
+            ejercicio = (row["ejercicio"] or "").strip()
+            ente_nombre = (row["ente_nombre"] or "").strip()
+            ente_numero = (row["ente_numero"] or "").strip()
+            if ejercicio:
+                item["years_present"].add(ejercicio)
+            if ente_nombre and ente_nombre not in item["aliases"]:
+                item["aliases"].append(ente_nombre)
+            if ente_numero and not item["ente_numero"]:
+                item["ente_numero"] = ente_numero
+            rank = year_priority.get(ejercicio, -1)
+            if rank >= item["label_rank"]:
+                if ente_nombre:
+                    item["ente_nombre"] = ente_nombre
+                if ente_numero:
+                    item["ente_numero"] = ente_numero
+                item["label_rank"] = rank
+
+        options = []
+        for item in grouped.values():
+            ente_numero = item["ente_numero"]
+            ente_nombre = item["ente_nombre"] or (item["aliases"][0] if item["aliases"] else item["ente_uid"])
+            label = f"{ente_numero} - {ente_nombre}" if ente_numero else ente_nombre
+            options.append(
+                {
+                    "ente_uid": item["ente_uid"],
+                    "ente_numero": ente_numero,
+                    "ente_nombre": ente_nombre,
+                    "label": label,
+                    "aliases": item["aliases"],
+                    "has_historical_names": len(item["aliases"]) > 1,
+                    "years_present": sorted(item["years_present"]),
+                }
+            )
+        options.sort(
+            key=lambda item: (
+                parse_ente_numero_sort(item.get("ente_numero") or ""),
+                item.get("ente_numero") or "",
+                item.get("ente_nombre") or item.get("label") or "",
+            )
+        )
+        return options
+
+    def build_comparison_table_rows(rows, selected_years: list[str]):
+        year_priority = {year: idx for idx, year in enumerate(selected_years)}
+        first_year = selected_years[0] if selected_years else ""
+        last_year = selected_years[-1] if selected_years else ""
+        grouped: dict[str, dict] = {}
+
+        for row in rows:
+            ente_uid = (row["ente_uid"] or "").strip()
+            if not ente_uid:
+                continue
+            item = grouped.setdefault(
+                ente_uid,
+                {
+                    "ente_uid": ente_uid,
+                    "ente_numero": "",
+                    "ente_nombre": "",
+                    "aliases": [],
+                    "years_present": set(),
+                    "counts_by_year": {year: 0 for year in selected_years},
+                    "label_rank": -1,
+                },
+            )
+            ejercicio = (row["ejercicio"] or "").strip()
+            ente_numero = (row["ente_numero"] or "").strip()
+            ente_nombre = (row["ente_nombre"] or "").strip()
+            total_observaciones = int(row["total_observaciones"] or 0)
+            if ejercicio in item["counts_by_year"]:
+                item["counts_by_year"][ejercicio] = total_observaciones
+                item["years_present"].add(ejercicio)
+            if ente_nombre and ente_nombre not in item["aliases"]:
+                item["aliases"].append(ente_nombre)
+            if ente_numero and not item["ente_numero"]:
+                item["ente_numero"] = ente_numero
+            rank = year_priority.get(ejercicio, -1)
+            if rank >= item["label_rank"]:
+                if ente_nombre:
+                    item["ente_nombre"] = ente_nombre
+                if ente_numero:
+                    item["ente_numero"] = ente_numero
+                item["label_rank"] = rank
+
+        table_rows = []
+        for item in grouped.values():
+            counts_by_year = item["counts_by_year"]
+            base_value = counts_by_year.get(first_year, 0)
+            compare_value = counts_by_year.get(last_year, 0)
+            delta_abs = compare_value - base_value
+            if base_value > 0:
+                delta_pct = (delta_abs / base_value) * 100
+            elif compare_value == 0:
+                delta_pct = 0.0
+            else:
+                delta_pct = None
+            if base_value == 0 and compare_value > 0:
+                change_label = "Nuevo"
+            elif delta_abs > 0:
+                change_label = "Subio"
+            elif delta_abs < 0:
+                change_label = "Bajo"
+            else:
+                change_label = "Sin cambio"
+            ente_nombre = item["ente_nombre"] or (item["aliases"][0] if item["aliases"] else item["ente_uid"])
+            label = f"{item['ente_numero']} - {ente_nombre}" if item["ente_numero"] else ente_nombre
+            table_rows.append(
+                {
+                    "ente_uid": item["ente_uid"],
+                    "ente_numero": item["ente_numero"],
+                    "ente_nombre": ente_nombre,
+                    "label": label,
+                    "aliases": item["aliases"],
+                    "has_historical_names": len(item["aliases"]) > 1,
+                    "years_present": sorted(item["years_present"]),
+                    "counts_by_year": counts_by_year,
+                    "delta_abs": delta_abs,
+                    "delta_pct": delta_pct,
+                    "change_label": change_label,
+                }
+            )
+
+        table_rows.sort(
+            key=lambda item: (
+                -abs(int(item["delta_abs"] or 0)),
+                -(item["counts_by_year"].get(last_year, 0) if last_year else 0),
+                item.get("ente_nombre") or item.get("label") or "",
+            )
+        )
+        return table_rows
 
     def build_multi_filter_comparison(
         db,
@@ -2039,6 +2692,238 @@ def register_luis_routes(app, deps):
             download_name=filename,
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
+
+    @app.get("/comparativo-anual")
+    @luis_required
+    def comparativo_anual():
+        user = get_current_user()
+        can_edit = user["role"] == "editor" if user else False
+        return render_template(
+            "comparativo_anual.html",
+            user=user,
+            can_edit=can_edit,
+        )
+
+
+    @app.get("/comparativo-anual/stats")
+    @luis_required
+    def comparativo_anual_stats():
+        db = get_db()
+        available_years = get_available_comparison_years(db)
+        selected_years = parse_comparison_years(available_years)
+        selected_filters = parse_comparison_filters()
+        selected_filters_payload = {
+            "years": selected_years,
+            "ente_uid": selected_filters.get("ente_uid", []),
+            "tipo_auditoria": selected_filters.get("tipo_auditoria", []),
+            "tipo_anexo": selected_filters.get("tipo_anexo", []),
+            "estado": selected_filters.get("estado", []),
+            "fuente_financiamiento": selected_filters.get("fuente_financiamiento", []),
+            "ramo_33": selected_filters.get("ramo_33", []),
+            "universo": selected_filters.get("universo", "all"),
+        }
+
+        empty_response = {
+            "available_years": available_years,
+            "selected_years": selected_years,
+            "selected_filters": selected_filters_payload,
+            "filter_options": {
+                "entes": [],
+                "tipo_auditoria": [],
+                "tipo_anexo": [],
+                "estado": [],
+                "fuente_financiamiento": [],
+                "ramo_33": [],
+            },
+            "summary": {
+                "universo": {
+                    "mode": selected_filters.get("universo", "all"),
+                    "mode_label": (
+                        "Solo entes presentes en todos los años"
+                        if selected_filters.get("universo") == "complete"
+                        else "Universo completo"
+                    ),
+                    "entes_filtrados": 0,
+                    "entes_en_todos_los_anios": 0,
+                },
+                "kpis_by_year": [],
+                "totals_by_year": [],
+                "status_by_year": [],
+                "anexo_totals_by_year": [],
+                "stacked_by_anexo": [],
+                "pdp_amounts_by_year": [],
+                "top_variations": {
+                    "compare_from": selected_years[0] if selected_years else "",
+                    "compare_to": selected_years[-1] if selected_years else "",
+                    "top_changes": [],
+                    "increases": [],
+                    "decreases": [],
+                },
+                "comparison_table": [],
+            },
+        }
+
+        cache_key = (
+            tuple(selected_years),
+            *build_comparison_scope_cache_key(selected_filters),
+        )
+        now = time.time()
+        cached = comparison_cache.get(cache_key)
+        if cached and now - cached[0] < comparison_cache_ttl_seconds:
+            return jsonify(cached[1])
+
+        if not selected_years:
+            comparison_cache[cache_key] = (now, empty_response)
+            return jsonify(empty_response)
+
+        base_filters = dict(selected_filters)
+        base_filters["universo"] = "all"
+        base_rows = fetch_comparison_base_rows(db, selected_years)
+        scope_cache: dict = {}
+        base_scope = build_comparison_scope_from_rows(
+            base_rows,
+            selected_years,
+            base_filters,
+            scope_cache=scope_cache,
+        )
+        entes_filtrados = len(
+            {
+                (row.get("ente_uid") or "").strip()
+                for row in base_scope["rows"]
+                if (row.get("ente_uid") or "").strip()
+            }
+        )
+        entes_en_todos_los_anios = len(
+            compute_common_comparison_entity_uids(base_scope["rows"], selected_years)
+        )
+
+        scope_payload = build_comparison_scope_from_rows(
+            base_rows,
+            selected_years,
+            selected_filters,
+            scope_cache=scope_cache,
+        )
+        scope_rows = scope_payload["rows"]
+
+        def option_rows_for(exclude_key: str) -> list[dict]:
+            return build_comparison_scope_from_rows(
+                base_rows,
+                selected_years,
+                selected_filters,
+                exclude_key=exclude_key,
+                scope_cache=scope_cache,
+            )["rows"]
+
+        filter_options = {
+            "entes": build_comparison_ente_options(
+                option_rows_for("ente_uid"),
+                selected_years,
+            ),
+            "tipo_auditoria": collect_comparison_distinct_values(
+                option_rows_for("tipo_auditoria"),
+                "tipo_auditoria",
+            ),
+            "tipo_anexo": collect_comparison_distinct_values(
+                option_rows_for("tipo_anexo"),
+                "tipo_anexo",
+            ),
+            "estado": collect_comparison_distinct_values(
+                option_rows_for("estado"),
+                "estado",
+            ),
+            "fuente_financiamiento": collect_comparison_distinct_values(
+                option_rows_for("fuente_financiamiento"),
+                "fuente_financiamiento",
+            ),
+            "ramo_33": collect_comparison_distinct_values(
+                option_rows_for("ramo_33"),
+                "ramo_33",
+            ),
+        }
+        scope_summary = summarize_comparison_scope(scope_rows, selected_years)
+        comparison_rows = aggregate_comparison_rows_by_entity(scope_rows)
+        comparison_table = build_comparison_table_rows(comparison_rows, selected_years)
+
+        first_year = selected_years[0] if selected_years else ""
+        last_year = selected_years[-1] if selected_years else ""
+        top_changes = []
+        top_increases = []
+        top_decreases = []
+
+        def serialize_variation_row(item: dict):
+            return {
+                "ente_uid": item["ente_uid"],
+                "ente_numero": item["ente_numero"],
+                "ente_nombre": item["ente_nombre"],
+                "label": item["label"],
+                "counts_by_year": item["counts_by_year"],
+                "delta_abs": item["delta_abs"],
+                "delta_pct": item["delta_pct"],
+                "change_label": item.get("change_label", ""),
+                "aliases": item["aliases"],
+                "has_historical_names": item["has_historical_names"],
+            }
+
+        if len(selected_years) >= 2:
+            top_changes = [
+                serialize_variation_row(item)
+                for item in comparison_table[:5]
+            ]
+            sorted_increases = sorted(
+                [row for row in comparison_table if row["delta_abs"] > 0],
+                key=lambda item: (
+                    -int(item["delta_abs"] or 0),
+                    item.get("ente_nombre") or item.get("label") or "",
+                ),
+            )
+            sorted_decreases = sorted(
+                [row for row in comparison_table if row["delta_abs"] < 0],
+                key=lambda item: (
+                    int(item["delta_abs"] or 0),
+                    item.get("ente_nombre") or item.get("label") or "",
+                ),
+            )
+            top_increases = [serialize_variation_row(item) for item in sorted_increases[:5]]
+            top_decreases = [serialize_variation_row(item) for item in sorted_decreases[:5]]
+
+        payload = {
+            "available_years": available_years,
+            "selected_years": selected_years,
+            "selected_filters": selected_filters_payload,
+            "filter_options": filter_options,
+            "summary": {
+                "universo": {
+                    "mode": selected_filters.get("universo", "all"),
+                    "mode_label": (
+                        "Solo entes presentes en todos los años"
+                        if selected_filters.get("universo") == "complete"
+                        else "Universo completo"
+                    ),
+                    "entes_filtrados": entes_filtrados,
+                    "entes_en_todos_los_anios": entes_en_todos_los_anios,
+                },
+                "kpis_by_year": scope_summary["kpis_by_year"],
+                "totals_by_year": scope_summary["totals_by_year"],
+                "status_by_year": scope_summary["status_by_year"],
+                "anexo_totals_by_year": scope_summary["anexo_totals_by_year"],
+                "stacked_by_anexo": scope_summary["stacked_by_anexo"],
+                "pdp_amounts_by_year": scope_summary["pdp_amounts_by_year"],
+                "top_variations": {
+                    "compare_from": first_year,
+                    "compare_to": last_year,
+                    "top_changes": top_changes,
+                    "increases": top_increases,
+                    "decreases": top_decreases,
+                },
+                "comparison_table": comparison_table,
+            },
+        }
+        comparison_cache[cache_key] = (now, payload)
+        if len(comparison_cache) > 250:
+            oldest_key = min(comparison_cache.items(), key=lambda item: item[1][0])[0]
+            comparison_cache.pop(oldest_key, None)
+        return jsonify(payload)
 
 
     @app.get("/observaciones-stats")

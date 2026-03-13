@@ -211,6 +211,47 @@ a {
   align-content: start;
 }
 
+.mode-switch {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.mode-switch-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0.7rem 1.15rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(31, 59, 44, 0.18);
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--color-muted);
+  text-decoration: none;
+  font-weight: 700;
+  transition:
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast),
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.mode-switch-link:hover {
+  transform: translateY(-1px);
+  color: var(--color-accent);
+  box-shadow: var(--shadow-soft);
+}
+
+.mode-switch-link.is-active {
+  color: #fff;
+  border-color: rgba(31, 59, 44, 0.75);
+  background: var(--color-accent);
+  box-shadow: var(--shadow-soft);
+}
+
 .panel {
   background: var(--color-surface);
   border-radius: var(--radius-md);
@@ -364,23 +405,47 @@ a {
   color: var(--color-muted);
 }
 
-.obs-export-card {
-  margin: 1rem 0 1.2rem;
-  padding: 1rem;
-  background: #f7f9f7;
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
+.panel-inline-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1rem;
 }
 
-.obs-export-card h3 {
-  color: var(--color-accent);
-  font-size: 0.95rem;
+.panel-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 100%;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 0.58rem 0.95rem;
+  cursor: pointer;
+  box-shadow: 0 14px 26px rgba(15, 23, 42, 0.22);
+  transition: transform var(--transition-fast), box-shadow var(--transition-base), background-color var(--transition-base);
 }
 
-.obs-export-card p {
-  margin: 0.3rem 0 0.8rem;
-  color: var(--color-muted);
-  font-size: 0.85rem;
+.panel-action-btn:hover {
+  background: var(--color-accent-strong);
+  transform: translateY(-1px);
+}
+
+.panel-action-btn:active {
+  transform: translateY(0);
+}
+
+.panel-action-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(31, 59, 44, 0.25);
+}
+
+.panel-action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .form-grid {
@@ -1349,6 +1414,17 @@ tbody tr:hover td {
 .floating-clear-icon svg {
   width: 1rem;
   height: 1rem;
+}
+
+@media (max-width: 720px) {
+  .panel-inline-actions {
+    justify-content: stretch;
+  }
+
+  .panel-action-btn {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 .loader-obs-admin-btn {

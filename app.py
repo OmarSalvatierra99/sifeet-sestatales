@@ -880,6 +880,13 @@ def init_db() -> None:
             row[1]
             for row in conn.execute("PRAGMA table_info(observaciones)").fetchall()
         }
+        conn.execute(
+            """
+            UPDATE observaciones
+            SET ente_id = TRIM(RTRIM(COALESCE(ente_id, ''), '.'))
+            WHERE COALESCE(ente_id, '') != TRIM(RTRIM(COALESCE(ente_id, ''), '.'))
+            """
+        )
         if "ente_numero" not in observaciones_columns:
             conn.execute("ALTER TABLE observaciones ADD COLUMN ente_numero TEXT")
         if "ente_numero_sort" not in observaciones_columns:
