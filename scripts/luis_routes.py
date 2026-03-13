@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 import time
 
@@ -139,6 +139,79 @@ def register_luis_routes(app, deps):
 
     def selected_values_for_key(selected_filters: dict[str, list[str]], key: str):
         return selected_filters.get(key, []) or []
+
+    def format_periodo_display(start_date, end_date):
+        if not start_date or not end_date:
+            return "—"
+        months = (
+            "",
+            "enero",
+            "febrero",
+            "marzo",
+            "abril",
+            "mayo",
+            "junio",
+            "julio",
+            "agosto",
+            "septiembre",
+            "octubre",
+            "noviembre",
+            "diciembre",
+        )
+        return (
+            f"{start_date.day:02d} de {months[start_date.month]} al "
+            f"{end_date.day:02d} de {months[end_date.month]}"
+        )
+
+    def merge_responsable_periods(historial_rows):
+        normalized_rows = []
+        for item in historial_rows:
+            nombre = (item["nombre"] or "").strip()
+            tipo_registro = (item["tipo_registro"] or "").strip()
+            inicio = parse_historial_date(item["fecha_inicio"])
+            fin = parse_historial_date(item["fecha_fin"])
+            if not nombre or not tipo_registro or not inicio or not fin:
+                continue
+            normalized_rows.append(
+                {
+                    "tipo_registro": tipo_registro,
+                    "nombre": nombre,
+                    "inicio": inicio,
+                    "fin": fin,
+                }
+            )
+
+        normalized_rows.sort(
+            key=lambda item: (
+                item["tipo_registro"],
+                item["nombre"],
+                item["inicio"],
+                item["fin"],
+            )
+        )
+
+        merged = []
+        for item in normalized_rows:
+            if (
+                merged
+                and merged[-1]["tipo_registro"] == item["tipo_registro"]
+                and merged[-1]["nombre"] == item["nombre"]
+                and item["inicio"] <= (merged[-1]["fin"] + timedelta(days=1))
+            ):
+                if item["fin"] > merged[-1]["fin"]:
+                    merged[-1]["fin"] = item["fin"]
+                continue
+            merged.append(item.copy())
+
+        merged.sort(
+            key=lambda item: (
+                item["tipo_registro"],
+                item["inicio"],
+                item["fin"],
+                item["nombre"],
+            )
+        )
+        return merged
 
     def get_available_comparison_years(db) -> list[str]:
         rows = db.execute(
@@ -2145,39 +2218,40 @@ def register_luis_routes(app, deps):
                     h.tipo_auditoria,
                     h.nombre,
                     h.fecha_inicio,
-                    h.fecha_fin,
-                    {periodo_sql("h")} AS periodo
+                    h.fecha_fin
                 FROM historial_titulares AS h
                 WHERE h.ejercicio = ?
                   {scope_clause}
                   AND h.tipo_registro IN ('titular', 'director_administrativo')
                   AND h.nombre IS NOT NULL AND h.nombre != ''
-                ORDER BY h.tipo_registro ASC, h.fecha_inicio ASC, h.nombre ASC
+                ORDER BY h.tipo_registro ASC, h.nombre ASC, h.fecha_inicio ASC, h.fecha_fin ASC
                 """,
                 [row["ejercicio"], *scope_params],
             ).fetchall()
-    
+
+            historial_periodos = merge_responsable_periods(
+                [
+                    item
+                    for item in historial_rows
+                    if normalize_tipo_auditoria(item["tipo_auditoria"] or "")
+                    == normalize_tipo_auditoria(row["tipo_auditoria"] or "")
+                ]
+            )
             titulares = []
             administrativos = []
             titulares_seen = set()
             administrativos_seen = set()
-            for item in historial_rows:
-                if normalize_tipo_auditoria(item["tipo_auditoria"] or "") != normalize_tipo_auditoria(row["tipo_auditoria"] or ""):
-                    continue
-                inicio = parse_historial_date(item["fecha_inicio"])
-                fin = parse_historial_date(item["fecha_fin"])
-                if not inicio or not fin:
-                    continue
+            for item in historial_periodos:
+                inicio = item["inicio"]
+                fin = item["fin"]
                 # Inclusive overlap between [inicio, fin] and cedula range
                 if inicio > cedula_fin_date or fin < cedula_inicio_date:
                     continue
                 payload = {
                     "nombre": item["nombre"],
-                    "periodo": (
-                        row["periodo_cedula"]
-                        if item["tipo_registro"] == "director_administrativo"
-                        else item["periodo"]
-                    ),
+                    "periodo": format_periodo_display(inicio, fin),
+                    "fecha_inicio": inicio.isoformat(),
+                    "fecha_fin": fin.isoformat(),
                 }
                 key = (payload["nombre"], payload["periodo"])
                 if item["tipo_registro"] == "titular":
@@ -2198,11 +2272,22 @@ def register_luis_routes(app, deps):
                     "ente_nombre": row["ente_nombre"] or row["ente_detalle_nombre"] or "—",
                     "tipo_auditoria": row["tipo_auditoria"],
                     "periodo_cedula": row["periodo_cedula"],
+                    "periodo_cedula_inicio": cedula_inicio,
+                    "periodo_cedula_fin": cedula_fin,
                     "titulares": titulares,
                     "administrativos": administrativos,
                 }
             )
-    
+
+        resultado.sort(
+            key=lambda item: (
+                (item["ente_nombre"] or "").strip(),
+                normalize_tipo_auditoria(item["tipo_auditoria"] or ""),
+                item.get("periodo_cedula_inicio") or "9999-12-31",
+                item.get("periodo_cedula_fin") or "9999-12-31",
+                (item["periodo_cedula"] or "").strip(),
+            )
+        )
         return jsonify(resultado)
     
     

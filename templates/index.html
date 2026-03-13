@@ -263,6 +263,7 @@
                 <tr>
                   <th>Ente</th>
                   <th>Tipo auditoría</th>
+                  <th>Cédula de resultados</th>
                   <th>Titular</th>
                   <th>Periodo titular</th>
                   <th>Administrativo</th>
@@ -960,38 +961,71 @@
         }
         const selectedCedulas = getSelectedValues(cedulaResultados);
         const obsResponsablesHead = document.getElementById("obsResponsablesHead");
-        const baseColumns = [
-          { key: "ente", label: "Ente", render: (row) => row.ente_nombre || "—" },
-          { key: "tipo_auditoria", label: "Tipo auditoría", render: (row) => row.tipo_auditoria || "—" },
-          { key: "periodo_cedula", label: "Cédula", render: (row) => row.periodo_cedula || "—" },
-          { key: "titular", label: "Titular", render: (row) => formatNombreList(row.titulares) },
-          { key: "periodo_titular", label: "Periodo titular", render: (row) => formatPeriodoList(row.titulares) },
-          { key: "administrativo", label: "Administrativo", render: (row) => formatNombreList(row.administrativos) },
-          { key: "periodo_administrativo", label: "Periodo administrativo", render: (row) => formatPeriodoList(row.administrativos) },
+        const columns = [
+          { key: "ente", label: "Ente" },
+          { key: "tipo_auditoria", label: "Tipo auditoría" },
+          { key: "periodo_cedula", label: "Cédula de resultados" },
+          { key: "titular", label: "Titular" },
+          { key: "periodo_titular", label: "Periodo titular" },
+          { key: "administrativo", label: "Administrativo" },
+          { key: "periodo_administrativo", label: "Periodo administrativo" },
         ];
-        const renderMessage = (message, visibleColumns = baseColumns) => {
+        const renderMessage = (message) => {
           if (obsResponsablesHead) {
             obsResponsablesHead.innerHTML = `
-              <tr>${visibleColumns.map((column) => `<th>${column.label}</th>`).join("")}</tr>
+              <tr>${columns.map((column) => `<th>${column.label}</th>`).join("")}</tr>
             `;
           }
           obsResponsablesBody.innerHTML = `
             <tr>
-              <td colspan="${visibleColumns.length}" class="muted">${message}</td>
+              <td colspan="${columns.length}" class="muted">${escapeHtml(message)}</td>
             </tr>
           `;
         };
-        const formatNombreList = (items) => {
-          if (!items || !items.length) {
-            return "—";
+        const formatResponsablesCell = (items, field) => {
+          if (!Array.isArray(items) || !items.length) {
+            return {
+              html: "—",
+              signature: "",
+              hasValues: false,
+            };
           }
-          return items.map((item) => item.nombre || "—").join("<br>");
+          const normalized = items.map((item) => {
+            const nombre = String(item?.nombre || "").trim() || "—";
+            const periodo = String(item?.periodo || "").trim() || "—";
+            return { nombre, periodo };
+          });
+          return {
+            html: normalized.map((item) => escapeHtml(item[field] || "—")).join("<br>"),
+            signature: normalized.map((item) => `${item.nombre}|${item.periodo}`).join("||"),
+            hasValues: true,
+          };
         };
-        const formatPeriodoList = (items) => {
-          if (!items || !items.length) {
-            return "—";
+        const compareRows = (left, right) => {
+          const leftEnte = String(left?.ente_nombre || "").trim();
+          const rightEnte = String(right?.ente_nombre || "").trim();
+          if (leftEnte !== rightEnte) {
+            return leftEnte.localeCompare(rightEnte, "es");
           }
-          return items.map((item) => item.periodo || "—").join("<br>");
+          const leftTipo = String(left?.tipo_auditoria || "").trim();
+          const rightTipo = String(right?.tipo_auditoria || "").trim();
+          if (leftTipo !== rightTipo) {
+            return leftTipo.localeCompare(rightTipo, "es");
+          }
+          const leftInicio = String(left?.periodo_cedula_inicio || "").trim();
+          const rightInicio = String(right?.periodo_cedula_inicio || "").trim();
+          if (leftInicio !== rightInicio) {
+            return leftInicio.localeCompare(rightInicio, "es");
+          }
+          const leftFin = String(left?.periodo_cedula_fin || "").trim();
+          const rightFin = String(right?.periodo_cedula_fin || "").trim();
+          if (leftFin !== rightFin) {
+            return leftFin.localeCompare(rightFin, "es");
+          }
+          return String(left?.periodo_cedula || "").trim().localeCompare(
+            String(right?.periodo_cedula || "").trim(),
+            "es"
+          );
         };
         if (!selectedCedulas.length) {
           renderMessage("Selecciona una cédula de resultados para consultar responsables.");
@@ -1009,38 +1043,52 @@
             unique.set(key, row);
           }
         });
-        const responsables = Array.from(unique.values());
+        const responsables = Array.from(unique.values()).sort(compareRows);
         if (!responsables.length) {
           renderMessage("Sin responsables para las cédulas seleccionadas.");
           return;
         }
-        const hasTitulares = responsables.some((row) => Array.isArray(row.titulares) && row.titulares.length);
-        const hasAdministrativos = responsables.some((row) => Array.isArray(row.administrativos) && row.administrativos.length);
-        const hasMultipleCedulas = selectedCedulas.length > 1
-          || new Set(responsables.map((row) => row.periodo_cedula || "")).size > 1;
-        const visibleColumns = baseColumns.filter((column) => {
-          if (column.key === "periodo_cedula") {
-            return hasMultipleCedulas;
-          }
-          if (column.key === "titular" || column.key === "periodo_titular") {
-            return hasTitulares;
-          }
-          if (column.key === "administrativo" || column.key === "periodo_administrativo") {
-            return hasAdministrativos;
-          }
-          return true;
-        });
         if (obsResponsablesHead) {
           obsResponsablesHead.innerHTML = `
-            <tr>${visibleColumns.map((column) => `<th>${column.label}</th>`).join("")}</tr>
+            <tr>${columns.map((column) => `<th>${column.label}</th>`).join("")}</tr>
           `;
         }
+        let previousGroupKey = "";
+        let previousTitularesSignature = "";
+        let previousAdministrativosSignature = "";
         obsResponsablesBody.innerHTML = responsables
-          .map((row) => `
+          .map((row) => {
+            const titulares = formatResponsablesCell(row.titulares, "nombre");
+            const periodosTitular = formatResponsablesCell(row.titulares, "periodo");
+            const administrativos = formatResponsablesCell(row.administrativos, "nombre");
+            const periodosAdministrativo = formatResponsablesCell(row.administrativos, "periodo");
+            const groupKey = [
+              row.ente_id || "",
+              row.ente_nombre || "",
+              row.tipo_auditoria || "",
+            ].join("|");
+            const sameGroup = groupKey === previousGroupKey;
+            const hideTitulares = sameGroup
+              && titulares.hasValues
+              && titulares.signature === previousTitularesSignature;
+            const hideAdministrativos = sameGroup
+              && administrativos.hasValues
+              && administrativos.signature === previousAdministrativosSignature;
+            previousGroupKey = groupKey;
+            previousTitularesSignature = titulares.signature;
+            previousAdministrativosSignature = administrativos.signature;
+            return `
             <tr>
-              ${visibleColumns.map((column) => `<td>${column.render(row)}</td>`).join("")}
+              <td>${escapeHtml(row.ente_nombre || "—")}</td>
+              <td>${escapeHtml(row.tipo_auditoria || "—")}</td>
+              <td>${escapeHtml(row.periodo_cedula || "—")}</td>
+              <td>${hideTitulares ? "" : titulares.html}</td>
+              <td>${hideTitulares ? "" : periodosTitular.html}</td>
+              <td>${hideAdministrativos ? "" : administrativos.html}</td>
+              <td>${hideAdministrativos ? "" : periodosAdministrativo.html}</td>
             </tr>
-          `)
+          `;
+          })
           .join("");
       };
 
@@ -2053,7 +2101,15 @@
         }
         const params = new URLSearchParams({ ejercicio });
         appendValuesToParams(params, "ente_id", getSelectedValues(obsEnteInput));
+        const selectedTipoAnexo = getSelectedTipoAnexo();
+        appendValuesToParams(params, "tipo_anexo", selectedTipoAnexo);
         appendValuesToParams(params, "tipo_auditoria", getSelectedValues(mainTipoAuditoria));
+        appendValuesToParams(params, "estado", getSelectedValues(obsEstado));
+        appendValuesToParams(params, "fuente_financiamiento", getSelectedValues(obsFuente));
+        appendValuesToParams(params, "ramo_33", getSelectedValues(obsRamo));
+        if (!selectedTipoAnexo.length || selectedTipoAnexo.includes("PDP")) {
+          appendValuesToParams(params, "concepto_irregularidad", getSelectedValues(obsConceptoIrregularidad));
+        }
         appendValuesToParams(params, "periodo_cedula", cedulas);
         try {
           const data = await fetchJsonWithAbort(
