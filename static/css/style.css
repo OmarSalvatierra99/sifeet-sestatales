@@ -1708,6 +1708,60 @@ tbody tr:hover td {
   gap: 1rem 1.05rem;
 }
 
+.loader-oficio-picker-field,
+.loader-periodo-picker-field {
+  gap: 0.55rem;
+}
+
+.loader-oficio-picker-field {
+  width: 100%;
+  max-width: 19rem;
+}
+
+.loader-oficio-input {
+  display: grid;
+  grid-template-columns: auto minmax(92px, 1fr) auto minmax(60px, 72px);
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0 0.7rem;
+  min-height: 40px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.loader-oficio-input span {
+  color: var(--color-muted);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.loader-oficio-divider {
+  text-align: center;
+}
+
+.loader-oficio-input input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.58rem 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 0.95rem;
+}
+
+.loader-oficio-input input:focus {
+  outline: none;
+}
+
+.loader-oficio-year {
+  text-align: center;
+}
+
+#principal_periodo_nuevo_wrap {
+  margin-top: 0.65rem;
+}
+
 .loader-expediente-collection {
   display: grid;
   gap: 1rem;

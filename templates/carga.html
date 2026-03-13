@@ -93,9 +93,34 @@
                 <p>Número, fecha, periodo y meta.</p>
               </div>
               <div class="form-grid loader-expediente-grid">
-                <div class="field">
-                  <label for="principal_numero_oficio">Oficio</label>
-                  <input id="principal_numero_oficio" type="text" value="{{ form_data.manual_numero_oficio }}" placeholder="Número de oficio" required>
+                <div class="field loader-oficio-picker-field">
+                  <label for="principal_numero_oficio_input">Oficio</label>
+                  <div class="loader-oficio-input">
+                    <span>OFS/</span>
+                    <input
+                      id="principal_numero_oficio_input"
+                      type="text"
+                      inputmode="numeric"
+                      autocomplete="off"
+                      placeholder="0000"
+                      aria-label="Consecutivo del oficio"
+                      required
+                    >
+                    <span class="loader-oficio-divider">/</span>
+                    <input
+                      id="principal_numero_oficio_year"
+                      class="loader-oficio-year"
+                      type="text"
+                      inputmode="numeric"
+                      autocomplete="off"
+                      placeholder="2025"
+                      aria-label="Año del oficio"
+                      maxlength="4"
+                      pattern="[0-9]{4}"
+                      required
+                    >
+                  </div>
+                  <input id="principal_numero_oficio" type="hidden" value="{{ form_data.manual_numero_oficio }}">
                 </div>
                 <div class="field">
                   <label for="principal_fecha_notificacion">Fecha de notificación</label>
@@ -103,9 +128,22 @@
                     <input id="principal_fecha_notificacion" type="date" value="{{ form_data.manual_fecha_notificacion }}" required>
                   </div>
                 </div>
-                <div class="field">
-                  <label for="principal_periodo">Periodo</label>
-                  <input id="principal_periodo" type="text" value="{{ form_data.manual_periodo }}" placeholder="Ej. 01 de enero al 31 de diciembre" required>
+                <div class="field loader-periodo-picker-field">
+                  <label for="principal_periodo_selector">Periodo</label>
+                  <select id="principal_periodo_selector" required>
+                    <option value="">Selecciona un periodo cargado</option>
+                    <option value="__new_periodo__">+ Agregar nuevo periodo...</option>
+                  </select>
+                  <div id="principal_periodo_nuevo_wrap" style="display:none;">
+                    <input
+                      id="principal_periodo_nuevo"
+                      type="text"
+                      value="{{ form_data.manual_periodo }}"
+                      placeholder="Ej. 01 de enero al 31 de diciembre"
+                      aria-label="Nuevo periodo del oficio"
+                    >
+                  </div>
+                  <input id="principal_periodo" type="hidden" value="{{ form_data.manual_periodo }}">
                 </div>
                 <div class="field">
                   <label for="principal_fuentes_objetivo">Fuentes previstas</label>
@@ -671,6 +709,11 @@
     const principalFuenteNuevaWrap = document.getElementById("principal_fuente_nueva_wrap");
     const principalFuenteNuevaInput = document.getElementById("principal_fuente_nueva");
     const principalPeriodo = document.getElementById("principal_periodo");
+    const principalPeriodoSelector = document.getElementById("principal_periodo_selector");
+    const principalPeriodoNuevoWrap = document.getElementById("principal_periodo_nuevo_wrap");
+    const principalPeriodoNuevo = document.getElementById("principal_periodo_nuevo");
+    const principalNumeroOficioInput = document.getElementById("principal_numero_oficio_input");
+    const principalNumeroOficioYearInput = document.getElementById("principal_numero_oficio_year");
     const principalNumeroOficio = document.getElementById("principal_numero_oficio");
     const principalFechaNotificacion = document.getElementById("principal_fecha_notificacion");
     const principalFuentesObjetivo = document.getElementById("principal_fuentes_objetivo");
@@ -815,6 +858,10 @@
     let isSyncingContextFields = false;
     const MIXED_TIPO_AUDITORIA = "Financiera y Obra Pública";
     const NEW_SOURCE_VALUE = "__new__";
+    const NEW_PERIODO_VALUE = "__new_periodo__";
+    let principalPeriodoOptions = [];
+    let principalPeriodoFetchId = 0;
+    let principalPeriodoFetchStatus = "idle";
 
     const escapeHtml = (value) => (
       String(value || "")
@@ -938,8 +985,10 @@
 
     const contextFields = [
       principalTipoAuditoria,
-      principalNumeroOficio,
-      principalPeriodo,
+      principalNumeroOficioInput,
+      principalNumeroOficioYearInput,
+      principalPeriodoSelector,
+      principalPeriodoNuevo,
       principalFechaNotificacion,
     ].filter(Boolean);
 
@@ -1076,6 +1125,260 @@
     };
 
     const isMixedScopeTipo = (value) => String(value || "").trim() === MIXED_TIPO_AUDITORIA;
+
+    const normalizePeriodoValue = (value) => String(value || "").split(/\s+/).filter(Boolean).join(" ").trim();
+    const normalizeOficioConsecutive = (value) => String(value || "").replace(/\D+/g, "");
+    const normalizeOficioYear = (value) => String(value || "").replace(/\D+/g, "").slice(0, 4);
+
+    const comparePeriodoLabels = (leftValue, rightValue, ejercicioHint = "") => {
+      const exerciseYear = /^\d{4}$/.test(String(ejercicioHint || "").trim())
+        ? String(ejercicioHint || "").trim()
+        : "9999";
+      const monthMap = {
+        enero: "01",
+        febrero: "02",
+        marzo: "03",
+        abril: "04",
+        mayo: "05",
+        junio: "06",
+        julio: "07",
+        agosto: "08",
+        septiembre: "09",
+        setiembre: "09",
+        octubre: "10",
+        noviembre: "11",
+        diciembre: "12",
+      };
+      const buildSortBounds = (rawPeriodo) => {
+        const clean = normalizePeriodoValue(rawPeriodo);
+        if (!clean) {
+          return { start: `${exerciseYear}-99-99`, end: `${exerciseYear}-99-99` };
+        }
+        const normalized = clean
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase();
+        const matches = Array.from(normalized.matchAll(/(\d{1,2})\s+de\s+([a-z]+)/g));
+        const toIso = (entry) => {
+          if (!entry) {
+            return `${exerciseYear}-99-99`;
+          }
+          const day = String(Number.parseInt(entry[1] || "", 10)).padStart(2, "0");
+          const month = monthMap[String(entry[2] || "").trim()] || "99";
+          return `${exerciseYear}-${month}-${day}`;
+        };
+        return {
+          start: toIso(matches[0]),
+          end: toIso(matches[1]),
+        };
+      };
+
+      const left = buildSortBounds(leftValue);
+      const right = buildSortBounds(rightValue);
+      if (left.start !== right.start) {
+        return left.start.localeCompare(right.start);
+      }
+      if (left.end !== right.end) {
+        return left.end.localeCompare(right.end);
+      }
+      return String(leftValue || "").localeCompare(String(rightValue || ""), "es", { sensitivity: "base" });
+    };
+
+    const resolvePrincipalOficioEjercicio = () => {
+      const ejercicio = principalEjercicio ? String(principalEjercicio.value || "").trim() : "";
+      return /^\d{4}$/.test(ejercicio) ? ejercicio : "202X";
+    };
+
+    const extractPrincipalOficioParts = (value) => {
+      const raw = String(value || "").trim();
+      if (!raw) {
+        return { consecutive: "", year: "" };
+      }
+      const formattedMatch = raw.match(/^OFS\/(\d+)\/(\d{4})$/i);
+      if (formattedMatch) {
+        return {
+          consecutive: formattedMatch[1],
+          year: formattedMatch[2],
+        };
+      }
+      return {
+        consecutive: normalizeOficioConsecutive(raw),
+        year: "",
+      };
+    };
+
+    const syncPrincipalOficioField = ({ preferHidden = false, forceExerciseYear = false } = {}) => {
+      const ejercicio = resolvePrincipalOficioEjercicio();
+      const hiddenParts = extractPrincipalOficioParts(principalNumeroOficio ? principalNumeroOficio.value || "" : "");
+      const consecutive = preferHidden
+        ? hiddenParts.consecutive
+        : normalizeOficioConsecutive(principalNumeroOficioInput ? principalNumeroOficioInput.value || "" : "");
+      let year = preferHidden
+        ? hiddenParts.year
+        : normalizeOficioYear(principalNumeroOficioYearInput ? principalNumeroOficioYearInput.value || "" : "");
+      if ((!year && preferHidden) || forceExerciseYear) {
+        year = /^\d{4}$/.test(ejercicio) ? ejercicio : year;
+      }
+      if (principalNumeroOficioInput) {
+        principalNumeroOficioInput.value = consecutive;
+      }
+      if (principalNumeroOficioYearInput) {
+        principalNumeroOficioYearInput.value = year;
+      }
+      if (principalNumeroOficio) {
+        principalNumeroOficio.value = consecutive && /^\d{4}$/.test(year)
+          ? `OFS/${consecutive}/${year}`
+          : "";
+      }
+    };
+
+    const findPrincipalPeriodoOption = (value) => {
+      const normalized = normalizePeriodoValue(value).toLowerCase();
+      if (!normalized) {
+        return "";
+      }
+      return principalPeriodoOptions.find((item) => item.toLowerCase() === normalized) || "";
+    };
+
+    const setPrincipalPeriodoNewMode = (enabled) => {
+      if (principalPeriodoNuevoWrap) {
+        principalPeriodoNuevoWrap.style.display = enabled ? "" : "none";
+      }
+      if (!principalPeriodoNuevo) {
+        return;
+      }
+      principalPeriodoNuevo.disabled = !enabled;
+      principalPeriodoNuevo.required = !!enabled;
+    };
+
+    const syncPrincipalPeriodoPickerState = () => {
+      if (!principalPeriodo || !principalPeriodoSelector) {
+        return;
+      }
+      const currentValue = normalizePeriodoValue(principalPeriodo.value || "");
+      const currentSelectorValue = String(principalPeriodoSelector.value || "").trim();
+      const currentDraftValue = normalizePeriodoValue(principalPeriodoNuevo ? principalPeriodoNuevo.value || "" : "");
+      const matchedValue = findPrincipalPeriodoOption(currentValue);
+      let selectorValue = "";
+      let newValue = "";
+      if (matchedValue) {
+        selectorValue = matchedValue;
+      } else if (currentValue) {
+        selectorValue = NEW_PERIODO_VALUE;
+        newValue = currentValue;
+      } else if (currentSelectorValue === NEW_PERIODO_VALUE) {
+        selectorValue = NEW_PERIODO_VALUE;
+        newValue = currentDraftValue;
+      } else if (!principalPeriodoOptions.length) {
+        selectorValue = NEW_PERIODO_VALUE;
+        newValue = currentDraftValue;
+      } else {
+        selectorValue = "";
+      }
+
+      principalPeriodoSelector.value = selectorValue;
+      setPrincipalPeriodoNewMode(selectorValue === NEW_PERIODO_VALUE);
+      if (principalPeriodoNuevo) {
+        principalPeriodoNuevo.value = selectorValue === NEW_PERIODO_VALUE ? newValue : "";
+      }
+    };
+
+    const applyPrincipalPeriodoControlsToHidden = () => {
+      if (!principalPeriodo || !principalPeriodoSelector) {
+        return;
+      }
+      const selectorValue = normalizePeriodoValue(principalPeriodoSelector.value || "");
+      const newValue = normalizePeriodoValue(principalPeriodoNuevo ? principalPeriodoNuevo.value || "" : "");
+
+      if (selectorValue === NEW_PERIODO_VALUE) {
+        setPrincipalPeriodoNewMode(true);
+        if (principalPeriodoNuevo && principalPeriodoNuevo.value !== newValue) {
+          principalPeriodoNuevo.value = newValue;
+        }
+        principalPeriodo.value = newValue;
+      } else if (selectorValue) {
+        setPrincipalPeriodoNewMode(false);
+        principalPeriodo.value = selectorValue;
+        if (principalPeriodoNuevo) {
+          principalPeriodoNuevo.value = "";
+        }
+      } else {
+        setPrincipalPeriodoNewMode(false);
+        principalPeriodo.value = "";
+        if (principalPeriodoNuevo) {
+          principalPeriodoNuevo.value = "";
+        }
+      }
+    };
+
+    const renderPrincipalPeriodoOptions = () => {
+      if (!principalPeriodoSelector) {
+        return;
+      }
+      const placeholder = principalPeriodoFetchStatus === "loading"
+        ? "Cargando periodos previos..."
+        : "Selecciona un periodo cargado";
+      principalPeriodoSelector.innerHTML =
+        `<option value="">${escapeHtml(placeholder)}</option>` +
+        principalPeriodoOptions
+          .map((periodo) => `<option value="${escapeHtml(periodo)}">${escapeHtml(periodo)}</option>`)
+          .join("") +
+        `<option value="${NEW_PERIODO_VALUE}">+ Agregar nuevo periodo...</option>`;
+      syncPrincipalPeriodoPickerState();
+    };
+
+    const fetchPrincipalPeriodoOptions = async () => {
+      if (!principalPeriodoSelector) {
+        return;
+      }
+      const ejercicio = principalEjercicio ? normalizePeriodoValue(principalEjercicio.value || "") : "";
+      if (!ejercicio) {
+        principalPeriodoFetchStatus = "idle";
+        principalPeriodoOptions = [];
+        renderPrincipalPeriodoOptions();
+        return;
+      }
+
+      const requestId = ++principalPeriodoFetchId;
+      principalPeriodoFetchStatus = "loading";
+      renderPrincipalPeriodoOptions();
+
+      const params = new URLSearchParams({ ejercicio });
+
+      try {
+        const response = await fetch(`/carga/observaciones-claves?${params.toString()}`);
+        if (!response.ok) {
+          throw new Error("No se pudieron cargar periodos");
+        }
+        const rows = await response.json();
+        if (requestId !== principalPeriodoFetchId) {
+          return;
+        }
+        const seen = new Set();
+        principalPeriodoOptions = (Array.isArray(rows) ? rows : [])
+          .map((row) => normalizePeriodoValue(row && row.periodo ? row.periodo : ""))
+          .filter((periodo) => {
+            if (!periodo) {
+              return false;
+            }
+            const key = periodo.toLowerCase();
+            if (seen.has(key)) {
+              return false;
+            }
+            seen.add(key);
+            return true;
+          })
+          .sort((a, b) => comparePeriodoLabels(a, b, principalEjercicio ? principalEjercicio.value || "" : ""));
+        principalPeriodoFetchStatus = "ready";
+      } catch (_error) {
+        if (requestId !== principalPeriodoFetchId) {
+          return;
+        }
+        principalPeriodoFetchStatus = "error";
+        principalPeriodoOptions = [];
+      }
+      renderPrincipalPeriodoOptions();
+    };
 
     const getAllowedSourceTipos = () => {
       const scopeTipo = principalTipoAuditoria ? String(principalTipoAuditoria.value || "").trim() : "";
@@ -1391,6 +1694,8 @@
         return;
       }
       isSyncingContextFields = true;
+      syncPrincipalOficioField();
+      applyPrincipalPeriodoControlsToHidden();
       const ejercicio = principalEjercicio ? String(principalEjercicio.value || "").trim() : "";
       const enteId = principalEnte ? String(principalEnte.value || "").trim() : "";
       const tipoAuditoria = principalTipoAuditoria ? String(principalTipoAuditoria.value || "").trim() : "";
@@ -1454,6 +1759,8 @@
       if (manualFuente && (appliedFuente || !fuenteValue)) {
         manualFuente.dispatchEvent(new Event("change", { bubbles: true }));
       }
+      syncPrincipalOficioField();
+      syncPrincipalPeriodoPickerState();
       updateContextSummary();
       isSyncingContextFields = false;
       updateWizardModeAvailability();
@@ -1486,6 +1793,8 @@
       if (principalFechaNotificacion && manualFechaNotificacion) {
         setFieldValue(principalFechaNotificacion, normalizeFechaIso(manualFechaNotificacion.value || ""));
       }
+      syncPrincipalOficioField({ preferHidden: true });
+      syncPrincipalPeriodoPickerState();
       togglePrincipalNuevaFuente();
       updateContextSummary();
       isSyncingContextFields = false;
@@ -1496,6 +1805,7 @@
     const loadPrincipalEntes = async (selectedEnteId = "") => {
       if (!principalEjercicio || !principalEnte) {
         syncPrincipalFiltersToForms({ syncTitular: true });
+        fetchPrincipalPeriodoOptions();
         return;
       }
       const requestId = ++principalEntesFetchId;
@@ -1512,6 +1822,7 @@
         principalEnte.value = "";
         principalEnte.dataset.selected = "";
         syncPrincipalFiltersToForms({ syncTitular: true });
+        fetchPrincipalPeriodoOptions();
         return;
       }
       try {
@@ -1528,6 +1839,7 @@
           principalEnte.value = "";
           principalEnte.dataset.selected = "";
           syncPrincipalFiltersToForms({ syncTitular: true });
+          fetchPrincipalPeriodoOptions();
           return;
         }
         principalEnte.innerHTML = '<option value="">Selecciona un ente</option>' + rows.map((row) => (
@@ -1549,6 +1861,7 @@
         principalEnte.dataset.selected = "";
       }
       syncPrincipalFiltersToForms({ syncTitular: true });
+      fetchPrincipalPeriodoOptions();
     };
 
     const formatDraftSavedAt = (rawValue) => {
@@ -3246,7 +3559,11 @@
           oficios.push(oficio);
         }
       });
-      periodos.sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+      periodos.sort((a, b) => comparePeriodoLabels(
+        a,
+        b,
+        manualEjercicio ? manualEjercicio.value || "" : (principalEjercicio ? principalEjercicio.value || "" : ""),
+      ));
       oficios.sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
       if (manualPeriodoOptions) {
         manualPeriodoOptions.innerHTML = periodos
@@ -4889,6 +5206,9 @@
     loadPdpCatalog();
 
     if (manualEjercicio && manualEnte && manualFuente) {
+      if (principalEjercicio) {
+        principalEjercicio.dataset.prevValue = String(principalEjercicio.value || "").trim();
+      }
       let fuentesFetchId = 0;
       const resolveLiveFuenteSelection = (fallback = "") => String(
         (manualFuente ? manualFuente.dataset.pendingValue || manualFuente.value || manualFuente.dataset.selected || "" : "")
@@ -5096,6 +5416,11 @@
 
       if (principalEjercicio && principalEnte) {
         principalEjercicio.addEventListener("change", () => {
+          const previousEjercicio = String(principalEjercicio.dataset.prevValue || "").trim();
+          const currentYear = normalizeOficioYear(principalNumeroOficioYearInput ? principalNumeroOficioYearInput.value || "" : "");
+          const shouldForceExerciseYear = !currentYear || (!!previousEjercicio && currentYear === previousEjercicio);
+          principalEjercicio.dataset.prevValue = String(principalEjercicio.value || "").trim();
+          syncPrincipalOficioField({ forceExerciseYear: shouldForceExerciseYear });
           clearManualEditState();
           loadPrincipalEntes("");
         });
@@ -5103,26 +5428,28 @@
           clearManualEditState();
           principalEnte.dataset.selected = String(principalEnte.value || "").trim();
           syncPrincipalFiltersToForms({ syncTitular: true });
-        updateWizardModeAvailability();
-      });
-    }
-    if (loaderCreateBackupBtn) {
-      loaderCreateBackupBtn.addEventListener("click", async () => {
-        loaderCreateBackupBtn.disabled = true;
-        try {
-          const backupPath = await createLoaderBackup("respaldo-manual-carga");
-          showWizardToast(`Respaldo generado: ${backupPath}.`, "success");
-        } catch (error) {
-          showWizardToast(error instanceof Error ? error.message : "No se pudo generar el respaldo.", "error");
-        } finally {
-          loaderCreateBackupBtn.disabled = false;
-        }
-      });
-    }
+          fetchPrincipalPeriodoOptions();
+          updateWizardModeAvailability();
+        });
+      }
+      if (loaderCreateBackupBtn) {
+        loaderCreateBackupBtn.addEventListener("click", async () => {
+          loaderCreateBackupBtn.disabled = true;
+          try {
+            const backupPath = await createLoaderBackup("respaldo-manual-carga");
+            showWizardToast(`Respaldo generado: ${backupPath}.`, "success");
+          } catch (error) {
+            showWizardToast(error instanceof Error ? error.message : "No se pudo generar el respaldo.", "error");
+          } finally {
+            loaderCreateBackupBtn.disabled = false;
+          }
+        });
+      }
       if (principalTipoAuditoria) {
         principalTipoAuditoria.addEventListener("change", () => {
           clearManualEditState();
           syncPrincipalFiltersToForms({ syncTitular: true });
+          fetchPrincipalPeriodoOptions();
         });
       }
       if (principalFuente) {
@@ -5135,14 +5462,35 @@
           syncPrincipalFiltersToForms({ syncTitular: false });
         });
       }
-      if (principalNumeroOficio) {
-        principalNumeroOficio.addEventListener("input", () => {
+      if (principalPeriodoSelector) {
+        principalPeriodoSelector.addEventListener("change", () => {
+          applyPrincipalPeriodoControlsToHidden();
+          clearManualEditState();
+          syncPrincipalFiltersToForms({ syncTitular: false });
+          if ((principalPeriodoSelector.value || "").trim() === NEW_PERIODO_VALUE
+            && principalPeriodoNuevo
+            && typeof principalPeriodoNuevo.focus === "function") {
+            principalPeriodoNuevo.focus();
+          }
+        });
+      }
+      if (principalNumeroOficioInput) {
+        principalNumeroOficioInput.addEventListener("input", () => {
+          syncPrincipalOficioField();
           clearManualEditState();
           syncPrincipalFiltersToForms({ syncTitular: false });
         });
       }
-      if (principalPeriodo) {
-        principalPeriodo.addEventListener("input", () => {
+      if (principalNumeroOficioYearInput) {
+        principalNumeroOficioYearInput.addEventListener("input", () => {
+          syncPrincipalOficioField();
+          clearManualEditState();
+          syncPrincipalFiltersToForms({ syncTitular: false });
+        });
+      }
+      if (principalPeriodoNuevo) {
+        principalPeriodoNuevo.addEventListener("input", () => {
+          applyPrincipalPeriodoControlsToHidden();
           clearManualEditState();
           syncPrincipalFiltersToForms({ syncTitular: false });
         });

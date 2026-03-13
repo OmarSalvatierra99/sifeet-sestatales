@@ -49,7 +49,7 @@
           <div class="field">
             <label for="obs_admin_ente_id">Ente</label>
             <select id="obs_admin_ente_id" name="ente_id">
-              <option value="">Todos los entes</option>
+              <option value="">Selecciona un ente</option>
             </select>
           </div>
           <div class="field">
@@ -73,7 +73,9 @@
           </div>
           <div class="field">
             <label for="obs_admin_oficio">Oficio</label>
-            <input id="obs_admin_oficio" name="oficio" type="text" placeholder="Número de oficio">
+            <select id="obs_admin_oficio" name="oficio" disabled>
+              <option value="">Selecciona primero un ente</option>
+            </select>
           </div>
           <div class="field">
             <label for="obs_admin_estado">Estado</label>
@@ -106,7 +108,7 @@
         <div class="obs-admin-safety-copy">
           <strong id="obsAdminSafetyTitle">Consulta general</strong>
           <p id="obsAdminSafetyHint">
-            Las acciones masivas se habilitan cuando defines ente, auditoría, oficio y al menos fuente o periodo.
+            Selecciona un ente y un oficio para editar observaciones de un solo oficio.
           </p>
         </div>
         <div class="obs-admin-safety-meta">
@@ -134,7 +136,7 @@
       <div id="obsAdminStatus" class="status status-info" hidden></div>
 
       <div class="table-meta">
-        <span id="obsAdminCount">Selecciona filtros; la consulta es automática.</span>
+        <span id="obsAdminCount">Selecciona un ente y un oficio; la consulta es automática.</span>
         <div class="obs-admin-actions-inline">
           <button type="button" class="btn-secondary" id="obsAdminBackupBtn">Crear respaldo</button>
           <button type="button" class="btn-secondary" id="obsAdminSolveAllBtn">Solventar todo</button>
@@ -384,6 +386,27 @@
       );
     };
 
+    const hasEditableOfficeScope = (filters) => {
+      const current = filters || readFilters();
+      return !!(
+        current
+        && current.ejercicio
+        && current.ente_id
+        && current.oficio
+        && !isReadOnlyEjercicio(current.ejercicio)
+      );
+    };
+
+    const hasOfficeQueryScope = (filters) => {
+      const current = filters || readFilters();
+      return !!(
+        current
+        && current.ejercicio
+        && current.ente_id
+        && current.oficio
+      );
+    };
+
     const describeScope = (filters) => {
       const current = filters || readFilters();
       const parts = [];
@@ -412,39 +435,50 @@
     const updateSafetyState = () => {
       const filters = readFilters();
       const readOnly = isReadOnlyEjercicio(filters.ejercicio);
+      const officeScope = hasOfficeQueryScope(filters);
+      const editableScope = hasEditableOfficeScope(filters);
       const safeScope = hasSafeMassScope(filters);
       const count = Array.isArray(filteredRows) ? filteredRows.length : 0;
+      const officeReason = "Selecciona un ente y un oficio para trabajar un solo oficio.";
       const reason = readOnly
         ? getReadOnlyMessage(filters.ejercicio)
-        : "Para acciones masivas define ente, auditoría, oficio y al menos fuente o periodo.";
+        : (!officeScope
+          ? officeReason
+          : "Para acciones masivas define auditoría y al menos fuente o periodo.");
 
       if (safetyTitle) {
         safetyTitle.textContent = readOnly
           ? `Ejercicio ${filters.ejercicio || "-"} en solo consulta`
-          : (safeScope ? "Edición habilitada para el alcance actual" : "Consulta con candados activos");
+          : (officeScope
+            ? (safeScope ? "Edición habilitada para el oficio actual" : "Edición por oficio")
+            : "Selecciona un oficio para editar");
       }
       if (safetyHint) {
         safetyHint.textContent = readOnly
           ? reason
-          : (safeScope
-            ? `${describeScope(filters)}. Observaciones visibles: ${count}.`
-            : `${describeScope(filters)}. ${reason}`);
+          : (officeScope
+            ? (safeScope
+              ? `${describeScope(filters)}. Observaciones visibles: ${count}.`
+              : `${describeScope(filters)}. ${reason}`)
+            : reason);
       }
       if (safetyModeChip) {
-        safetyModeChip.textContent = readOnly ? "Solo consulta" : "Edición habilitada";
+        safetyModeChip.textContent = readOnly ? "Solo consulta" : (officeScope ? "Edición por oficio" : "Esperando oficio");
       }
       if (safetyScopeChip) {
-        safetyScopeChip.textContent = safeScope ? "Acciones masivas listas" : "Alcance incompleto";
+        safetyScopeChip.textContent = safeScope
+          ? "Acciones masivas listas"
+          : (officeScope ? "Alcance parcial" : "Ente/oficio requeridos");
       }
 
       if (selectAllCheckbox instanceof HTMLInputElement) {
-        selectAllCheckbox.disabled = readOnly;
-        selectAllCheckbox.title = readOnly ? reason : "";
+        selectAllCheckbox.disabled = !editableScope;
+        selectAllCheckbox.title = !editableScope ? reason : "";
       }
       setBulkActionState(solveAllBtn, !safeScope, reason);
       setBulkActionState(pendingAllBtn, !safeScope, reason);
       setBulkActionState(deleteAllBtn, !safeScope, reason);
-      setBulkActionState(deleteSelectedBtn, readOnly, readOnly ? reason : "");
+      setBulkActionState(deleteSelectedBtn, !editableScope, reason);
     };
 
     const ensureFuenteOptionForScope = (targetLabel) => {
@@ -484,6 +518,82 @@
         throw new Error(data.error || data.message || "No se pudo generar el respaldo.");
       }
       return String(data.backup_path || "").trim();
+    };
+
+    const loadOficios = async (selectedValue = "") => {
+      if (!oficioInput || !ejercicioInput || !enteInput) {
+        return;
+      }
+      const ejercicio = String(ejercicioInput.value || "").trim();
+      const enteId = String(enteInput.value || "").trim();
+      const tipoAuditoria = String(tipoAuditoriaInput ? tipoAuditoriaInput.value : "").trim();
+      const fuente = resolveFuenteFilter();
+      const periodo = String(periodoInput ? periodoInput.value : "").trim();
+
+      if (!ejercicio || !enteId) {
+        oficioInput.innerHTML = '<option value="">Selecciona primero un ente</option>';
+        oficioInput.value = "";
+        oficioInput.disabled = true;
+        return;
+      }
+
+      oficioInput.disabled = true;
+      oficioInput.innerHTML = '<option value="">Cargando oficios...</option>';
+      try {
+        const params = new URLSearchParams({
+          ejercicio,
+          ente_id: enteId,
+        });
+        if (tipoAuditoria) {
+          params.set("tipo_auditoria", tipoAuditoria);
+        }
+        if (fuente) {
+          params.set("fuente", fuente);
+        }
+        if (periodo) {
+          params.set("periodo", periodo);
+        }
+        const response = await fetch(`/carga/observaciones-claves?${params.toString()}`);
+        if (!response.ok) {
+          throw new Error("No se pudieron cargar oficios.");
+        }
+        const rows = await response.json();
+        const seen = new Map();
+        (Array.isArray(rows) ? rows : []).forEach((row) => {
+          const oficio = String((row && row.oficio) || "").trim();
+          const rowPeriodo = String((row && row.periodo) || "").trim();
+          if (!oficio) {
+            return;
+          }
+          const key = oficio.toLowerCase();
+          if (!seen.has(key)) {
+            seen.set(key, { oficio, periods: rowPeriodo ? [rowPeriodo] : [] });
+            return;
+          }
+          const current = seen.get(key);
+          if (rowPeriodo && !current.periods.some((item) => item.toLowerCase() === rowPeriodo.toLowerCase())) {
+            current.periods.push(rowPeriodo);
+          }
+        });
+        const options = Array.from(seen.values());
+        oficioInput.innerHTML = '<option value="">Selecciona un oficio</option>' + options.map((item) => {
+          const detail = item.periods.length > 1
+            ? " · varios periodos"
+            : (item.periods[0] ? ` · ${item.periods[0]}` : "");
+          return `<option value="${escapeHtml(item.oficio)}">${escapeHtml(`${item.oficio}${detail}`)}</option>`;
+        }).join("");
+        const desired = String(selectedValue || "").trim();
+        if (desired && options.some((item) => item.oficio.toLowerCase() === desired.toLowerCase())) {
+          oficioInput.value = options.find((item) => item.oficio.toLowerCase() === desired.toLowerCase()).oficio;
+        } else {
+          oficioInput.value = "";
+        }
+        oficioInput.disabled = false;
+      } catch (_error) {
+        oficioInput.innerHTML = '<option value="">No se pudieron cargar oficios</option>';
+        oficioInput.value = "";
+        oficioInput.disabled = true;
+      }
     };
 
     const updateMetrics = (rows) => {
@@ -564,12 +674,15 @@
         return;
       }
 
-      const currentEjercicio = readFilters().ejercicio;
+      const currentFilters = readFilters();
+      const currentEjercicio = currentFilters.ejercicio;
       const pageReadOnly = isReadOnlyEjercicio(currentEjercicio);
-      const disabledAttr = pageReadOnly ? " disabled" : "";
-      const disabledTitle = pageReadOnly
-        ? ` title="${escapeHtml(getReadOnlyMessage(currentEjercicio))}"`
-        : "";
+      const officeEditable = hasEditableOfficeScope(currentFilters);
+      const rowDisabledReason = pageReadOnly
+        ? getReadOnlyMessage(currentEjercicio)
+        : "Selecciona un ente y un oficio para editar un solo oficio.";
+      const disabledAttr = officeEditable ? "" : " disabled";
+      const disabledTitle = officeEditable ? "" : ` title="${escapeHtml(rowDisabledReason)}"`;
 
       tableBody.innerHTML = rows.map((row) => {
         const id = Number(row.id || 0);
@@ -718,6 +831,22 @@
         updateSafetyState();
         return;
       }
+      if (!filters.ente_id || !filters.oficio) {
+        allRows = [];
+        filteredRows = [];
+        updateMetrics([]);
+        renderEmptyRow("Selecciona un ente y un oficio para consultar observaciones de un solo oficio.");
+        if (countLabel) {
+          countLabel.textContent = "Selecciona un ente y un oficio; la consulta es automática.";
+        }
+        if (announce) {
+          showStatus("Selecciona un ente y un oficio para continuar.", "info");
+        } else {
+          clearStatus();
+        }
+        updateSafetyState();
+        return;
+      }
       renderEmptyRow("Consultando observaciones...");
       updateSafetyState();
       try {
@@ -786,6 +915,10 @@
         return;
       }
       const filters = readFilters();
+      if (!hasEditableOfficeScope(filters)) {
+        showStatus("Selecciona un ente y un oficio para editar un solo oficio.", "error");
+        return;
+      }
       if (isReadOnlyEjercicio(filters.ejercicio)) {
         showStatus(getReadOnlyMessage(filters.ejercicio), "error");
         return;
@@ -799,7 +932,14 @@
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payloadResult.payload),
+            body: JSON.stringify({
+              ...payloadResult.payload,
+              scope: {
+                ejercicio: filters.ejercicio,
+                ente_id: filters.ente_id,
+                oficio: filters.oficio,
+              },
+            }),
           },
         );
         const data = await response.json();
@@ -828,6 +968,10 @@
         return;
       }
       const filters = readFilters();
+      if (!hasEditableOfficeScope(filters)) {
+        showStatus("Selecciona un ente y un oficio para editar un solo oficio.", "error");
+        return;
+      }
       if (isReadOnlyEjercicio(filters.ejercicio)) {
         showStatus(getReadOnlyMessage(filters.ejercicio), "error");
         return;
@@ -843,6 +987,13 @@
         const response = await fetch(`/carga/observaciones-admin/${encodeURIComponent(id)}/borrar`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            scope: {
+              ejercicio: filters.ejercicio,
+              ente_id: filters.ente_id,
+              oficio: filters.oficio,
+            },
+          }),
         });
         const data = await response.json();
         if (!response.ok || !data.ok) {
@@ -874,6 +1025,10 @@
         return;
       }
       const filters = readFilters();
+      if (!hasEditableOfficeScope(filters)) {
+        showStatus("Selecciona un ente y un oficio para editar un solo oficio.", "error");
+        return;
+      }
       if (isReadOnlyEjercicio(filters.ejercicio)) {
         showStatus(getReadOnlyMessage(filters.ejercicio), "error");
         return;
@@ -889,7 +1044,14 @@
         const response = await fetch("/carga/observaciones-admin/borrar", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ids }),
+          body: JSON.stringify({
+            ids,
+            scope: {
+              ejercicio: filters.ejercicio,
+              ente_id: filters.ente_id,
+              oficio: filters.oficio,
+            },
+          }),
         });
         const data = await response.json();
         if (!response.ok || !data.ok) {
@@ -904,7 +1066,7 @@
       } catch (error) {
         showStatus(error && error.message ? error.message : "Error al eliminar seleccionadas.", "error");
       } finally {
-        deleteSelectedBtn.disabled = false;
+        updateSafetyState();
       }
     };
 
@@ -1078,7 +1240,7 @@
       const ejercicio = String(ejercicioInput.value || "").trim();
       enteInput.innerHTML = '<option value="">Cargando entes...</option>';
       if (!ejercicio) {
-        enteInput.innerHTML = '<option value="">Todos los entes</option>';
+        enteInput.innerHTML = '<option value="">Selecciona un ente</option>';
         enteInput.value = "";
         return;
       }
@@ -1089,7 +1251,7 @@
         }
         const rows = await response.json();
         const options = Array.isArray(rows) ? rows : [];
-        enteInput.innerHTML = '<option value="">Todos los entes</option>' + options.map((row) => (
+        enteInput.innerHTML = '<option value="">Selecciona un ente</option>' + options.map((row) => (
           `<option value="${escapeHtml(row.ente_id)}">${escapeHtml(`${row.ente_numero || ""} - ${row.ente_nombre || ""}`)}</option>`
         )).join("");
         const selected = String(selectedValue || "").trim();
@@ -1176,6 +1338,7 @@
       if (fuenteInput && initialScope.fuente) {
         ensureFuenteOptionForScope(initialScope.fuente);
       }
+      await loadOficios(initialScope.oficio || "");
       await fetchRows({ announce: false });
       if (hasInitialScope) {
         showStatus("Filtros cargados desde el contexto de captura.", "info");
@@ -1193,6 +1356,7 @@
         clearStatus();
         await loadEntes("");
         await loadFuentes("");
+        await loadOficios("");
         await fetchRows({ announce: false });
       });
     }
@@ -1201,6 +1365,7 @@
       enteInput.addEventListener("change", async () => {
         clearStatus();
         await loadFuentes("");
+        await loadOficios("");
         await fetchRows({ announce: false });
       });
     }
@@ -1209,6 +1374,7 @@
       tipoAuditoriaInput.addEventListener("change", async () => {
         clearStatus();
         await loadFuentes(String(fuenteInput ? fuenteInput.value : "").trim());
+        await loadOficios(String(oficioInput ? oficioInput.value : "").trim());
         await fetchRows({ announce: false });
       });
     }
@@ -1216,6 +1382,7 @@
     if (fuenteInput) {
       fuenteInput.addEventListener("change", async () => {
         clearStatus();
+        await loadOficios(String(oficioInput ? oficioInput.value : "").trim());
         await fetchRows({ announce: false });
       });
     }
@@ -1228,19 +1395,27 @@
       });
     });
 
-    [periodoInput, oficioInput].forEach((field) => {
-      if (!field) return;
-      field.addEventListener("change", async () => {
+    if (periodoInput) {
+      periodoInput.addEventListener("change", async () => {
         clearStatus();
+        await loadOficios(String(oficioInput ? oficioInput.value : "").trim());
         await fetchRows({ announce: false });
       });
-      field.addEventListener("keydown", async (event) => {
+      periodoInput.addEventListener("keydown", async (event) => {
         if (event.key !== "Enter") return;
         event.preventDefault();
         clearStatus();
+        await loadOficios(String(oficioInput ? oficioInput.value : "").trim());
         await fetchRows({ announce: false });
       });
-    });
+    }
+
+    if (oficioInput) {
+      oficioInput.addEventListener("change", async () => {
+        clearStatus();
+        await fetchRows({ announce: false });
+      });
+    }
 
     if (quickSearchInput) {
       quickSearchInput.addEventListener("input", applyClientFilters);
@@ -1274,6 +1449,7 @@
         }
         await loadEntes("");
         await loadFuentes("");
+        await loadOficios("");
         await fetchRows({ announce: false });
         showStatus("Filtros limpiados.", "info");
       });

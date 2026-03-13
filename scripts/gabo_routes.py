@@ -176,6 +176,35 @@ def register_gabo_routes(app, deps):
         ).fetchone()
         return int((row["total"] if row else 0) or 0)
 
+    def _require_observaciones_admin_edit_scope(scope: dict, *, action_label: str) -> None:
+        ente_id = normalize_ente_id(scope.get("ente_id", "")) if isinstance(scope, dict) else ""
+        oficio = " ".join((((scope or {}).get("oficio")) or "").split()) if isinstance(scope, dict) else ""
+        if not ente_id or not oficio:
+            raise ValueError(
+                f"Para {action_label} selecciona un ente y un oficio. La edición es oficio por oficio."
+            )
+
+    def _validate_observacion_matches_scope(row, raw_scope) -> None:
+        if not isinstance(raw_scope, dict) or not raw_scope:
+            return
+        scope = {
+            "ejercicio": " ".join((raw_scope.get("ejercicio") or "").split()),
+            "ente_id": normalize_ente_id(raw_scope.get("ente_id", "")),
+            "oficio": " ".join((raw_scope.get("oficio") or "").split()),
+        }
+        _require_observaciones_admin_edit_scope(scope, action_label="editar observaciones")
+
+        ejercicio_actual = " ".join((row["ejercicio"] or "").split())
+        ente_actual = normalize_ente_id(row["ente_id"] or "")
+        oficio_actual = " ".join((row["oficio"] or "").split())
+
+        if scope["ejercicio"] and scope["ejercicio"] != ejercicio_actual:
+            raise ValueError("La observación no pertenece al ejercicio seleccionado. Refresca la consulta.")
+        if scope["ente_id"] and scope["ente_id"] != ente_actual:
+            raise ValueError("La observación no pertenece al ente seleccionado. Refresca la consulta.")
+        if scope["oficio"] and scope["oficio"].lower() != oficio_actual.lower():
+            raise ValueError("La observación no pertenece al oficio seleccionado. Refresca la consulta.")
+
     def _snapshot_safe_label(raw_label: str) -> str:
         clean = re.sub(r"[^a-z0-9]+", "-", (raw_label or "").strip().lower()).strip("-")
         return clean or "snapshot"
@@ -1904,11 +1933,12 @@ def register_gabo_routes(app, deps):
         ente_id = normalize_ente_id(request.args.get("ente_id", ""))
         tipo_auditoria = (request.args.get("tipo_auditoria") or "").strip()
         fuente = " ".join((request.args.get("fuente") or "").split())
-        if not ejercicio or not ente_id:
+        periodo = " ".join((request.args.get("periodo") or "").split())
+        if not ejercicio:
             return jsonify([])
 
         db = get_db()
-        params: list[str] = [ejercicio, ente_id]
+        params: list[str] = [ejercicio]
         tipo_clause = ""
         if tipo_auditoria:
             tipo_options = _tipo_auditoria_options(tipo_auditoria)
@@ -1919,11 +1949,19 @@ def register_gabo_routes(app, deps):
             params.extend(tipo_options)
 
         where_extra: list[str] = []
+        if ente_id:
+            where_extra.append(f"{normalize_ente_id_sql('ente_id')} = ?")
+            params.append(ente_id)
         if fuente:
             where_extra.append(
                 "LOWER(TRIM(COALESCE(fuente_financiamiento, ''))) = LOWER(TRIM(COALESCE(?, '')))"
             )
             params.append(fuente)
+        if periodo:
+            where_extra.append(
+                "LOWER(TRIM(COALESCE(periodo_cedula, ''))) = LOWER(TRIM(COALESCE(?, '')))"
+            )
+            params.append(periodo)
 
         where_sql = ""
         if where_extra:
@@ -1936,7 +1974,6 @@ def register_gabo_routes(app, deps):
                 TRIM(COALESCE(oficio, '')) AS oficio
             FROM observaciones
             WHERE TRIM(COALESCE(ejercicio, '')) = ?
-              AND {normalize_ente_id_sql('ente_id')} = ?
               {tipo_clause}
               {where_sql}
               AND TRIM(COALESCE(periodo_cedula, '')) != ''
@@ -1956,6 +1993,14 @@ def register_gabo_routes(app, deps):
             if not periodo or not oficio:
                 continue
             payload.append({"periodo": periodo, "oficio": oficio})
+        payload.sort(
+            key=lambda item: (
+                parse_periodo_cedula(ejercicio, item["periodo"])[0] or "9999-12-31",
+                parse_periodo_cedula(ejercicio, item["periodo"])[1] or "9999-12-31",
+                item["periodo"].lower(),
+                item["oficio"].lower(),
+            )
+        )
         return jsonify(payload)
 
     @app.post("/carga/observaciones-cargadas/<int:observacion_id>/actualizar")
@@ -1966,6 +2011,7 @@ def register_gabo_routes(app, deps):
         estado = _normalize_observacion_estado(payload.get("estado", ""))
         monto_emitido_raw = payload.get("monto_pdp_emitido", "")
         monto_solventado_raw = payload.get("monto_pdp_solventado", "")
+        raw_scope = payload.get("scope") if isinstance(payload.get("scope"), dict) else {}
 
         db = get_db()
         current = db.execute(
@@ -1973,7 +2019,9 @@ def register_gabo_routes(app, deps):
             SELECT
                 id,
                 TRIM(COALESCE(tipo_anexo, '')) AS tipo_anexo,
-                TRIM(COALESCE(ejercicio, '')) AS ejercicio
+                TRIM(COALESCE(ejercicio, '')) AS ejercicio,
+                TRIM(COALESCE(ente_id, '')) AS ente_id,
+                TRIM(COALESCE(oficio, '')) AS oficio
             FROM observaciones
             WHERE id = ?
             LIMIT 1
@@ -1987,8 +2035,10 @@ def register_gabo_routes(app, deps):
         ejercicio = " ".join((current["ejercicio"] or "").split())
         try:
             _ensure_editable_ejercicio(ejercicio)
+            _validate_observacion_matches_scope(current, raw_scope)
         except ValueError as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 403
+            status_code = 403 if "concluido" in str(exc).lower() else 400
+            return jsonify({"ok": False, "error": str(exc)}), status_code
         if accion in {"reclasificar_pdp_pras", "reclasificar_pras", "pdp_a_pras"}:
             if tipo_anexo != "PDP":
                 return jsonify(
@@ -2448,10 +2498,16 @@ def register_gabo_routes(app, deps):
     @app.post("/carga/observaciones-admin/<int:observacion_id>/borrar")
     @gabo_required
     def carga_observaciones_admin_borrar(observacion_id: int):
+        payload = request.get_json(silent=True) or {}
+        raw_scope = payload.get("scope") if isinstance(payload.get("scope"), dict) else {}
         db = get_db()
         found = db.execute(
             """
-            SELECT id, TRIM(COALESCE(ejercicio, '')) AS ejercicio
+            SELECT
+                id,
+                TRIM(COALESCE(ejercicio, '')) AS ejercicio,
+                TRIM(COALESCE(ente_id, '')) AS ente_id,
+                TRIM(COALESCE(oficio, '')) AS oficio
             FROM observaciones
             WHERE id = ?
             LIMIT 1
@@ -2462,8 +2518,10 @@ def register_gabo_routes(app, deps):
             return jsonify({"ok": False, "error": "Observación no encontrada."}), 404
         try:
             _ensure_editable_ejercicio(found["ejercicio"])
+            _validate_observacion_matches_scope(found, raw_scope)
         except ValueError as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 403
+            status_code = 403 if "concluido" in str(exc).lower() else 400
+            return jsonify({"ok": False, "error": str(exc)}), status_code
         backup_path = _create_db_snapshot(f"observacion-{observacion_id}-borrar")
         db.execute("DELETE FROM observaciones WHERE id = ?", (observacion_id,))
         db.commit()
@@ -2474,6 +2532,7 @@ def register_gabo_routes(app, deps):
     def carga_observaciones_admin_borrar_multiples():
         payload = request.get_json(silent=True) or {}
         raw_ids = payload.get("ids")
+        raw_scope = payload.get("scope") if isinstance(payload.get("scope"), dict) else {}
         if not isinstance(raw_ids, list) or not raw_ids:
             return jsonify({"ok": False, "error": "No se recibieron observaciones para borrar."}), 400
 
@@ -2490,6 +2549,19 @@ def register_gabo_routes(app, deps):
             return jsonify({"ok": False, "error": "Lista de observaciones inválida."}), 400
 
         db = get_db()
+        if raw_scope:
+            try:
+                where_clauses, params, scope, _ = build_observaciones_admin_scope(raw_scope)
+                _require_observaciones_admin_edit_scope(scope, action_label="borrar observaciones")
+            except ValueError as exc:
+                return jsonify({"ok": False, "error": str(exc)}), 400
+            if _count_scope_ids(db, ids, where_clauses, params) != len(ids):
+                return jsonify(
+                    {
+                        "ok": False,
+                        "error": "Refresca la consulta: las observaciones seleccionadas ya no coinciden con el oficio activo.",
+                    }
+                ), 400
         blocked_ejercicio = _first_readonly_observacion_ejercicio(db, ids)
         if blocked_ejercicio:
             return jsonify({"ok": False, "error": _readonly_obs_message(blocked_ejercicio)}), 403
