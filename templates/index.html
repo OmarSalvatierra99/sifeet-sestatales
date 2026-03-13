@@ -454,6 +454,11 @@
       const obsPageSize = 40;
       let obsTotalRows = 0;
       let obsTotalPages = 1;
+      const reportPalette = {
+        primary: "#004F61",
+        primaryStrong: "#003946",
+        warning: "#B18934",
+      };
       const createEmptyDashboardSummary = () => ({
         tipos: [],
         totals: { emitidas: 0, solventadas: 0, pendientes: 0 },
@@ -1081,7 +1086,7 @@
         }
         const donutLabels = ["Solventadas", "Pendientes"];
         const donutData = [solventadas, pendientes];
-        const donutColors = ["#4b7a55", "#b18934"];
+        const donutColors = [reportPalette.primary, reportPalette.warning];
         if (pdpCountDonutChart) {
           pdpCountDonutChart.data.labels = donutLabels;
           pdpCountDonutChart.data.datasets[0].data = donutData;
@@ -1114,7 +1119,7 @@
         }
         const donutLabels = ["Solventado", "Pendiente"];
         const donutData = [solventado, pendiente];
-        const donutColors = ["#4b7a55", "#b18934"];
+        const donutColors = [reportPalette.primary, reportPalette.warning];
         if (pdpMontoDonutChart) {
           pdpMontoDonutChart.data.labels = donutLabels;
           pdpMontoDonutChart.data.datasets[0].data = donutData;
@@ -1164,7 +1169,7 @@
             return;
           }
           ctx.save();
-          ctx.fillStyle = "#1f3b2c";
+          ctx.fillStyle = reportPalette.primaryStrong;
           ctx.font = "600 11px 'Segoe UI', sans-serif";
           ctx.textBaseline = "middle";
           lastMeta.data.forEach((point, index) => {
@@ -1218,14 +1223,14 @@
                 label: "Solventadas (%)",
                 data: solventadasPct,
                 meta_absoluto: solventadasAbs,
-                backgroundColor: "#4b7a55",
+                backgroundColor: reportPalette.primary,
                 borderRadius: 6,
               },
               {
                 label: "Pendientes (%)",
                 data: pendientesPct,
                 meta_absoluto: pendientesAbs,
-                backgroundColor: "#b18934",
+                backgroundColor: reportPalette.warning,
                 borderRadius: 6,
               },
             ],
@@ -1303,7 +1308,7 @@
               {
                 label: "Emitidas",
                 data: emitidas,
-                backgroundColor: "#2f5b45",
+                backgroundColor: reportPalette.primaryStrong,
                 borderRadius: 6,
               },
             ],
@@ -1345,7 +1350,7 @@
               {
                 label: "Pendientes",
                 data: values,
-                backgroundColor: "#b18934",
+                backgroundColor: reportPalette.warning,
                 borderRadius: 6,
               },
             ],
@@ -1424,9 +1429,9 @@
               data: {
                 labels,
                 datasets: [
-                  { label: "Emitidas", data: emitidas, backgroundColor: "#2f5b45", borderRadius: 6 },
-                  { label: "Solventadas", data: solventadas, backgroundColor: "#4b7a55", borderRadius: 6 },
-                  { label: "Pendientes", data: pendientes, backgroundColor: "#b18934", borderRadius: 6 },
+                  { label: "Emitidas", data: emitidas, backgroundColor: reportPalette.primaryStrong, borderRadius: 6 },
+                  { label: "Solventadas", data: solventadas, backgroundColor: reportPalette.primary, borderRadius: 6 },
+                  { label: "Pendientes", data: pendientes, backgroundColor: reportPalette.warning, borderRadius: 6 },
                 ],
               },
               options: {
@@ -1462,7 +1467,7 @@
               data: {
                 labels,
                 datasets: [
-                  { label: "% Pendientes", data: pendientesPct, backgroundColor: "#b18934", borderRadius: 6 },
+                  { label: "% Pendientes", data: pendientesPct, backgroundColor: reportPalette.warning, borderRadius: 6 },
                 ],
               },
               options: {

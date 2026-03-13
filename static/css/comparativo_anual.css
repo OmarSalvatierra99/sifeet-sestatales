@@ -103,8 +103,8 @@
 
 .comparison-year-chip.is-active {
   color: #fff;
-  border-color: #1f3b2c;
-  background: #1f3b2c;
+  border-color: var(--color-accent);
+  background: var(--color-accent);
 }
 
 .comparison-grid {

@@ -49,15 +49,15 @@
   const semanticColors = {
     neutral: "#64748b",
     neutralSoft: "rgba(100, 116, 139, 0.18)",
-    success: "#15803d",
-    successSoft: "rgba(21, 128, 61, 0.18)",
+    success: "#004F61",
+    successSoft: "rgba(0, 79, 97, 0.18)",
     danger: "#b91c1c",
     dangerSoft: "rgba(185, 28, 28, 0.18)",
   };
   const technicalPalette = [
-    "rgba(31, 59, 44, 0.82)",
-    "rgba(15, 118, 110, 0.78)",
-    "rgba(37, 99, 235, 0.76)",
+    "rgba(0, 79, 97, 0.84)",
+    "rgba(0, 105, 126, 0.8)",
+    "rgba(8, 126, 164, 0.76)",
     "rgba(202, 138, 4, 0.78)",
     "rgba(127, 29, 29, 0.74)",
     "rgba(71, 85, 105, 0.74)",
