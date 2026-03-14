@@ -248,35 +248,73 @@
             <span>Exportar a Excel</span>
           </button>
         </div>
+        <div class="obs-responsables" id="obsResponsables" hidden>
+          <h3>Titulares y administrativos del periodo</h3>
+          <div class="table-wrap">
+            <table class="table-compact obs-responsables-table">
+              <thead id="obsResponsablesHead">
+                <tr>
+                  <th rowspan="2">No</th>
+                  <th rowspan="2">Ente Fiscalizable</th>
+                  <th rowspan="2">Periodos Informe</th>
+                  <th rowspan="2">Titular</th>
+                  <th rowspan="2">Periodos Administrativo / Responsable de<br>Obra</th>
+                  <th rowspan="2">Administrativo / Encargado de<br>Obra</th>
+                  <th rowspan="2">Periodo<br>Cédula</th>
+                  <th colspan="7">EMITIDAS</th>
+                  <th colspan="7">SOLVENTADAS</th>
+                  <th colspan="7">PENDIENTES</th>
+                </tr>
+                <tr>
+                  <th>R</th>
+                  <th>SA</th>
+                  <th>PDP</th>
+                  <th>PRAS</th>
+                  <th>PECFF</th>
+                  <th>Emitidas</th>
+                  <th>Monto Daño ($)</th>
+                  <th>R</th>
+                  <th>SA</th>
+                  <th>PO</th>
+                  <th>PRAS</th>
+                  <th>PECFF</th>
+                  <th>Solventadas</th>
+                  <th>Monto Daño ($)</th>
+                  <th>R</th>
+                  <th>SA</th>
+                  <th>PDP</th>
+                  <th>PRAS</th>
+                  <th>PECFF</th>
+                  <th>Pendientes</th>
+                  <th>Monto Daño ($)</th>
+                </tr>
+              </thead>
+              <tbody id="obsResponsablesBody">
+                <tr>
+                  <td colspan="28" class="muted">Selecciona una cédula de resultados para consultar responsables.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="panel-inline-actions" id="responsablesPeriodoExportWrap" hidden>
+          <button class="panel-action-btn" type="button" id="responsables_periodo_export">
+            <span class="floating-clear-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M12 4v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                <path d="M8 10l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M5 18h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <span>Exportar responsables a Excel</span>
+          </button>
+        </div>
       </section>
 
       <section class="panel observaciones-panel">
         <div class="panel-header">
           <h2>Observaciones por ejercicio</h2>
           <p>Detalle de observaciones con responsables y exportación según los filtros activos.</p>
-        </div>
-        <div class="obs-responsables" id="obsResponsables">
-          <h3>Titulares y administrativos del periodo</h3>
-          <div class="table-wrap">
-            <table class="table-compact">
-              <thead id="obsResponsablesHead">
-                <tr>
-                  <th>Ente</th>
-                  <th>Tipo auditoría</th>
-                  <th>Cédula de resultados</th>
-                  <th>Titular</th>
-                  <th>Periodo titular</th>
-                  <th>Administrativo</th>
-                  <th>Periodo administrativo</th>
-                </tr>
-              </thead>
-              <tbody id="obsResponsablesBody">
-                <tr>
-                  <td colspan="7" class="muted">Selecciona una cédula de resultados para consultar responsables.</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
         </div>
         <div class="table-meta">
           <span id="obsCount" aria-live="polite">Selecciona un ejercicio para ver resultados.</span>
@@ -399,11 +437,14 @@
     const obsConceptoIrregularidad = document.getElementById("obs_concepto_irregularidad");
     const obsConceptoField = document.getElementById("obs_concepto_field");
     const cedulaResultados = document.getElementById("cedula_resultados");
+    const obsResponsables = document.getElementById("obsResponsables");
     const obsResponsablesBody = document.getElementById("obsResponsablesBody");
     const obsClearFab = document.getElementById("obs_clear_fab");
     const activeFiltersToggle = document.getElementById("activeFiltersToggle");
     const obsExport = document.getElementById("obs_export");
     const pendientesPeriodoExport = document.getElementById("pendientes_periodo_export");
+    const responsablesPeriodoExportWrap = document.getElementById("responsablesPeriodoExportWrap");
+    const responsablesPeriodoExport = document.getElementById("responsables_periodo_export");
     const obsTableBody = document.getElementById("obsTableBody");
     const obsCount = document.getElementById("obsCount");
     const obsQuickSearch = document.getElementById("obs_quick_search");
@@ -955,139 +996,253 @@
         renderObservacionesPage();
       };
 
-      const renderResponsablesPeriodo = (rows) => {
+      const renderResponsablesPeriodo = (groups) => {
         if (!obsResponsablesBody) {
           return;
         }
-        const selectedCedulas = getSelectedValues(cedulaResultados);
+        const selectedEnte = getSelectedValues(obsEnteInput);
         const obsResponsablesHead = document.getElementById("obsResponsablesHead");
-        const columns = [
-          { key: "ente", label: "Ente" },
-          { key: "tipo_auditoria", label: "Tipo auditoría" },
-          { key: "periodo_cedula", label: "Cédula de resultados" },
-          { key: "titular", label: "Titular" },
-          { key: "periodo_titular", label: "Periodo titular" },
-          { key: "administrativo", label: "Administrativo" },
-          { key: "periodo_administrativo", label: "Periodo administrativo" },
-        ];
+        const ejercicioLabel = String(mainEjercicio?.value || "").trim() || "del ejercicio";
+        const buildHeadHtml = () => `
+          <tr>
+            <th rowspan="2">No</th>
+            <th rowspan="2">Ente Fiscalizable</th>
+            <th rowspan="2">Periodos Informe ${escapeHtml(ejercicioLabel)}</th>
+            <th rowspan="2">Titular ${escapeHtml(ejercicioLabel)}</th>
+            <th rowspan="2">Periodos Administrativo / Responsable de<br>Obra</th>
+            <th rowspan="2">Administrativo / Encargado de<br>Obra</th>
+            <th rowspan="2">Periodo<br>Cédula</th>
+            <th colspan="7">EMITIDAS</th>
+            <th colspan="7">SOLVENTADAS</th>
+            <th colspan="7">PENDIENTES</th>
+          </tr>
+          <tr>
+            <th>R</th>
+            <th>SA</th>
+            <th>PDP</th>
+            <th>PRAS</th>
+            <th>PECFF</th>
+            <th>Emitidas</th>
+            <th>Monto Daño ($)</th>
+            <th>R</th>
+            <th>SA</th>
+            <th>PO</th>
+            <th>PRAS</th>
+            <th>PECFF</th>
+            <th>Solventadas</th>
+            <th>Monto Daño ($)</th>
+            <th>R</th>
+            <th>SA</th>
+            <th>PDP</th>
+            <th>PRAS</th>
+            <th>PECFF</th>
+            <th>Pendientes</th>
+            <th>Monto Daño ($)</th>
+          </tr>
+        `;
         const renderMessage = (message) => {
           if (obsResponsablesHead) {
-            obsResponsablesHead.innerHTML = `
-              <tr>${columns.map((column) => `<th>${column.label}</th>`).join("")}</tr>
-            `;
+            obsResponsablesHead.innerHTML = buildHeadHtml();
           }
           obsResponsablesBody.innerHTML = `
             <tr>
-              <td colspan="${columns.length}" class="muted">${escapeHtml(message)}</td>
+              <td colspan="28" class="muted">${escapeHtml(message)}</td>
             </tr>
           `;
         };
-        const formatResponsablesCell = (items, field) => {
-          if (!Array.isArray(items) || !items.length) {
-            return {
-              html: "—",
-              signature: "",
-              hasValues: false,
-            };
-          }
-          const normalized = items.map((item) => {
-            const nombre = String(item?.nombre || "").trim() || "—";
-            const periodo = String(item?.periodo || "").trim() || "—";
-            return { nombre, periodo };
-          });
-          return {
-            html: normalized.map((item) => escapeHtml(item[field] || "—")).join("<br>"),
-            signature: normalized.map((item) => `${item.nombre}|${item.periodo}`).join("||"),
-            hasValues: true,
-          };
+        const formatMetricValue = (metrics, key) => Number(metrics?.[key] || 0);
+        const formatMetricMonto = (metrics) => {
+          const numeric = Number(metrics?.monto_dano || 0);
+          return numeric > 0 ? formatMonto(numeric) : "-";
         };
-        const compareRows = (left, right) => {
-          const leftEnte = String(left?.ente_nombre || "").trim();
-          const rightEnte = String(right?.ente_nombre || "").trim();
-          if (leftEnte !== rightEnte) {
-            return leftEnte.localeCompare(rightEnte, "es");
+        const buildRowspanAttr = (rowspan) => (
+          Number(rowspan || 1) > 1 ? ` rowspan="${Number(rowspan || 1)}"` : ""
+        );
+        const buildResponsableRowValues = (items, totalRows) => {
+          const safeTotalRows = Math.max(1, Number(totalRows || 0));
+          const normalizedItems = (Array.isArray(items) ? items : [])
+            .map((item) => ({
+              nombre: String(item?.nombre || "").trim(),
+              periodo: String(item?.periodo || "").trim(),
+            }))
+            .filter((item) => item.nombre || item.periodo);
+          if (!normalizedItems.length) {
+            return Array.from({ length: safeTotalRows }, () => null);
           }
-          const leftTipo = String(left?.tipo_auditoria || "").trim();
-          const rightTipo = String(right?.tipo_auditoria || "").trim();
-          if (leftTipo !== rightTipo) {
-            return leftTipo.localeCompare(rightTipo, "es");
-          }
-          const leftInicio = String(left?.periodo_cedula_inicio || "").trim();
-          const rightInicio = String(right?.periodo_cedula_inicio || "").trim();
-          if (leftInicio !== rightInicio) {
-            return leftInicio.localeCompare(rightInicio, "es");
-          }
-          const leftFin = String(left?.periodo_cedula_fin || "").trim();
-          const rightFin = String(right?.periodo_cedula_fin || "").trim();
-          if (leftFin !== rightFin) {
-            return leftFin.localeCompare(rightFin, "es");
-          }
-          return String(left?.periodo_cedula || "").trim().localeCompare(
-            String(right?.periodo_cedula || "").trim(),
-            "es"
+          const values = Array.from({ length: safeTotalRows }, () => null);
+          const boundaries = Array.from(
+            { length: normalizedItems.length + 1 },
+            (_, index) => Math.round((index * safeTotalRows) / normalizedItems.length)
           );
+          boundaries[0] = 0;
+          boundaries[boundaries.length - 1] = safeTotalRows;
+          normalizedItems.forEach((item, index) => {
+            const start = boundaries[index];
+            let end = boundaries[index + 1];
+            if (end <= start) {
+              end = Math.min(safeTotalRows, start + 1);
+            }
+            for (let rowIndex = start; rowIndex < end; rowIndex += 1) {
+              values[rowIndex] = item;
+            }
+          });
+          return values;
         };
-        if (!selectedCedulas.length) {
-          renderMessage("Selecciona una cédula de resultados para consultar responsables.");
+        const buildCollapsedCells = (values) => {
+          const normalizedValues = (Array.isArray(values) ? values : ["—"])
+            .map((value) => String(value || "").trim() || "—");
+          const cells = Array.from({ length: normalizedValues.length }, () => null);
+          let index = 0;
+          while (index < normalizedValues.length) {
+            const currentValue = normalizedValues[index];
+            let end = index + 1;
+            while (end < normalizedValues.length && normalizedValues[end] === currentValue) {
+              end += 1;
+            }
+            cells[index] = {
+              value: currentValue,
+              rowspan: end - index,
+            };
+            index = end;
+          }
+          return cells;
+        };
+        const renderCollapsedCell = (cell, className) => {
+          if (!cell) {
+            return "";
+          }
+          const isEmpty = cell.value === "—";
+          return `<td${buildRowspanAttr(cell.rowspan)} class="${className} ${isEmpty ? "obs-responsables-cell--empty" : ""}">${escapeHtml(cell.value)}</td>`;
+        };
+        const renderMetricCells = (metrics, rowspan, emphasize = false) => {
+          const spanAttr = buildRowspanAttr(rowspan);
+          const wrapValue = (value) => (
+            emphasize ? `<strong>${value}</strong>` : value
+          );
+          return `
+            <td${spanAttr}>${wrapValue(formatMetricValue(metrics, "R"))}</td>
+            <td${spanAttr}>${wrapValue(formatMetricValue(metrics, "SA"))}</td>
+            <td${spanAttr}>${wrapValue(formatMetricValue(metrics, "PDP"))}</td>
+            <td${spanAttr}>${wrapValue(formatMetricValue(metrics, "PRAS"))}</td>
+            <td${spanAttr}>${wrapValue(formatMetricValue(metrics, "PEFCF"))}</td>
+            <td${spanAttr}>${wrapValue(formatMetricValue(metrics, "total"))}</td>
+            <td${spanAttr} class="obs-responsables-monto">${wrapValue(formatMetricMonto(metrics))}</td>
+          `;
+        };
+        const safeGroups = Array.isArray(groups) ? groups : [];
+        const enteKeyCounts = safeGroups.reduce((acc, group) => {
+          const key = [
+            String(group?.ente_id || "").trim(),
+            String(group?.ente_nombre || "").trim(),
+          ].join("|");
+          acc.set(key, (acc.get(key) || 0) + 1);
+          return acc;
+        }, new Map());
+        const formatEnteCell = (group) => {
+          const enteNombre = escapeHtml(group?.ente_nombre || "—");
+          const key = [
+            String(group?.ente_id || "").trim(),
+            String(group?.ente_nombre || "").trim(),
+          ].join("|");
+          const shouldShowTipo = (enteKeyCounts.get(key) || 0) > 1;
+          if (!shouldShowTipo || !group?.tipo_auditoria) {
+            return enteNombre;
+          }
+          return `
+            ${enteNombre}
+            <span class="obs-responsables-subnote">${escapeHtml(group.tipo_auditoria)}</span>
+          `;
+        };
+        if (!selectedEnte.length) {
+          obsResponsablesBody.innerHTML = "";
           return;
         }
-        const unique = new Map();
-        rows.forEach((row) => {
-          const key = [
-            row.ente_id || "",
-            row.ente_nombre || "",
-            row.tipo_auditoria || "",
-            row.periodo_cedula || "",
-          ].join("|");
-          if (!unique.has(key)) {
-            unique.set(key, row);
-          }
-        });
-        const responsables = Array.from(unique.values()).sort(compareRows);
-        if (!responsables.length) {
-          renderMessage("Sin responsables para las cédulas seleccionadas.");
+        if (!safeGroups.length) {
+          renderMessage("Sin responsables para los filtros seleccionados.");
           return;
         }
         if (obsResponsablesHead) {
-          obsResponsablesHead.innerHTML = `
-            <tr>${columns.map((column) => `<th>${column.label}</th>`).join("")}</tr>
-          `;
+          obsResponsablesHead.innerHTML = buildHeadHtml();
         }
-        let previousGroupKey = "";
-        let previousTitularesSignature = "";
-        let previousAdministrativosSignature = "";
-        obsResponsablesBody.innerHTML = responsables
-          .map((row) => {
-            const titulares = formatResponsablesCell(row.titulares, "nombre");
-            const periodosTitular = formatResponsablesCell(row.titulares, "periodo");
-            const administrativos = formatResponsablesCell(row.administrativos, "nombre");
-            const periodosAdministrativo = formatResponsablesCell(row.administrativos, "periodo");
-            const groupKey = [
-              row.ente_id || "",
-              row.ente_nombre || "",
-              row.tipo_auditoria || "",
-            ].join("|");
-            const sameGroup = groupKey === previousGroupKey;
-            const hideTitulares = sameGroup
-              && titulares.hasValues
-              && titulares.signature === previousTitularesSignature;
-            const hideAdministrativos = sameGroup
-              && administrativos.hasValues
-              && administrativos.signature === previousAdministrativosSignature;
-            previousGroupKey = groupKey;
-            previousTitularesSignature = titulares.signature;
-            previousAdministrativosSignature = administrativos.signature;
+        obsResponsablesBody.innerHTML = safeGroups
+          .map((group, groupIndex) => {
+            const rows = Array.isArray(group?.rows) ? group.rows : [];
+            const groupNo = escapeHtml(group?.ente_numero || group?.ente_id || `${groupIndex + 1}`);
+            if (!rows.length) {
+              return `
+                <tr>
+                  <td>${groupNo}</td>
+                  <td class="obs-responsables-cell obs-responsables-cell--ente">${formatEnteCell(group)}</td>
+                  <td colspan="26" class="muted">Sin periodos disponibles para este ente.</td>
+                </tr>
+              `;
+            }
+            const groupVisualRows = [];
+            rows.forEach((row) => {
+              const titulares = Array.isArray(row?.titulares) ? row.titulares : [];
+              const administrativos = Array.isArray(row?.administrativos) ? row.administrativos : [];
+              const visualRowCount = Math.max(titulares.length, administrativos.length, 1);
+              const titularValues = buildResponsableRowValues(titulares, visualRowCount);
+              const administrativoValues = buildResponsableRowValues(administrativos, visualRowCount);
+              for (let visualIndex = 0; visualIndex < visualRowCount; visualIndex += 1) {
+                groupVisualRows.push({
+                  titularPeriodo: titularValues[visualIndex]?.periodo || "—",
+                  titularNombre: titularValues[visualIndex]?.nombre || "—",
+                  administrativoPeriodo: administrativoValues[visualIndex]?.periodo || "—",
+                  administrativoNombre: administrativoValues[visualIndex]?.nombre || "—",
+                  periodoCedula: String(row?.periodo_cedula || "").trim() || "—",
+                  emitidas: row?.emitidas,
+                  solventadas: row?.solventadas,
+                  pendientes: row?.pendientes,
+                  showMetrics: visualIndex === 0,
+                  metricRowspan: visualRowCount,
+                });
+              }
+            });
+            const groupRowCount = groupVisualRows.length;
+            const titularPeriodoCells = buildCollapsedCells(
+              groupVisualRows.map((row) => row.titularPeriodo)
+            );
+            const titularNombreCells = buildCollapsedCells(
+              groupVisualRows.map((row) => row.titularNombre)
+            );
+            const administrativoPeriodoCells = buildCollapsedCells(
+              groupVisualRows.map((row) => row.administrativoPeriodo)
+            );
+            const administrativoNombreCells = buildCollapsedCells(
+              groupVisualRows.map((row) => row.administrativoNombre)
+            );
+            const cedulaCells = buildCollapsedCells(
+              groupVisualRows.map((row) => row.periodoCedula)
+            );
+            const rowsHtml = groupVisualRows.map((visualRow, visualIndex) => `
+              <tr>
+                ${visualIndex === 0 ? `
+                  <td rowspan="${groupRowCount}" class="obs-responsables-cell obs-responsables-cell--no">${groupNo}</td>
+                  <td rowspan="${groupRowCount}" class="obs-responsables-cell obs-responsables-cell--ente">${formatEnteCell(group)}</td>
+                ` : ""}
+                ${renderCollapsedCell(titularPeriodoCells[visualIndex], "obs-responsables-cell obs-responsables-cell--periodo")}
+                ${renderCollapsedCell(titularNombreCells[visualIndex], "obs-responsables-cell obs-responsables-cell--nombre")}
+                ${renderCollapsedCell(administrativoPeriodoCells[visualIndex], "obs-responsables-cell obs-responsables-cell--periodo")}
+                ${renderCollapsedCell(administrativoNombreCells[visualIndex], "obs-responsables-cell obs-responsables-cell--nombre")}
+                ${renderCollapsedCell(cedulaCells[visualIndex], "obs-responsables-cell obs-responsables-cell--cedula")}
+                ${visualRow.showMetrics ? `
+                  ${renderMetricCells(visualRow.emitidas, visualRow.metricRowspan)}
+                  ${renderMetricCells(visualRow.solventadas, visualRow.metricRowspan)}
+                  ${renderMetricCells(visualRow.pendientes, visualRow.metricRowspan)}
+                ` : ""}
+              </tr>
+            `).join("");
+
             return `
-            <tr>
-              <td>${escapeHtml(row.ente_nombre || "—")}</td>
-              <td>${escapeHtml(row.tipo_auditoria || "—")}</td>
-              <td>${escapeHtml(row.periodo_cedula || "—")}</td>
-              <td>${hideTitulares ? "" : titulares.html}</td>
-              <td>${hideTitulares ? "" : periodosTitular.html}</td>
-              <td>${hideAdministrativos ? "" : administrativos.html}</td>
-              <td>${hideAdministrativos ? "" : periodosAdministrativo.html}</td>
-            </tr>
-          `;
+              ${rowsHtml}
+              <tr class="obs-responsables-subtotal-row">
+                <td colspan="7" class="obs-responsables-cell obs-responsables-cell--subtotal-label"><strong>SUBTOTAL</strong></td>
+                ${renderMetricCells(group?.totals?.emitidas, 1, true)}
+                ${renderMetricCells(group?.totals?.solventadas, 1, true)}
+                ${renderMetricCells(group?.totals?.pendientes, 1, true)}
+              </tr>
+            `;
           })
           .join("");
       };
@@ -1999,14 +2154,16 @@
           summaryTipoAnexo.value = selectedTipoAnexo.length === 1 ? selectedTipoAnexo[0] : "";
         }
         if (!ejercicio) {
+          if (obsResponsables) {
+            obsResponsables.hidden = true;
+          }
+          if (responsablesPeriodoExportWrap) {
+            responsablesPeriodoExportWrap.hidden = true;
+          }
           obsTableBody.innerHTML = "<tr><td colspan=\"10\" class=\"muted\">Selecciona un ejercicio.</td></tr>";
           obsCount.textContent = "Selecciona un ejercicio para ver resultados.";
           if (obsResponsablesBody) {
-            obsResponsablesBody.innerHTML = `
-              <tr>
-                <td colspan="7" class="muted">Selecciona una cédula de resultados para consultar responsables.</td>
-              </tr>
-            `;
+            obsResponsablesBody.innerHTML = "";
           }
           obsRows = [];
           obsTotalRows = 0;
@@ -2075,11 +2232,17 @@
           dashboardSummary = createEmptyDashboardSummary();
           renderPdpSummary();
           renderPendientesPorPeriodo();
+          if (obsResponsables) {
+            obsResponsables.hidden = !enteIds.length;
+          }
+          if (responsablesPeriodoExportWrap) {
+            responsablesPeriodoExportWrap.hidden = !enteIds.length;
+          }
           obsTableBody.innerHTML = "<tr><td colspan=\"10\" class=\"muted\">No se pudo cargar la información.</td></tr>";
           if (obsResponsablesBody) {
             obsResponsablesBody.innerHTML = `
               <tr>
-                <td colspan="7" class="muted">No se pudo cargar responsables del periodo.</td>
+                <td colspan="28" class="muted">No se pudo cargar responsables del periodo.</td>
               </tr>
             `;
           }
@@ -2090,8 +2253,17 @@
 
       const loadResponsablesPeriodo = async () => {
         const cedulas = getSelectedValues(cedulaResultados);
-        if (!cedulas.length) {
-          renderResponsablesPeriodo([]);
+        const entes = getSelectedValues(obsEnteInput);
+        if (obsResponsables) {
+          obsResponsables.hidden = !entes.length;
+        }
+        if (responsablesPeriodoExportWrap) {
+          responsablesPeriodoExportWrap.hidden = !entes.length;
+        }
+        if (!entes.length) {
+          if (obsResponsablesBody) {
+            obsResponsablesBody.innerHTML = "";
+          }
           return;
         }
         const ejercicio = mainEjercicio.value;
@@ -2100,7 +2272,7 @@
           return;
         }
         const params = new URLSearchParams({ ejercicio });
-        appendValuesToParams(params, "ente_id", getSelectedValues(obsEnteInput));
+        appendValuesToParams(params, "ente_id", entes);
         const selectedTipoAnexo = getSelectedTipoAnexo();
         appendValuesToParams(params, "tipo_anexo", selectedTipoAnexo);
         appendValuesToParams(params, "tipo_auditoria", getSelectedValues(mainTipoAuditoria));
@@ -2110,7 +2282,9 @@
         if (!selectedTipoAnexo.length || selectedTipoAnexo.includes("PDP")) {
           appendValuesToParams(params, "concepto_irregularidad", getSelectedValues(obsConceptoIrregularidad));
         }
-        appendValuesToParams(params, "periodo_cedula", cedulas);
+        if (cedulas.length) {
+          appendValuesToParams(params, "periodo_cedula", cedulas);
+        }
         try {
           const data = await fetchJsonWithAbort(
             `/observaciones-responsables?${params.toString()}`,
@@ -2125,7 +2299,7 @@
           if (obsResponsablesBody) {
             obsResponsablesBody.innerHTML = `
               <tr>
-                <td colspan="7" class="muted">No se pudo cargar responsables del periodo.</td>
+                <td colspan="28" class="muted">No se pudo cargar responsables del periodo.</td>
               </tr>
             `;
           }
@@ -2174,6 +2348,27 @@
         }
         appendValuesToParams(params, "periodo_cedula", getSelectedValues(cedulaResultados));
         window.location.href = `/pendientes-periodo-exportar?${params.toString()}`;
+      };
+
+      const exportResponsablesPeriodo = () => {
+        const ejercicio = mainEjercicio.value;
+        const selectedEnte = getSelectedValues(obsEnteInput);
+        if (!ejercicio || !selectedEnte.length) {
+          return;
+        }
+        const params = new URLSearchParams({ ejercicio });
+        appendValuesToParams(params, "ente_id", selectedEnte);
+        const selectedTipoAnexo = getSelectedTipoAnexo();
+        appendValuesToParams(params, "tipo_anexo", selectedTipoAnexo);
+        appendValuesToParams(params, "tipo_auditoria", getSelectedValues(mainTipoAuditoria));
+        appendValuesToParams(params, "estado", getSelectedValues(obsEstado));
+        appendValuesToParams(params, "fuente_financiamiento", getSelectedValues(obsFuente));
+        appendValuesToParams(params, "ramo_33", getSelectedValues(obsRamo));
+        if (!selectedTipoAnexo.length || selectedTipoAnexo.includes("PDP")) {
+          appendValuesToParams(params, "concepto_irregularidad", getSelectedValues(obsConceptoIrregularidad));
+        }
+        appendValuesToParams(params, "periodo_cedula", getSelectedValues(cedulaResultados));
+        window.location.href = `/observaciones-responsables-exportar?${params.toString()}`;
       };
 
       const loadCatalogo = async () => {
@@ -2340,6 +2535,9 @@
       }
       if (pendientesPeriodoExport) {
         pendientesPeriodoExport.addEventListener("click", exportPendientesPeriodo);
+      }
+      if (responsablesPeriodoExport) {
+        responsablesPeriodoExport.addEventListener("click", exportResponsablesPeriodo);
       }
 
       if (obsPrev) {

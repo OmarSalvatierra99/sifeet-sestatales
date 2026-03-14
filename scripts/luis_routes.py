@@ -213,6 +213,32 @@ def register_luis_routes(app, deps):
         )
         return merged
 
+    anexos_orden = ("R", "SA", "PDP", "PRAS", "PEFCF")
+    anexos_alias = {
+        "PEFCT": "PEFCF",
+        "PEFCE": "PEFCF",
+    }
+
+    def normalize_anexo_bucket(value: str) -> str:
+        clean = (value or "").strip().upper()
+        if clean in anexos_alias:
+            return anexos_alias[clean]
+        return clean
+
+    def build_status_metrics():
+        return {
+            **{anexo: 0 for anexo in anexos_orden},
+            "total": 0,
+            "monto_dano": 0.0,
+        }
+
+    def append_status_metric(metrics: dict, anexo: str, monto: float = 0.0):
+        if anexo not in anexos_orden:
+            return
+        metrics[anexo] += 1
+        metrics["total"] += 1
+        metrics["monto_dano"] += float(monto or 0)
+
     def get_available_comparison_years(db) -> list[str]:
         rows = db.execute(
             """
@@ -955,18 +981,6 @@ def register_luis_routes(app, deps):
         if not selected_entes:
             return pendientes_por_periodo
 
-        anexos_orden = ("R", "SA", "PDP", "PRAS", "PEFCF")
-        anexos_alias = {
-            "PEFCT": "PEFCF",
-            "PEFCE": "PEFCF",
-        }
-
-        def normalize_anexo_pendiente(value: str) -> str:
-            clean = (value or "").strip().upper()
-            if clean in anexos_alias:
-                return anexos_alias[clean]
-            return clean
-
         def normalize_numero_observacion(value) -> str:
             if value is None:
                 return ""
@@ -1020,7 +1034,7 @@ def register_luis_routes(app, deps):
 
         groups_index = {}
         for row in pendientes_rows:
-            tipo_anexo_row = normalize_anexo_pendiente(row["tipo_anexo"])
+            tipo_anexo_row = normalize_anexo_bucket(row["tipo_anexo"])
             if tipo_anexo_row not in anexos_orden:
                 continue
 
@@ -2136,63 +2150,133 @@ def register_luis_routes(app, deps):
         return jsonify(filtros)
     
     
-    @app.get("/observaciones-responsables")
-    @luis_required
-    def observaciones_responsables():
-        ejercicio = request.args.get("ejercicio", "").strip()
-        selected_filters = parse_selected_filters()
-        cedulas = selected_values_for_key(selected_filters, "periodo_cedula")
-        if not ejercicio or not cedulas:
-            return jsonify([])
-    
-        db = get_db()
+    def build_observaciones_responsables_groups(
+        db,
+        ejercicio: str,
+        selected_filters: dict[str, list[str]],
+    ) -> list[dict]:
         filter_clauses = ["o.ejercicio = ?"]
         params = [ejercicio]
         for key in filter_order:
             apply_filter_clause(filter_clauses, params, key, selected_filters.get(key, []), alias="o")
-    
+
         where_sql = " AND ".join(filter_clauses)
         observaciones_rows = db.execute(
             f"""
-            SELECT DISTINCT
+            SELECT
                 o.ejercicio,
                 o.ente_id,
+                o.ente_numero,
+                o.ente_numero_sort,
                 o.ente_nombre,
                 ed.ente_nombre AS ente_detalle_nombre,
                 ed.ente_uid AS ente_uid,
                 o.tipo_auditoria,
-                o.periodo_cedula
+                o.periodo_cedula,
+                o.tipo_anexo,
+                o.estado,
+                o.monto_pdp_emitido,
+                o.monto_pdp_solventado,
+                o.monto_pdp_pendiente
             FROM observaciones AS o
             LEFT JOIN entes_detalle AS ed
                 ON {normalize_ente_id_sql("o.ente_id")} = {normalize_ente_id_sql("ed.ente_id")}
                 AND o.ejercicio = ed.ejercicio
             WHERE {where_sql}
-            ORDER BY o.ente_nombre ASC, o.tipo_auditoria ASC
+            ORDER BY
+                COALESCE(o.ente_numero_sort, 0) ASC,
+                o.ente_numero ASC,
+                o.ente_id ASC,
+                o.tipo_auditoria ASC,
+                o.periodo_cedula ASC,
+                o.tipo_anexo ASC,
+                o.numero_observacion ASC
             """,
             params,
         ).fetchall()
-    
-        resultado = []
+
+        groups_index = {}
         for row in observaciones_rows:
-            cedula_inicio, cedula_fin = parse_periodo_cedula(row["ejercicio"], row["periodo_cedula"])
-            if not cedula_inicio or not cedula_fin:
+            periodo_cedula = (row["periodo_cedula"] or "").strip()
+            if not periodo_cedula:
                 continue
-            cedula_inicio_date = parse_historial_date(cedula_inicio)
-            cedula_fin_date = parse_historial_date(cedula_fin)
-            if not cedula_inicio_date or not cedula_fin_date:
+            tipo_anexo_row = normalize_anexo_bucket(row["tipo_anexo"])
+            if tipo_anexo_row not in anexos_orden:
                 continue
-    
             ente_id_norm = normalize_ente_id(row["ente_id"])
+            tipo_auditoria = (
+                normalize_tipo_auditoria(row["tipo_auditoria"] or "")
+                or (row["tipo_auditoria"] or "").strip()
+                or "—"
+            )
+            ente_nombre = (row["ente_nombre"] or row["ente_detalle_nombre"] or "—").strip() or "—"
+            group_key = (
+                ente_id_norm,
+                (row["ente_numero"] or "").strip(),
+                ente_nombre,
+                tipo_auditoria,
+            )
+            if group_key not in groups_index:
+                groups_index[group_key] = {
+                    "ejercicio": row["ejercicio"],
+                    "ente_id": row["ente_id"],
+                    "ente_id_norm": ente_id_norm,
+                    "ente_numero": (row["ente_numero"] or "").strip(),
+                    "ente_numero_sort": float(row["ente_numero_sort"] or 0),
+                    "ente_nombre": ente_nombre,
+                    "ente_detalle_nombre": (row["ente_detalle_nombre"] or "").strip(),
+                    "ente_uid": (row["ente_uid"] or "").strip(),
+                    "tipo_auditoria": tipo_auditoria,
+                    "rows_by_periodo": {},
+                }
+
+            group_payload = groups_index[group_key]
+            if periodo_cedula not in group_payload["rows_by_periodo"]:
+                group_payload["rows_by_periodo"][periodo_cedula] = {
+                    "periodo_cedula": periodo_cedula,
+                    "periodo_cedula_inicio": "",
+                    "periodo_cedula_fin": "",
+                    "titulares": [],
+                    "administrativos": [],
+                    "emitidas": build_status_metrics(),
+                    "solventadas": build_status_metrics(),
+                    "pendientes": build_status_metrics(),
+                }
+
+            period_payload = group_payload["rows_by_periodo"][periodo_cedula]
+            append_status_metric(
+                period_payload["emitidas"],
+                tipo_anexo_row,
+                float(row["monto_pdp_emitido"] or 0),
+            )
+
+            estado_norm = (row["estado"] or "").strip().lower()
+            if estado_norm.startswith("solvent"):
+                append_status_metric(
+                    period_payload["solventadas"],
+                    tipo_anexo_row,
+                    float(row["monto_pdp_solventado"] or 0),
+                )
+            elif estado_norm.startswith("pendient"):
+                append_status_metric(
+                    period_payload["pendientes"],
+                    tipo_anexo_row,
+                    float(row["monto_pdp_pendiente"] or 0),
+                )
+
+        groups_payload = []
+        for group in groups_index.values():
             nombres_ente = get_ente_aliases_by_uid(
                 db,
-                row["ejercicio"],
-                ente_id_norm,
-                fallback_names=[row["ente_nombre"], row["ente_detalle_nombre"]],
+                group["ejercicio"],
+                group["ente_id_norm"],
+                fallback_names=[group["ente_nombre"], group["ente_detalle_nombre"]],
             )
             ente_uid = (
-                get_ente_uid_by_ejercicio_id(db, row["ejercicio"], ente_id_norm)
-                or (row["ente_uid"] or "").strip()
+                get_ente_uid_by_ejercicio_id(db, group["ejercicio"], group["ente_id_norm"])
+                or group["ente_uid"]
             )
+            historial_rows = []
             scope_clause = ""
             scope_params = []
             if ente_uid and nombres_ente:
@@ -2208,89 +2292,588 @@ def register_luis_routes(app, deps):
                 placeholders = ", ".join(["?"] * len(nombres_ente))
                 scope_clause = f"AND TRIM(COALESCE(h.ente, '')) IN ({placeholders})"
                 scope_params.extend(nombres_ente)
-            else:
-                continue
-    
-            historial_rows = db.execute(
-                f"""
-                SELECT
-                    h.tipo_registro,
-                    h.tipo_auditoria,
-                    h.nombre,
-                    h.fecha_inicio,
-                    h.fecha_fin
-                FROM historial_titulares AS h
-                WHERE h.ejercicio = ?
-                  {scope_clause}
-                  AND h.tipo_registro IN ('titular', 'director_administrativo')
-                  AND h.nombre IS NOT NULL AND h.nombre != ''
-                ORDER BY h.tipo_registro ASC, h.nombre ASC, h.fecha_inicio ASC, h.fecha_fin ASC
-                """,
-                [row["ejercicio"], *scope_params],
-            ).fetchall()
+
+            if scope_clause:
+                historial_rows = db.execute(
+                    f"""
+                    SELECT
+                        h.tipo_registro,
+                        h.tipo_auditoria,
+                        h.nombre,
+                        h.fecha_inicio,
+                        h.fecha_fin
+                    FROM historial_titulares AS h
+                    WHERE h.ejercicio = ?
+                      {scope_clause}
+                      AND h.tipo_registro IN ('titular', 'director_administrativo')
+                      AND h.nombre IS NOT NULL AND h.nombre != ''
+                    ORDER BY h.tipo_registro ASC, h.nombre ASC, h.fecha_inicio ASC, h.fecha_fin ASC
+                    """,
+                    [group["ejercicio"], *scope_params],
+                ).fetchall()
 
             historial_periodos = merge_responsable_periods(
                 [
                     item
                     for item in historial_rows
                     if normalize_tipo_auditoria(item["tipo_auditoria"] or "")
-                    == normalize_tipo_auditoria(row["tipo_auditoria"] or "")
+                    == normalize_tipo_auditoria(group["tipo_auditoria"] or "")
                 ]
             )
-            titulares = []
-            administrativos = []
-            titulares_seen = set()
-            administrativos_seen = set()
-            for item in historial_periodos:
-                inicio = item["inicio"]
-                fin = item["fin"]
-                # Inclusive overlap between [inicio, fin] and cedula range
-                if inicio > cedula_fin_date or fin < cedula_inicio_date:
+
+            period_rows = list(group["rows_by_periodo"].values())
+            for period_row in period_rows:
+                cedula_inicio, cedula_fin = parse_periodo_cedula(
+                    group["ejercicio"],
+                    period_row["periodo_cedula"],
+                )
+                period_row["periodo_cedula_inicio"] = cedula_inicio or ""
+                period_row["periodo_cedula_fin"] = cedula_fin or ""
+                cedula_inicio_date = parse_historial_date(cedula_inicio) if cedula_inicio else None
+                cedula_fin_date = parse_historial_date(cedula_fin) if cedula_fin else None
+                if not cedula_inicio_date or not cedula_fin_date:
                     continue
-                payload = {
-                    "nombre": item["nombre"],
-                    "periodo": format_periodo_display(inicio, fin),
-                    "fecha_inicio": inicio.isoformat(),
-                    "fecha_fin": fin.isoformat(),
-                }
-                key = (payload["nombre"], payload["periodo"])
-                if item["tipo_registro"] == "titular":
-                    if key in titulares_seen:
+
+                titulares = []
+                administrativos = []
+                titulares_seen = set()
+                administrativos_seen = set()
+                for item in historial_periodos:
+                    inicio = item["inicio"]
+                    fin = item["fin"]
+                    if inicio > cedula_fin_date or fin < cedula_inicio_date:
                         continue
-                    titulares_seen.add(key)
-                    titulares.append(payload)
-                elif item["tipo_registro"] == "director_administrativo":
-                    if key in administrativos_seen:
-                        continue
-                    administrativos_seen.add(key)
-                    administrativos.append(payload)
-    
-            resultado.append(
+                    payload = {
+                        "nombre": item["nombre"],
+                        "periodo": format_periodo_display(inicio, fin),
+                        "fecha_inicio": inicio.isoformat(),
+                        "fecha_fin": fin.isoformat(),
+                    }
+                    responsable_key = (payload["nombre"], payload["periodo"])
+                    if item["tipo_registro"] == "titular":
+                        if responsable_key in titulares_seen:
+                            continue
+                        titulares_seen.add(responsable_key)
+                        titulares.append(payload)
+                    elif item["tipo_registro"] == "director_administrativo":
+                        if responsable_key in administrativos_seen:
+                            continue
+                        administrativos_seen.add(responsable_key)
+                        administrativos.append(payload)
+
+                period_row["titulares"] = titulares
+                period_row["administrativos"] = administrativos
+
+            period_rows.sort(
+                key=lambda item: (
+                    item.get("periodo_cedula_inicio") or "9999-12-31",
+                    item.get("periodo_cedula_fin") or "9999-12-31",
+                    (item.get("periodo_cedula") or "").strip(),
+                )
+            )
+
+            totals = {
+                "emitidas": build_status_metrics(),
+                "solventadas": build_status_metrics(),
+                "pendientes": build_status_metrics(),
+            }
+            for period_row in period_rows:
+                for status_key in ("emitidas", "solventadas", "pendientes"):
+                    row_status = period_row.get(status_key, {}) or {}
+                    for anexo in anexos_orden:
+                        totals[status_key][anexo] += int(row_status.get(anexo) or 0)
+                    totals[status_key]["total"] += int(row_status.get("total") or 0)
+                    totals[status_key]["monto_dano"] += float(row_status.get("monto_dano") or 0)
+
+            groups_payload.append(
                 {
-                    "ejercicio": row["ejercicio"],
-                    "ente_id": row["ente_id"],
-                    "ente_nombre": row["ente_nombre"] or row["ente_detalle_nombre"] or "—",
-                    "tipo_auditoria": row["tipo_auditoria"],
-                    "periodo_cedula": row["periodo_cedula"],
-                    "periodo_cedula_inicio": cedula_inicio,
-                    "periodo_cedula_fin": cedula_fin,
-                    "titulares": titulares,
-                    "administrativos": administrativos,
+                    "ente_id": group["ente_id"],
+                    "ente_numero": group["ente_numero"],
+                    "ente_nombre": group["ente_nombre"],
+                    "tipo_auditoria": group["tipo_auditoria"],
+                    "rows": period_rows,
+                    "totals": totals,
+                    "_ente_numero_sort": group["ente_numero_sort"],
                 }
             )
 
-        resultado.sort(
+        groups_payload.sort(
             key=lambda item: (
-                (item["ente_nombre"] or "").strip(),
-                normalize_tipo_auditoria(item["tipo_auditoria"] or ""),
-                item.get("periodo_cedula_inicio") or "9999-12-31",
-                item.get("periodo_cedula_fin") or "9999-12-31",
-                (item["periodo_cedula"] or "").strip(),
+                float(item.get("_ente_numero_sort", 0)),
+                item.get("ente_numero", ""),
+                item.get("ente_nombre", ""),
+                normalize_tipo_auditoria(item.get("tipo_auditoria", "")),
             )
         )
-        return jsonify(resultado)
-    
-    
+        for item in groups_payload:
+            item.pop("_ente_numero_sort", None)
+
+        return groups_payload
+
+    def build_responsable_row_values(items, total_rows: int) -> list[dict | None]:
+        safe_total_rows = max(1, int(total_rows or 0))
+        normalized_items = []
+        for item in items or []:
+            nombre = str((item or {}).get("nombre") or "").strip()
+            periodo = str((item or {}).get("periodo") or "").strip()
+            if not nombre and not periodo:
+                continue
+            normalized_items.append({"nombre": nombre, "periodo": periodo})
+        if not normalized_items:
+            return [None] * safe_total_rows
+
+        values: list[dict | None] = [None] * safe_total_rows
+        boundaries = [
+            round(index * safe_total_rows / len(normalized_items))
+            for index in range(len(normalized_items) + 1)
+        ]
+        boundaries[0] = 0
+        boundaries[-1] = safe_total_rows
+        for index, item in enumerate(normalized_items):
+            start = boundaries[index]
+            end = boundaries[index + 1]
+            if end <= start:
+                end = min(safe_total_rows, start + 1)
+            for row_index in range(start, end):
+                values[row_index] = item
+        return values
+
+    def build_collapsed_cells(values: list[str]) -> list[dict | None]:
+        normalized_values = [str(value or "").strip() or "—" for value in (values or ["—"])]
+        cells: list[dict | None] = [None] * len(normalized_values)
+        index = 0
+        while index < len(normalized_values):
+            current_value = normalized_values[index]
+            end = index + 1
+            while end < len(normalized_values) and normalized_values[end] == current_value:
+                end += 1
+            cells[index] = {
+                "value": current_value,
+                "rowspan": end - index,
+            }
+            index = end
+        return cells
+
+    def build_observaciones_responsables_visual_rows(group: dict) -> list[dict]:
+        visual_rows: list[dict] = []
+        for row in (group.get("rows", []) or []):
+            titulares = row.get("titulares", []) or []
+            administrativos = row.get("administrativos", []) or []
+            visual_row_count = max(len(titulares), len(administrativos), 1)
+            titular_values = build_responsable_row_values(titulares, visual_row_count)
+            administrativo_values = build_responsable_row_values(administrativos, visual_row_count)
+            for visual_index in range(visual_row_count):
+                visual_rows.append(
+                    {
+                        "titular_periodo": ((titular_values[visual_index] or {}).get("periodo") or "—"),
+                        "titular_nombre": ((titular_values[visual_index] or {}).get("nombre") or "—"),
+                        "administrativo_periodo": ((administrativo_values[visual_index] or {}).get("periodo") or "—"),
+                        "administrativo_nombre": ((administrativo_values[visual_index] or {}).get("nombre") or "—"),
+                        "periodo_cedula": str(row.get("periodo_cedula") or "").strip() or "—",
+                        "emitidas": row.get("emitidas", {}) or {},
+                        "solventadas": row.get("solventadas", {}) or {},
+                        "pendientes": row.get("pendientes", {}) or {},
+                        "show_metrics": visual_index == 0,
+                        "metric_rowspan": visual_row_count,
+                    }
+                )
+        return visual_rows
+
+    @app.get("/observaciones-responsables")
+    @luis_required
+    def observaciones_responsables():
+        ejercicio = request.args.get("ejercicio", "").strip()
+        selected_filters = parse_selected_filters()
+        selected_entes = selected_values_for_key(selected_filters, "ente_id")
+        if not ejercicio or not selected_entes:
+            return jsonify([])
+
+        groups_payload = build_observaciones_responsables_groups(
+            get_db(),
+            ejercicio,
+            selected_filters,
+        )
+        return jsonify(groups_payload)
+
+    @app.get("/observaciones-responsables-exportar")
+    @luis_required
+    def observaciones_responsables_exportar():
+        ejercicio = request.args.get("ejercicio", "").strip()
+        selected_filters = parse_selected_filters()
+        selected_entes = selected_values_for_key(selected_filters, "ente_id")
+        if not ejercicio:
+            return jsonify({"error": "ejercicio requerido"}), 400
+        if not selected_entes:
+            return jsonify({"error": "selecciona al menos un ente"}), 400
+
+        db = get_db()
+        groups = build_observaciones_responsables_groups(db, ejercicio, selected_filters)
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Responsables por periodo"
+        thin_border = Border(
+            left=Side(style="thin", color="D7DFD9"),
+            right=Side(style="thin", color="D7DFD9"),
+            top=Side(style="thin", color="D7DFD9"),
+            bottom=Side(style="thin", color="D7DFD9"),
+        )
+        header_primary_fill = PatternFill("solid", fgColor="1F3B2C")
+        header_secondary_fill = PatternFill("solid", fgColor="2A503D")
+        total_fill = PatternFill("solid", fgColor="EDF4EF")
+        zebra_fill = PatternFill("solid", fgColor="F8FAF7")
+        white_bold_font = Font(bold=True, color="FFFFFF")
+        center_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        left_alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+        right_alignment = Alignment(horizontal="right", vertical="center")
+
+        sheet.append(
+            [
+                "No",
+                "Ente Fiscalizable",
+                f"Periodos Informe {ejercicio}",
+                f"Titular {ejercicio}",
+                "Periodos Administrativo / Responsable de Obra",
+                "Administrativo / Encargado de Obra",
+                "Periodo Cédula",
+                "EMITIDAS",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "SOLVENTADAS",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "PENDIENTES",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+            ]
+        )
+        sheet.append(
+            [
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "R",
+                "SA",
+                "PDP",
+                "PRAS",
+                "PECFF",
+                "Emitidas",
+                "Monto Daño ($)",
+                "R",
+                "SA",
+                "PO",
+                "PRAS",
+                "PECFF",
+                "Solventadas",
+                "Monto Daño ($)",
+                "R",
+                "SA",
+                "PDP",
+                "PRAS",
+                "PECFF",
+                "Pendientes",
+                "Monto Daño ($)",
+            ]
+        )
+        for col in ("A", "B", "C", "D", "E", "F", "G"):
+            sheet.merge_cells(f"{col}1:{col}2")
+        sheet.merge_cells("H1:N1")
+        sheet.merge_cells("O1:U1")
+        sheet.merge_cells("V1:AB1")
+        for row_idx in (1, 2):
+            for cell in sheet[row_idx]:
+                cell.font = white_bold_font
+                cell.alignment = center_alignment
+                cell.border = thin_border
+                cell.fill = header_primary_fill if row_idx == 1 else header_secondary_fill
+        sheet.row_dimensions[1].height = 28
+        sheet.row_dimensions[2].height = 24
+        sheet.freeze_panes = "A3"
+
+        ente_key_counts: dict[str, int] = {}
+        for group in groups:
+            ente_key = "|".join(
+                [
+                    str(group.get("ente_id") or "").strip(),
+                    str(group.get("ente_nombre") or "").strip(),
+                ]
+            )
+            ente_key_counts[ente_key] = ente_key_counts.get(ente_key, 0) + 1
+
+        if not groups:
+            sheet.append(["Sin resultados para los filtros seleccionados."])
+            sheet.merge_cells("A3:AB3")
+            empty_cell = sheet["A3"]
+            empty_cell.alignment = center_alignment
+            empty_cell.font = Font(italic=True)
+            empty_cell.fill = zebra_fill
+            for col_idx in range(1, 29):
+                sheet.cell(row=3, column=col_idx).border = thin_border
+        else:
+            for group in groups:
+                visual_rows = build_observaciones_responsables_visual_rows(group)
+                group_no = str(group.get("ente_numero") or group.get("ente_id") or "—")
+                ente_key = "|".join(
+                    [
+                        str(group.get("ente_id") or "").strip(),
+                        str(group.get("ente_nombre") or "").strip(),
+                    ]
+                )
+                ente_label = str(group.get("ente_nombre") or "—")
+                if ente_key_counts.get(ente_key, 0) > 1 and group.get("tipo_auditoria"):
+                    ente_label = f"{ente_label}\n{group.get('tipo_auditoria')}"
+
+                if not visual_rows:
+                    sheet.append([group_no, ente_label, "Sin periodos disponibles para este ente."] + [""] * 25)
+                    row_idx = sheet.max_row
+                    sheet.merge_cells(start_row=row_idx, start_column=3, end_row=row_idx, end_column=28)
+                    for col_idx in range(1, 29):
+                        cell = sheet.cell(row=row_idx, column=col_idx)
+                        cell.border = thin_border
+                        cell.alignment = left_alignment if col_idx in (2, 3) else center_alignment
+                        if row_idx % 2 == 0:
+                            cell.fill = zebra_fill
+                    continue
+
+                titular_periodo_cells = build_collapsed_cells(
+                    [row["titular_periodo"] for row in visual_rows]
+                )
+                titular_nombre_cells = build_collapsed_cells(
+                    [row["titular_nombre"] for row in visual_rows]
+                )
+                administrativo_periodo_cells = build_collapsed_cells(
+                    [row["administrativo_periodo"] for row in visual_rows]
+                )
+                administrativo_nombre_cells = build_collapsed_cells(
+                    [row["administrativo_nombre"] for row in visual_rows]
+                )
+                cedula_cells = build_collapsed_cells(
+                    [row["periodo_cedula"] for row in visual_rows]
+                )
+
+                group_start_row = sheet.max_row + 1
+                for index, visual_row in enumerate(visual_rows):
+                    emitidas = visual_row["emitidas"]
+                    solventadas = visual_row["solventadas"]
+                    pendientes = visual_row["pendientes"]
+                    show_metrics = bool(visual_row["show_metrics"])
+                    sheet.append(
+                        [
+                            group_no if index == 0 else "",
+                            ente_label if index == 0 else "",
+                            titular_periodo_cells[index]["value"] if titular_periodo_cells[index] else "",
+                            titular_nombre_cells[index]["value"] if titular_nombre_cells[index] else "",
+                            administrativo_periodo_cells[index]["value"] if administrativo_periodo_cells[index] else "",
+                            administrativo_nombre_cells[index]["value"] if administrativo_nombre_cells[index] else "",
+                            cedula_cells[index]["value"] if cedula_cells[index] else "",
+                            int(emitidas.get("R") or 0) if show_metrics else "",
+                            int(emitidas.get("SA") or 0) if show_metrics else "",
+                            int(emitidas.get("PDP") or 0) if show_metrics else "",
+                            int(emitidas.get("PRAS") or 0) if show_metrics else "",
+                            int(emitidas.get("PEFCF") or 0) if show_metrics else "",
+                            int(emitidas.get("total") or 0) if show_metrics else "",
+                            float(emitidas.get("monto_dano") or 0) if show_metrics and float(emitidas.get("monto_dano") or 0) > 0 else ("-" if show_metrics else ""),
+                            int(solventadas.get("R") or 0) if show_metrics else "",
+                            int(solventadas.get("SA") or 0) if show_metrics else "",
+                            int(solventadas.get("PDP") or 0) if show_metrics else "",
+                            int(solventadas.get("PRAS") or 0) if show_metrics else "",
+                            int(solventadas.get("PEFCF") or 0) if show_metrics else "",
+                            int(solventadas.get("total") or 0) if show_metrics else "",
+                            float(solventadas.get("monto_dano") or 0) if show_metrics and float(solventadas.get("monto_dano") or 0) > 0 else ("-" if show_metrics else ""),
+                            int(pendientes.get("R") or 0) if show_metrics else "",
+                            int(pendientes.get("SA") or 0) if show_metrics else "",
+                            int(pendientes.get("PDP") or 0) if show_metrics else "",
+                            int(pendientes.get("PRAS") or 0) if show_metrics else "",
+                            int(pendientes.get("PEFCF") or 0) if show_metrics else "",
+                            int(pendientes.get("total") or 0) if show_metrics else "",
+                            float(pendientes.get("monto_dano") or 0) if show_metrics and float(pendientes.get("monto_dano") or 0) > 0 else ("-" if show_metrics else ""),
+                        ]
+                    )
+                    row_idx = sheet.max_row
+                    for col_idx in range(1, 29):
+                        cell = sheet.cell(row=row_idx, column=col_idx)
+                        cell.border = thin_border
+                        if col_idx in (2, 3, 4, 5, 6, 7):
+                            cell.alignment = left_alignment
+                        elif col_idx in (14, 21, 28):
+                            cell.alignment = right_alignment
+                        else:
+                            cell.alignment = center_alignment
+                        if row_idx % 2 == 0:
+                            cell.fill = zebra_fill
+                    for amount_col in (14, 21, 28):
+                        amount_cell = sheet.cell(row=row_idx, column=amount_col)
+                        if isinstance(amount_cell.value, (int, float)):
+                            amount_cell.number_format = "#,##0.00"
+
+                group_row_count = len(visual_rows)
+                if group_row_count > 1:
+                    sheet.merge_cells(
+                        start_row=group_start_row,
+                        start_column=1,
+                        end_row=group_start_row + group_row_count - 1,
+                        end_column=1,
+                    )
+                    sheet.merge_cells(
+                        start_row=group_start_row,
+                        start_column=2,
+                        end_row=group_start_row + group_row_count - 1,
+                        end_column=2,
+                    )
+                for col_idx, cells in (
+                    (3, titular_periodo_cells),
+                    (4, titular_nombre_cells),
+                    (5, administrativo_periodo_cells),
+                    (6, administrativo_nombre_cells),
+                    (7, cedula_cells),
+                ):
+                    for offset, cell_info in enumerate(cells):
+                        if not cell_info or int(cell_info.get("rowspan") or 0) <= 1:
+                            continue
+                        start_row = group_start_row + offset
+                        end_row = start_row + int(cell_info["rowspan"]) - 1
+                        sheet.merge_cells(
+                            start_row=start_row,
+                            start_column=col_idx,
+                            end_row=end_row,
+                            end_column=col_idx,
+                        )
+                for offset, visual_row in enumerate(visual_rows):
+                    if not visual_row["show_metrics"] or int(visual_row["metric_rowspan"] or 0) <= 1:
+                        continue
+                    start_row = group_start_row + offset
+                    end_row = start_row + int(visual_row["metric_rowspan"]) - 1
+                    for col_idx in range(8, 29):
+                        sheet.merge_cells(
+                            start_row=start_row,
+                            start_column=col_idx,
+                            end_row=end_row,
+                            end_column=col_idx,
+                        )
+
+                totals = group.get("totals", {}) or {}
+                sheet.append(
+                    [
+                        "SUBTOTAL",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        int((totals.get("emitidas") or {}).get("R") or 0),
+                        int((totals.get("emitidas") or {}).get("SA") or 0),
+                        int((totals.get("emitidas") or {}).get("PDP") or 0),
+                        int((totals.get("emitidas") or {}).get("PRAS") or 0),
+                        int((totals.get("emitidas") or {}).get("PEFCF") or 0),
+                        int((totals.get("emitidas") or {}).get("total") or 0),
+                        float((totals.get("emitidas") or {}).get("monto_dano") or 0) if float((totals.get("emitidas") or {}).get("monto_dano") or 0) > 0 else "-",
+                        int((totals.get("solventadas") or {}).get("R") or 0),
+                        int((totals.get("solventadas") or {}).get("SA") or 0),
+                        int((totals.get("solventadas") or {}).get("PDP") or 0),
+                        int((totals.get("solventadas") or {}).get("PRAS") or 0),
+                        int((totals.get("solventadas") or {}).get("PEFCF") or 0),
+                        int((totals.get("solventadas") or {}).get("total") or 0),
+                        float((totals.get("solventadas") or {}).get("monto_dano") or 0) if float((totals.get("solventadas") or {}).get("monto_dano") or 0) > 0 else "-",
+                        int((totals.get("pendientes") or {}).get("R") or 0),
+                        int((totals.get("pendientes") or {}).get("SA") or 0),
+                        int((totals.get("pendientes") or {}).get("PDP") or 0),
+                        int((totals.get("pendientes") or {}).get("PRAS") or 0),
+                        int((totals.get("pendientes") or {}).get("PEFCF") or 0),
+                        int((totals.get("pendientes") or {}).get("total") or 0),
+                        float((totals.get("pendientes") or {}).get("monto_dano") or 0) if float((totals.get("pendientes") or {}).get("monto_dano") or 0) > 0 else "-",
+                    ]
+                )
+                subtotal_row_idx = sheet.max_row
+                sheet.merge_cells(
+                    start_row=subtotal_row_idx,
+                    start_column=1,
+                    end_row=subtotal_row_idx,
+                    end_column=7,
+                )
+                for col_idx in range(1, 29):
+                    cell = sheet.cell(row=subtotal_row_idx, column=col_idx)
+                    cell.font = Font(bold=True)
+                    cell.fill = total_fill
+                    cell.border = thin_border
+                    if col_idx == 1:
+                        cell.alignment = right_alignment
+                    elif col_idx in (14, 21, 28):
+                        cell.alignment = right_alignment
+                    else:
+                        cell.alignment = center_alignment
+                for amount_col in (14, 21, 28):
+                    amount_cell = sheet.cell(row=subtotal_row_idx, column=amount_col)
+                    if isinstance(amount_cell.value, (int, float)):
+                        amount_cell.number_format = "#,##0.00"
+
+        base_widths = {
+            1: 10,
+            2: 34,
+            3: 22,
+            4: 28,
+            5: 24,
+            6: 28,
+            7: 20,
+            8: 8,
+            9: 8,
+            10: 9,
+            11: 9,
+            12: 10,
+            13: 11,
+            14: 16,
+            15: 8,
+            16: 8,
+            17: 8,
+            18: 9,
+            19: 10,
+            20: 12,
+            21: 16,
+            22: 8,
+            23: 8,
+            24: 9,
+            25: 9,
+            26: 10,
+            27: 11,
+            28: 16,
+        }
+        for col_idx in range(1, 29):
+            max_len = 0
+            for row_idx in range(1, sheet.max_row + 1):
+                value = sheet.cell(row=row_idx, column=col_idx).value
+                string_value = "" if value is None else str(value)
+                if len(string_value) > max_len:
+                    max_len = len(string_value)
+            width = max(base_widths.get(col_idx, 10), min(max_len + 2, 42))
+            sheet.column_dimensions[get_column_letter(col_idx)].width = width
+
+        stream = BytesIO()
+        workbook.save(stream)
+        stream.seek(0)
+        filename = f"responsables_periodo_{ejercicio}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        return send_file(
+            stream,
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
     @app.get("/observaciones-exportar")
     @luis_required
     def observaciones_exportar():

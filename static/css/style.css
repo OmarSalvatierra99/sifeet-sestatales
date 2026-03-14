@@ -1095,6 +1095,104 @@ select.is-multi-hidden {
   font-size: 0.95rem;
 }
 
+.obs-responsables .table-wrap {
+  margin-top: 0.8rem;
+  border-radius: 14px;
+}
+
+.obs-responsables-table {
+  min-width: 3320px;
+}
+
+.obs-responsables-table thead th {
+  position: static;
+  text-align: center;
+  vertical-align: middle;
+  white-space: normal;
+}
+
+.obs-responsables-table thead tr:first-child {
+  background: linear-gradient(90deg, var(--color-accent-strong), var(--color-accent-mid));
+}
+
+.obs-responsables-table thead tr:nth-child(2) {
+  background: var(--color-accent-mid);
+}
+
+.obs-responsables-table th,
+.obs-responsables-table td {
+  font-size: 0.79rem;
+  padding: 0.62rem 0.68rem;
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
+  border: 1px solid #d4e0e4;
+}
+
+.obs-responsables-cell--ente,
+.obs-responsables-cell--periodo,
+.obs-responsables-cell--nombre,
+.obs-responsables-cell--cedula,
+.obs-responsables-cell--subtotal-label {
+  text-align: left;
+  white-space: normal;
+}
+
+.obs-responsables-cell--no {
+  min-width: 72px;
+  font-weight: 700;
+}
+
+.obs-responsables-cell--ente {
+  min-width: 260px;
+  font-weight: 700;
+}
+
+.obs-responsables-cell--periodo,
+.obs-responsables-cell--cedula {
+  min-width: 175px;
+}
+
+.obs-responsables-cell--nombre {
+  min-width: 220px;
+}
+
+.obs-responsables-cell--empty {
+  color: var(--color-muted);
+}
+
+.obs-responsables-table tbody tr:nth-child(even) td {
+  background: #ffffff;
+}
+
+.obs-responsables-table tbody tr:hover td {
+  background: #ffffff;
+}
+
+.obs-responsables-monto {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.obs-responsables-subnote {
+  display: block;
+  margin-top: 0.28rem;
+  color: #4f6457;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.obs-responsables-subtotal-row td {
+  background: #edf4ef !important;
+  border-top: 2px solid #c6d3c8;
+  border-bottom: 2px solid #c6d3c8;
+}
+
+.obs-responsables-cell--subtotal-label {
+  text-align: right;
+  letter-spacing: 0.03em;
+}
+
 .pendientes-panel {
   background: #f6fafb;
   border: 1px solid var(--color-border);
