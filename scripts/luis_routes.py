@@ -1611,7 +1611,16 @@ def register_luis_routes(app, deps):
             WHERE {scope_sql}
               AND TRIM(COALESCE(tipo_anexo, '')) != ''
             GROUP BY tipo_anexo
-            ORDER BY tipo_anexo
+            ORDER BY
+                CASE tipo_anexo
+                    WHEN 'SA' THEN 0
+                    WHEN 'PDP' THEN 1
+                    WHEN 'PRAS' THEN 2
+                    WHEN 'PEFCF' THEN 3
+                    WHEN 'R' THEN 4
+                    ELSE 5
+                END,
+                tipo_anexo
             """,
             scope_params,
         ).fetchall()

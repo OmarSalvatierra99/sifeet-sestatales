@@ -501,6 +501,7 @@
         primaryStrong: "#003946",
         warning: "#B18934",
       };
+      const resumenTiposOrden = ["SA", "PDP", "PRAS", "PEFCF", "R"];
       const createEmptyDashboardSummary = () => ({
         tipos: [],
         totals: { emitidas: 0, solventadas: 0, pendientes: 0 },
@@ -1398,7 +1399,16 @@
             pendientes: Number(row.pendientes || 0),
           }))
           .filter((row) => row.emitidas > 0)
-          .sort((a, b) => String(a.tipo_anexo).localeCompare(String(b.tipo_anexo)));
+          .sort((a, b) => {
+            const rankA = resumenTiposOrden.indexOf(a.tipo_anexo);
+            const rankB = resumenTiposOrden.indexOf(b.tipo_anexo);
+            if (rankA !== rankB) {
+              const aPos = rankA === -1 ? Number.POSITIVE_INFINITY : rankA;
+              const bPos = rankB === -1 ? Number.POSITIVE_INFINITY : rankB;
+              return aPos - bPos;
+            }
+            return String(a.tipo_anexo).localeCompare(String(b.tipo_anexo));
+          });
         const labels = safeRows.map((row) => row.tipo_anexo);
         const emitidas = safeRows.map((row) => row.emitidas);
         const solventadasAbs = safeRows.map((row) => row.solventadas);
@@ -1866,7 +1876,16 @@
                 pendientes: Number(row.pendientes || 0),
               },
             ])
-            .sort((a, b) => a[0].localeCompare(b[0]));
+            .sort((a, b) => {
+              const indexA = resumenTiposOrden.indexOf(a[0]);
+              const indexB = resumenTiposOrden.indexOf(b[0]);
+              if (indexA !== indexB) {
+                const rankA = indexA === -1 ? Number.POSITIVE_INFINITY : indexA;
+                const rankB = indexB === -1 ? Number.POSITIVE_INFINITY : indexB;
+                return rankA - rankB;
+              }
+              return a[0].localeCompare(b[0]);
+            });
           let totalEmitidas = 0;
           let totalSolventadas = 0;
           let totalPendientes = 0;
