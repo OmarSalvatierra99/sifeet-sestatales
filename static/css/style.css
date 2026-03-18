@@ -4438,6 +4438,20 @@ tbody tr:hover td {
   font-size: 0.78rem;
 }
 
+.obs-admin-detail-section-row th {
+  width: auto !important;
+  text-align: left;
+  padding: 0.48rem 0.6rem;
+  background: linear-gradient(180deg, #eef6f1 0%, #e5f0e9 100%);
+  color: #1e5139;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border-top: 2px solid #bed4c6;
+  border-bottom: 1px solid #cfe0d5;
+}
+
 .obs-admin-table th:nth-child(1),
 .obs-admin-table td:nth-child(1) {
   width: 28%;

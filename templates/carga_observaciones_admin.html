@@ -108,6 +108,9 @@
 
       <div class="table-meta">
         <span id="obsAdminCount">Selecciona un ente y un oficio; la consulta es automática.</span>
+        <div class="obs-admin-actions-inline">
+          <button type="button" class="btn-secondary" id="obsAdminSolveAllBtn">Solventar todo</button>
+        </div>
       </div>
 
       <div class="loader-obs-table-wrap">
@@ -167,6 +170,7 @@
     const safetyScopeChip = document.getElementById("obsAdminSafetyScopeChip");
     const summaryBody = document.getElementById("obsAdminSummaryBody");
     const amountSummaryBody = document.getElementById("obsAdminAmountSummaryBody");
+    const solveAllBtn = document.getElementById("obsAdminSolveAllBtn");
 
     let allRows = [];
     let filteredRows = [];
@@ -332,6 +336,15 @@
           ? "Alcance listo"
           : (officeScope ? "Alcance parcial" : "Ente/oficio requeridos");
       }
+      if (solveAllBtn) {
+        const enabled = safeScope && count > 0;
+        solveAllBtn.disabled = !enabled;
+        solveAllBtn.title = enabled
+          ? "Solventar todas las observaciones visibles de este oficio."
+          : (readOnly
+            ? getReadOnlyMessage(filters.ejercicio)
+            : "Selecciona un ente y un oficio con observaciones para habilitar esta acción.");
+      }
     };
 
     const loadOficios = async (selectedValue = "") => {
@@ -438,6 +451,51 @@
         return "0";
       }
       return values.join(",");
+    };
+
+    const normalizeTipoAuditoria = (value) => {
+      const clean = String(value || "").trim();
+      if (!clean) return "Financiera";
+      if (clean.toLowerCase() === "obra publica") return "Obra Pública";
+      return clean;
+    };
+
+    const sortObservacionesForDetail = (rows) => {
+      const safeRows = Array.isArray(rows) ? rows.slice() : [];
+      safeRows.sort((a, b) => {
+        const tipoA = normalizeTipoAuditoria(a && a.tipo_auditoria);
+        const tipoB = normalizeTipoAuditoria(b && b.tipo_auditoria);
+        const tipoOrderA = tipoSortOrder[tipoA] || 99;
+        const tipoOrderB = tipoSortOrder[tipoB] || 99;
+        if (tipoOrderA !== tipoOrderB) return tipoOrderA - tipoOrderB;
+
+        const fuenteA = String((a && a.fuente_financiamiento) || "").trim();
+        const fuenteB = String((b && b.fuente_financiamiento) || "").trim();
+        const fuenteCmp = fuenteA.localeCompare(fuenteB, "es", { sensitivity: "base" });
+        if (fuenteCmp !== 0) return fuenteCmp;
+
+        const periodoA = String((a && a.periodo_cedula) || "").trim();
+        const periodoB = String((b && b.periodo_cedula) || "").trim();
+        const periodoCmp = periodoA.localeCompare(periodoB, "es", { sensitivity: "base" });
+        if (periodoCmp !== 0) return periodoCmp;
+
+        const anexoA = normalizeTipoAnexo(a && a.tipo_anexo);
+        const anexoB = normalizeTipoAnexo(b && b.tipo_anexo);
+        const anexoOrderA = anexoSortOrder[anexoA] || 99;
+        const anexoOrderB = anexoSortOrder[anexoB] || 99;
+        if (anexoOrderA !== anexoOrderB) return anexoOrderA - anexoOrderB;
+
+        const numA = parsePositiveInt(a && a.numero_observacion);
+        const numB = parsePositiveInt(b && b.numero_observacion);
+        if (numA !== numB) {
+          if (!numA) return 1;
+          if (!numB) return -1;
+          return numA - numB;
+        }
+
+        return Number((a && a.id) || 0) - Number((b && b.id) || 0);
+      });
+      return safeRows;
     };
 
     const renderSummaryByOficio = (rows) => {
@@ -731,6 +789,9 @@
       if (!(row instanceof HTMLElement)) {
         return;
       }
+      if (!row.dataset.observacionId) {
+        return;
+      }
       const estadoSelect = row.querySelector(".obs-admin-estado");
       const estado = normalizeEstado(estadoSelect ? estadoSelect.value : "Emitido");
       const tipoAnexo = normalizeTipoAnexo(row.dataset.tipoAnexo || "");
@@ -795,7 +856,26 @@
       const disabledAttr = officeEditable ? "" : " disabled";
       const disabledTitle = officeEditable ? "" : ` title="${escapeHtml(rowDisabledReason)}"`;
 
-      tableBody.innerHTML = rows.map((row) => {
+      const orderedRows = sortObservacionesForDetail(rows);
+      const groupedByTipo = new Map();
+      orderedRows.forEach((row) => {
+        const tipo = normalizeTipoAuditoria(row && row.tipo_auditoria);
+        if (!groupedByTipo.has(tipo)) {
+          groupedByTipo.set(tipo, []);
+        }
+        groupedByTipo.get(tipo).push(row);
+      });
+
+      const orderedTipos = Array.from(groupedByTipo.keys()).sort((a, b) => {
+        const orderA = tipoSortOrder[a] || 99;
+        const orderB = tipoSortOrder[b] || 99;
+        if (orderA !== orderB) {
+          return orderA - orderB;
+        }
+        return a.localeCompare(b, "es", { sensitivity: "base" });
+      });
+
+      const buildRowHtml = (row) => {
         const id = Number(row.id || 0);
         const tipoAnexo = normalizeTipoAnexo(row.tipo_anexo);
         const estado = normalizeEstado(row.estado);
@@ -868,9 +948,24 @@
             `</td>` +
           `</tr>`
         );
-      }).join("");
+      };
 
-      Array.from(tableBody.querySelectorAll("tr")).forEach((row) => {
+      const htmlParts = [];
+      orderedTipos.forEach((tipo, index) => {
+        htmlParts.push(
+          `<tr class="obs-admin-detail-section-row">` +
+          `<th colspan="5">${escapeHtml(formatTipoSectionTitle(tipo, index))}</th>` +
+          `</tr>`
+        );
+        const tipoRows = groupedByTipo.get(tipo) || [];
+        tipoRows.forEach((row) => {
+          htmlParts.push(buildRowHtml(row));
+        });
+      });
+
+      tableBody.innerHTML = htmlParts.join("");
+
+      Array.from(tableBody.querySelectorAll("tr[data-observacion-id]")).forEach((row) => {
         updateRowVisualState(row);
       });
       updateSafetyState();
@@ -1090,6 +1185,138 @@
       }
     };
 
+    const parsePdpPendingAmount = (row) => {
+      const emitido = Number.parseFloat(String((row && row.monto_pdp_emitido) || "0"));
+      const solventado = Number.parseFloat(String((row && row.monto_pdp_solventado) || "0"));
+      const pendienteRaw = Number.parseFloat(String((row && row.monto_pdp_pendiente) || "0"));
+      if (Number.isFinite(pendienteRaw)) {
+        return Math.max(0, pendienteRaw);
+      }
+      const safeEmitido = Number.isFinite(emitido) ? emitido : 0;
+      const safeSolventado = Number.isFinite(solventado) ? solventado : 0;
+      return Math.max(0, safeEmitido - safeSolventado);
+    };
+
+    const buildSolventarTodoConfirmMessage = (rowsToSolve) => {
+      const groups = new Map();
+      rowsToSolve.forEach((row) => {
+        const tipo = normalizeTipoAuditoria(row && row.tipo_auditoria);
+        if (!groups.has(tipo)) {
+          groups.set(tipo, {
+            total: 0,
+            pdp: 0,
+            montoPdpPendiente: 0,
+            anexos: { SA: 0, PDP: 0, PRAS: 0, PEFCF: 0, R: 0 },
+          });
+        }
+        const item = groups.get(tipo);
+        item.total += 1;
+        const tipoAnexo = normalizeTipoAnexo(row && row.tipo_anexo);
+        if (Object.prototype.hasOwnProperty.call(item.anexos, tipoAnexo)) {
+          item.anexos[tipoAnexo] += 1;
+        }
+        if (tipoAnexo === "PDP") {
+          item.pdp += 1;
+          item.montoPdpPendiente += parsePdpPendingAmount(row);
+        }
+      });
+
+      const orderedTipos = Array.from(groups.keys()).sort((a, b) => {
+        const orderA = tipoSortOrder[a] || 99;
+        const orderB = tipoSortOrder[b] || 99;
+        if (orderA !== orderB) return orderA - orderB;
+        return a.localeCompare(b, "es", { sensitivity: "base" });
+      });
+
+      const lines = [
+        "ATENCION: Vas a solventar todas las observaciones visibles de este oficio.",
+        "Para PDP se cubrira el monto solventado hasta el monto emitido.",
+        "Revisa con cuidado antes de continuar.",
+        "",
+        `Total de observaciones a solventar: ${rowsToSolve.length}`,
+      ];
+
+      orderedTipos.forEach((tipo, index) => {
+        const entry = groups.get(tipo);
+        lines.push("");
+        lines.push(formatTipoSectionTitle(tipo, index));
+        lines.push(`- Observaciones: ${entry.total}`);
+        lines.push(
+          `- SA: ${entry.anexos.SA} | PDP: ${entry.anexos.PDP} | PRAS: ${entry.anexos.PRAS} | PEFCF: ${entry.anexos.PEFCF} | R: ${entry.anexos.R}`
+        );
+        lines.push(`- Monto PDP pendiente: ${formatMoney(entry.montoPdpPendiente)}`);
+      });
+
+      lines.push("");
+      lines.push("¿Confirmas solventar todo?");
+      return lines.join("\n");
+    };
+
+    const solventarTodoVisible = async () => {
+      const filters = readFilters();
+      if (!hasEditableOfficeScope(filters)) {
+        showStatus("Selecciona un ente y un oficio para solventar observaciones.", "error");
+        return;
+      }
+      if (isReadOnlyEjercicio(filters.ejercicio)) {
+        showStatus(getReadOnlyMessage(filters.ejercicio), "error");
+        return;
+      }
+
+      const safeRows = Array.isArray(filteredRows) ? filteredRows : [];
+      const rowsToSolve = safeRows.filter((row) => normalizeEstado(row && row.estado) !== "Solventado");
+      if (!rowsToSolve.length) {
+        showStatus("Todas las observaciones visibles ya estan solventadas.", "info");
+        return;
+      }
+
+      const confirmMessage = buildSolventarTodoConfirmMessage(rowsToSolve);
+      const confirmed = window.confirm(confirmMessage);
+      if (!confirmed) {
+        return;
+      }
+
+      const ids = rowsToSolve
+        .map((row) => Number((row && row.id) || 0))
+        .filter((id) => Number.isFinite(id) && id > 0);
+      if (!ids.length) {
+        showStatus("No se encontraron observaciones validas para solventar.", "error");
+        return;
+      }
+
+      if (solveAllBtn instanceof HTMLButtonElement) {
+        solveAllBtn.disabled = true;
+      }
+      try {
+        const response = await fetch("/carga/observaciones-admin/solventar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ids,
+            scope: {
+              ejercicio: filters.ejercicio,
+              ente_id: filters.ente_id,
+              oficio: filters.oficio,
+            },
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "No se pudo solventar el bloque completo.");
+        }
+        await fetchRows({ announce: false });
+        showStatus(
+          `Solventacion masiva aplicada a ${data.updated || ids.length} observacion(es).`
+          + (data.backup_path ? ` Respaldo: ${data.backup_path}.` : ""),
+          "success",
+        );
+      } catch (error) {
+        showStatus(error && error.message ? error.message : "Error al solventar observaciones.", "error");
+      } finally {
+        updateSafetyState();
+      }
+    };
+
     const loadEntes = async (selectedValue = "") => {
       if (!ejercicioInput || !enteInput) {
         return;
@@ -1169,6 +1396,12 @@
       oficioInput.addEventListener("change", async () => {
         clearStatus();
         await fetchRows({ announce: false });
+      });
+    }
+
+    if (solveAllBtn) {
+      solveAllBtn.addEventListener("click", async () => {
+        await solventarTodoVisible();
       });
     }
 
