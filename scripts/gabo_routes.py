@@ -1278,7 +1278,7 @@ def register_gabo_routes(app, deps):
         return (
             "R"
             if re.match(r"^(remanentes|rea)\b", (fuente_nombre or "").strip(), flags=re.IGNORECASE)
-            else "E"
+            else "Emitido"
         )
 
     def build_fuente_detalle_snapshot(
@@ -2831,7 +2831,7 @@ def register_gabo_routes(app, deps):
             "manual_periodo": "",
             "manual_periodo_titular": "",
             "manual_ramo_33": "No",
-            "manual_estado": "E",
+            "manual_estado": "Emitido",
             "manual_fecha_notificacion": "",
             "manual_cantidad_sa": "0",
             "manual_cantidad_pdp": "0",
@@ -2856,6 +2856,7 @@ def register_gabo_routes(app, deps):
         action = ""
         if request.method == "POST":
             action = (request.form.get("action") or "").strip()
+            manual_estado_raw = (request.form.get("manual_estado") or "").strip()
             form_data.update(
                 {
                     "template_ejercicio": (request.form.get("template_ejercicio") or "").strip(),
@@ -2883,7 +2884,7 @@ def register_gabo_routes(app, deps):
                     "manual_periodo": (request.form.get("manual_periodo") or "").strip(),
                     "manual_periodo_titular": (request.form.get("manual_periodo_titular") or "").strip(),
                     "manual_ramo_33": (request.form.get("manual_ramo_33") or "").strip() or "No",
-                    "manual_estado": (request.form.get("manual_estado") or "").strip() or "E",
+                    "manual_estado": _normalize_observacion_estado(manual_estado_raw) or "Emitido",
                     "manual_fecha_notificacion": (request.form.get("manual_fecha_notificacion") or "").strip(),
                     "manual_cantidad_sa": (request.form.get("manual_cantidad_sa") or "").strip() or "0",
                     "manual_cantidad_pdp": (request.form.get("manual_cantidad_pdp") or "").strip() or "0",
@@ -2928,10 +2929,11 @@ def register_gabo_routes(app, deps):
                     ejercicio = form_data["manual_ejercicio"]
                     fuente_id_raw = form_data["manual_fuente_id"]
                     fuente_nueva = " ".join(form_data["manual_fuente_nueva"].split()) if fuente_id_raw == "__new__" else ""
-                    periodo = " ".join(form_data["manual_periodo"].split())
+                    raw_periodo = form_data["manual_periodo"]
+                    periodo = raw_periodo if user and user.get("username") == "gabo" else " ".join(raw_periodo.split())
                     periodo_titular = form_data["manual_periodo_titular"]
                     ramo_33 = "No"
-                    estado = "E"
+                    estado = "Emitido"
                     fecha_notificacion = form_data["manual_fecha_notificacion"]
                     raw_montos_pdp = form_data["manual_montos_pdp"]
                     raw_pdp_detalle_json = form_data["manual_pdp_detalle_json"]
@@ -3094,11 +3096,11 @@ def register_gabo_routes(app, deps):
                         raise ValueError("No se pudo resolver el nombre de la fuente seleccionada.")
 
                     # Regla automática para carga Gabo:
-                    # Ramo XXXIII fijo en "No" y E/R en "R" para fuentes de remanentes.
+                    # Ramo XXXIII fijo en "No" y remanentes quedan en "R"; el resto se marca como Emitido.
                     if re.match(r"^(remanentes|rea)\b", fuente_nombre.strip(), flags=re.IGNORECASE):
                         estado = "R"
                     else:
-                        estado = "E"
+                        estado = "Emitido"
                     if asunto == "Notificación de Cédula de Resultados":
                         pdp_details_by_fuente: list[list[dict]] = []
                         if usa_fuentes_detalle:
