@@ -403,89 +403,17 @@
               </div>
             </div>
 
-            <aside class="loader-capture-aside" id="manualCaptureAside">
-              <button
-                type="button"
-                class="loader-capture-aside-toggle"
-                id="manualToggleAsideBtn"
-                aria-expanded="false"
-                aria-controls="manualCaptureAsideDetails"
-                aria-label="Mostrar u ocultar resumen de captura"
-              >
-                <span class="loader-capture-aside-toggle-title">Resumen de captura</span>
-              </button>
-              <section id="manualCaptureAsideDetails" class="loader-capture-details-panel" hidden>
-                <div class="loader-manual-subsection loader-capture-summary-card">
-                  <div class="loader-capture-summary-head">
-                    <div>
-                      <h3>Resumen de captura</h3>
-                      <p class="helper loader-fuentes-progress-inline" id="manual_fuentes_progress"></p>
-                    </div>
-                  </div>
-                  <div class="loader-capture-summary-menu"{% if user and user.username == "gabo" %} hidden aria-hidden="true"{% endif %}>
-                    <article class="loader-capture-summary-row">
-                      <span>Estado</span>
-                      <strong id="manualAsideEstadoSummary">Emitido</strong>
-                    </article>
-                    <article class="loader-capture-summary-row">
-                      <span>Alcance</span>
-                      <strong id="manualAsideAlcanceSummary">Pendiente</strong>
-                    </article>
-                    <article class="loader-capture-summary-row">
-                      <span>Oficio</span>
-                      <strong id="manualAsideOficioSummary">Faltan datos</strong>
-                    </article>
-                    <article class="loader-capture-summary-row">
-                      <span>Fuentes</span>
-                      <strong id="manualAsideFuentesSummary">0 / 1</strong>
-                    </article>
-                    <article class="loader-capture-summary-row">
-                      <span>Obs.</span>
-                      <strong id="manualAsideObsSummary">0</strong>
-                    </article>
-                    <article class="loader-capture-summary-row">
-                      <span>PDP</span>
-                      <strong id="manualAsidePdpSummary">Sin PDP</strong>
-                    </article>
-                    <article class="loader-capture-summary-row">
-                      <span>Activa</span>
-                      <strong id="manualAsideActivaSummary">Sin fuente</strong>
-                    </article>
-                  </div>
-                  <p class="helper" id="manual_fuentes_detalle_feedback"></p>
-                </div>
-
-                <div class="loader-manual-subsection loader-fuentes-summary-card">
-                  <h3>Fuentes capturadas</h3>
-                  <div id="manualFuentesDetalleList" class="loader-fuentes-board"></div>
-                </div>
-                <div class="loader-manual-subsection loader-review-card loader-review-card-compact"{% if user and user.username == "gabo" %} hidden aria-hidden="true"{% endif %}>
-                  <h3>Checklist</h3>
-                  <div id="manualReviewChecklist" class="loader-review-list">
-                    <p class="muted">Sin captura activa.</p>
-                  </div>
-                </div>
-              </section>
-            </aside>
           </div>
 
             <section class="loader-manual-subsection loader-summary-card loader-summary-card-compact" id="manualResumenFuentesSection">
               <h3>Resumen antes de guardar</h3>
               <div id="manualResumenFuentesBody" class="manual-resumen-table">
-                <p class="helper">Fuentes capturadas</p>
-                <p class="helper">Sin fuentes registradas.</p>
                 <p class="helper">Agrega fuentes para generar el resumen.</p>
               </div>
             </section>
 
           <div class="loader-step-nav loader-step-nav-submit">
             <button class="btn-primary" type="submit" name="action" value="manual_save" id="manualSaveBtn">Guardar oficio</button>
-          </div>
-          <div class="loader-draft-bar">
-            <p class="helper loader-draft-status" id="manualDraftStatus">Guardado temporal local disponible en este navegador.</p>
-            <div class="loader-draft-actions">
-              <button class="btn-secondary btn-compact" type="button" id="wizardSaveDraftBtnManual">Guardar temporal</button>
-            </div>
           </div>
         </section>
         {% if form_data.manual_id %}
@@ -741,22 +669,12 @@
     const manualCancelFuenteEditBtn = document.getElementById("manualCancelFuenteEditBtn");
     const manualFinishFuentesBtn = document.getElementById("manualFinishFuentesBtn");
     const manualCaptureShell = document.getElementById("manualCaptureShell");
-    const manualCaptureAside = document.getElementById("manualCaptureAside");
-    const manualToggleAsideBtn = document.getElementById("manualToggleAsideBtn");
     const manualFuenteEditorMode = document.getElementById("manualFuenteEditorMode");
     const manualFuenteTipoHint = document.getElementById("manual_fuente_tipo_hint");
     const manualFuentesDetalleJson = document.getElementById("manual_fuentes_detalle_json");
     const manualCantidadesWrap = document.getElementById("manual_cantidades_wrap");
     const manualFuentesDetalleList = document.getElementById("manualFuentesDetalleList");
-    const manualCaptureAsideDetails = document.getElementById("manualCaptureAsideDetails");
     const manualFuentesProgress = document.getElementById("manual_fuentes_progress");
-    const manualAsideEstadoSummary = document.getElementById("manualAsideEstadoSummary");
-    const manualAsideAlcanceSummary = document.getElementById("manualAsideAlcanceSummary");
-    const manualAsideOficioSummary = document.getElementById("manualAsideOficioSummary");
-    const manualAsideFuentesSummary = document.getElementById("manualAsideFuentesSummary");
-    const manualAsideObsSummary = document.getElementById("manualAsideObsSummary");
-    const manualAsidePdpSummary = document.getElementById("manualAsidePdpSummary");
-    const manualAsideActivaSummary = document.getElementById("manualAsideActivaSummary");
     const manualFuentesDetalleFeedback = document.getElementById("manual_fuentes_detalle_feedback");
     const manualReviewChecklist = document.getElementById("manualReviewChecklist");
     const manualTipoScopeHint = document.getElementById("manual_tipo_scope_hint");
@@ -792,7 +710,6 @@
     const manualValidateBtn = document.getElementById("manualValidateBtn");
     const manualBackToStage1Btn = document.getElementById("manualBackToStage1Btn");
     const manualActionsHelper = document.getElementById("manualActionsHelper");
-    const wizardSaveDraftBtnManual = document.getElementById("wizardSaveDraftBtnManual");
     const manualStepper = document.getElementById("manualStepper");
     const manualStep2Chip = document.getElementById("manualStep2Chip");
     const stepChips = manualStepper ? Array.from(manualStepper.querySelectorAll("[data-step-target]")) : [];
@@ -827,7 +744,6 @@
     let isObservacionesLoading = false;
     let fuentesDetalleState = [];
     let editingFuenteIndex = null;
-    let manualCaptureAsideExpanded = false;
     let draftAutosaveTimer = null;
     const solventacionTipos = ["PDP", "PEFCF", "PRAS", "R", "SA"];
     const contextDraftKey = "sifeet_manual_context_draft";
@@ -1657,6 +1573,43 @@
       });
     };
 
+    const applyWizardDraftPayload = (payload) => {
+      if (!payload || typeof payload !== "object") {
+        return;
+      }
+      applyNamedFields(payload.manual_form);
+      applyNamedFields(payload.titular_form);
+      if (Array.isArray(payload.fuentes_detalle) && manualFuentesDetalleJson) {
+        manualFuentesDetalleJson.value = JSON.stringify(payload.fuentes_detalle);
+        fuentesDetalleState = parseFuentesDetalleState();
+        syncFuentesDetalleState();
+      }
+      if (Array.isArray(payload.pdp_detalle) && manualPdpDetalleJson) {
+        manualPdpDetalleJson.value = JSON.stringify(payload.pdp_detalle);
+        pdpDetalleState = parsePdpDetalleState();
+      }
+      if (typeof payload.solventacion_detalle_json === "string" && manualSolventacionDetalleJson) {
+        manualSolventacionDetalleJson.value = payload.solventacion_detalle_json;
+      }
+      if (payload.stage_progress && typeof payload.stage_progress === "object") {
+        wizardStageProgress = { ...wizardStageProgress, ...payload.stage_progress };
+      }
+      if (Number.isFinite(Number(payload.manual_step))) {
+        setManualStep(Number(payload.manual_step));
+      }
+      if (typeof payload.loader_mode === "string" && payload.loader_mode) {
+        navigateWizardMode(payload.loader_mode, { force: true });
+      }
+      syncPrincipalFiltersToForms({ syncTitular: true });
+      syncManualContextToPrincipal();
+      renderFuentesDetalleRows();
+      renderPdpBreakdown();
+      hydrateSolventacionDetalle();
+      renderManualReviewSummary();
+      renderResumenFuentes();
+      updateWizardModeAvailability();
+    };
+
     const setSelectValueWhenReady = (field, value, retries = 8) => {
       if (!field || !value) {
         return;
@@ -2025,25 +1978,6 @@
       updateFuenteActionButton();
     };
 
-    const setManualCaptureAsideExpanded = (expanded) => {
-      manualCaptureAsideExpanded = !!expanded;
-      if (manualCaptureShell) {
-        manualCaptureShell.classList.toggle("is-aside-expanded", manualCaptureAsideExpanded);
-      }
-      if (manualCaptureAside) {
-        manualCaptureAside.classList.toggle("is-expanded", manualCaptureAsideExpanded);
-      }
-      if (manualCaptureAsideDetails) {
-        manualCaptureAsideDetails.hidden = !manualCaptureAsideExpanded;
-      }
-      if (manualToggleAsideBtn) {
-        manualToggleAsideBtn.setAttribute("aria-expanded", manualCaptureAsideExpanded ? "true" : "false");
-      }
-      if (manualCaptureAsideExpanded && manualCaptureAsideDetails && typeof manualCaptureAsideDetails.scrollIntoView === "function") {
-        manualCaptureAsideDetails.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    };
-
     const clearFuenteEditor = ({ focus = false, clearFeedback = false } = {}) => {
       editingFuenteIndex = null;
       ["manual_cantidad_sa", "manual_cantidad_pdp", "manual_cantidad_pras", "manual_cantidad_pefcf", "manual_cantidad_r"]
@@ -2188,27 +2122,6 @@
           detail: activaDetail,
         },
       ];
-      if (manualAsideEstadoSummary) {
-        manualAsideEstadoSummary.textContent = statusLabel;
-      }
-      if (manualAsideAlcanceSummary) {
-        manualAsideAlcanceSummary.textContent = scopeTipo || "Pendiente";
-      }
-      if (manualAsideOficioSummary) {
-        manualAsideOficioSummary.textContent = oficioDetail;
-      }
-      if (manualAsideFuentesSummary) {
-        manualAsideFuentesSummary.textContent = `${capturadas} / ${objetivo}`;
-      }
-      if (manualAsideObsSummary) {
-        manualAsideObsSummary.textContent = String(totalObs);
-      }
-      if (manualAsidePdpSummary) {
-        manualAsidePdpSummary.textContent = pdpDetail;
-      }
-      if (manualAsideActivaSummary) {
-        manualAsideActivaSummary.textContent = activaDetail;
-      }
       manualReviewChecklist.innerHTML = rows.map((row) => (
         `<article class="loader-review-item ${row.ok ? "is-ok" : "is-warn"}">`
         + `<strong>${escapeHtml(row.label)}</strong>`
@@ -2302,10 +2215,7 @@
         return;
       }
       if (!fuentesDetalleState.length) {
-        manualResumenContainer.innerHTML =
-          '<p class="helper">Fuentes capturadas</p>'
-          + '<p class="helper">Sin fuentes registradas.</p>'
-          + '<p class="helper">Agrega fuentes para generar el resumen.</p>';
+        manualResumenContainer.innerHTML = '<p class="helper">Agrega fuentes para generar el resumen.</p>';
         return;
       }
       const groupedMap = new Map();
@@ -4386,9 +4296,6 @@
       if (manualBackToStage1Btn) {
         manualBackToStage1Btn.style.display = "none";
       }
-      if (wizardSaveDraftBtnManual) {
-        wizardSaveDraftBtnManual.style.display = mode === "solventacion" ? "none" : "";
-      }
       if (manualSaveBtn) {
         manualSaveBtn.style.display = "";
         manualSaveBtn.textContent = mode === "solventacion"
@@ -4778,13 +4685,7 @@
     toggleFuentesByTipo();
     fuentesDetalleState = parseFuentesDetalleState();
     syncFuentesDetalleState();
-    setManualCaptureAsideExpanded(false);
     renderFuentesDetalleRows();
-    if (manualToggleAsideBtn) {
-      manualToggleAsideBtn.addEventListener("click", () => {
-        setManualCaptureAsideExpanded(!manualCaptureAsideExpanded);
-      });
-    }
     if (manualFuentesDetalleList) {
       manualFuentesDetalleList.addEventListener("click", (event) => {
         const target = event.target;
@@ -5046,12 +4947,6 @@
       });
     }
 
-    if (wizardSaveDraftBtnManual) {
-      wizardSaveDraftBtnManual.addEventListener("click", () => {
-        saveWizardDraft({ announce: true });
-      });
-    }
-
     if (titularCaptureForm) {
       titularCaptureForm.addEventListener("submit", (event) => {
         if (!validateStage3({ showFeedback: true })) {
@@ -5074,6 +4969,7 @@
     try {
       const draftPayload = readWizardDraftPayload();
       if (draftPayload) {
+        applyWizardDraftPayload(draftPayload);
         syncManualDraftStatus(draftPayload);
       } else {
         syncManualDraftStatus(null);
