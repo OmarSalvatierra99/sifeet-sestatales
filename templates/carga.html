@@ -263,13 +263,12 @@
                       <option value="__new_periodo__">+ Agregar nuevo periodo...</option>
                     </select>
                     <div id="principal_periodo_nuevo_wrap" style="display:none;">
-                      <input
+                      <textarea
                         id="principal_periodo_nuevo"
-                        type="text"
-                        value="{{ form_data.manual_periodo }}"
+                        rows="2"
                         placeholder="Ej. 01 de enero al 31 de diciembre"
                         aria-label="Nuevo periodo del oficio"
-                      >
+                      >{{ form_data.manual_periodo | e }}</textarea>
                     </div>
                     <input id="principal_periodo" type="hidden" value="{{ form_data.manual_periodo }}">
                     <input
@@ -2307,7 +2306,13 @@
       } else {
         updateSourceTypeOptions({ preserveSelection: false });
       }
-      editingFuenteIndex = Number.isInteger(idx) && idx >= 0 ? idx : findFuenteDetalleIndex(itemTipo, String(item.fuente_nombre || "").trim());
+      editingFuenteIndex = Number.isInteger(idx) && idx >= 0
+        ? idx
+        : findFuenteDetalleIndex(
+          itemTipo,
+          String(item.fuente_nombre || "").trim(),
+          String(item.periodo || ""),
+        );
       updateFuenteEditorMode();
       if (manualTipoAuditoria) {
         manualTipoAuditoria.value = itemTipo;
@@ -2380,9 +2385,7 @@
         return false;
       }
 
-      const existingIndex = fuentesDetalleState.findIndex((row) => (
-        row.tipo_auditoria === tipo && row.fuente_nombre.toLowerCase() === fuenteNombre.toLowerCase()
-      ));
+      const existingIndex = findFuenteDetalleIndex(tipo, fuenteNombre, periodoValue);
       if (!isEditingExisting && existingIndex < 0 && fuentesDetalleState.length >= objetivoFuentes) {
         if (manualFuentesDetalleFeedback) {
           manualFuentesDetalleFeedback.textContent = `Ya capturaste ${objetivoFuentes} fuente(s). Aumenta la meta si necesitas otra.`;
@@ -2457,12 +2460,17 @@
       return true;
     };
 
-    const findFuenteDetalleIndex = (tipo, fuenteNombre) => (
-      fuentesDetalleState.findIndex((row) => (
-        row.tipo_auditoria === tipo
-        && row.fuente_nombre.toLowerCase() === fuenteNombre.toLowerCase()
-      ))
-    );
+    const findFuenteDetalleIndex = (tipo, fuenteNombre, periodo = "") => {
+      const normalizedTipo = String(tipo || "").trim().toLowerCase();
+      const normalizedFuente = String(fuenteNombre || "").trim().toLowerCase();
+      const normalizedPeriodo = normalizePeriodoValue(periodo || "").toLowerCase();
+      return fuentesDetalleState.findIndex((row) => {
+        const rowTipo = String((row && row.tipo_auditoria) || "").trim().toLowerCase();
+        const rowFuente = String((row && row.fuente_nombre) || "").trim().toLowerCase();
+        const rowPeriodo = normalizePeriodoValue((row && row.periodo) || "").toLowerCase();
+        return rowTipo === normalizedTipo && rowFuente === normalizedFuente && rowPeriodo === normalizedPeriodo;
+      });
+    };
 
     const getCurrentPdpSourceScope = () => {
       const tipo = (manualTipoAuditoria ? manualTipoAuditoria.value : "").trim();
@@ -2470,9 +2478,10 @@
       if (!tipo || !fuenteNombre || !Array.isArray(fuentesDetalleState) || !fuentesDetalleState.length) {
         return null;
       }
+      const periodoValue = manualPeriodo ? String(manualPeriodo.value || "") : "";
       const sourceIndex = Number.isInteger(editingFuenteIndex) && editingFuenteIndex >= 0
         ? editingFuenteIndex
-        : findFuenteDetalleIndex(tipo, fuenteNombre);
+        : findFuenteDetalleIndex(tipo, fuenteNombre, periodoValue);
       if (!Number.isInteger(sourceIndex) || sourceIndex < 0 || sourceIndex >= fuentesDetalleState.length) {
         return null;
       }
@@ -2508,6 +2517,10 @@
       const cantidadPras = readCantidadValue("manual_cantidad_pras");
       const cantidadPefcf = readCantidadValue("manual_cantidad_pefcf");
       const cantidadR = readCantidadValue("manual_cantidad_r");
+      const manualPeriodoRaw = manualPeriodo ? String(manualPeriodo.value || "") : "";
+      const periodoValue = preservePeriodoWhitespace
+        ? manualPeriodoRaw
+        : normalizePeriodoValue(manualPeriodoRaw);
       const total = cantidadSa + cantidadPdp + cantidadPras + cantidadPefcf + cantidadR;
       if (!tipo || !fuenteNombre) {
         if (showFeedback && manualFuentesDetalleFeedback) {
@@ -2516,7 +2529,7 @@
         return false;
       }
 
-      const existingIndex = findFuenteDetalleIndex(tipo, fuenteNombre);
+      const existingIndex = findFuenteDetalleIndex(tipo, fuenteNombre, periodoValue);
       if (total <= 0) {
         if (showFeedback && manualFuentesDetalleFeedback) {
           manualFuentesDetalleFeedback.textContent = "Captura al menos una observación.";
@@ -2527,6 +2540,7 @@
       const payload = {
         tipo_auditoria: tipo,
         fuente_nombre: fuenteNombre,
+        periodo: periodoValue,
         cantidad_sa: cantidadSa,
         cantidad_pdp: cantidadPdp,
         cantidad_pras: cantidadPras,
@@ -2578,7 +2592,8 @@
       if (!tipo || !fuenteNombre) {
         return;
       }
-      const idx = findFuenteDetalleIndex(tipo, fuenteNombre);
+      const periodoValue = manualPeriodo ? String(manualPeriodo.value || "") : "";
+      const idx = findFuenteDetalleIndex(tipo, fuenteNombre, periodoValue);
       const item = idx >= 0 ? (fuentesDetalleState[idx] || null) : null;
       const setValue = (id, value) => {
         const input = document.getElementById(id);

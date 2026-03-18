@@ -1817,6 +1817,17 @@ tbody tr:hover td {
   gap: 0.55rem;
 }
 
+ .loader-periodo-picker-field textarea {
+   width: 100%;
+   min-height: 72px;
+   resize: vertical;
+   border-radius: 10px;
+   border: 1px solid var(--color-border);
+   padding: 0.6rem 0.8rem;
+   background: #fff;
+   font-family: inherit;
+   font-size: 0.95rem;
+}
 .loader-oficio-picker-field {
   width: 100%;
   max-width: 19rem;
