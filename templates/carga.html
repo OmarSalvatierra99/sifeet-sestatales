@@ -90,7 +90,7 @@
             <section class="loader-expediente-group">
               <div class="loader-expediente-group-head">
                 <span>Oficio</span>
-                <p>Número, fecha, periodo y meta.</p>
+                <p>Número, fecha y meta.</p>
               </div>
               <div class="form-grid loader-expediente-grid">
                 <div class="field loader-oficio-picker-field">
@@ -205,14 +205,11 @@
         <input id="manual_asunto" name="manual_asunto" type="hidden" value="{{ form_data.manual_asunto }}">
         <input id="manual_oficio_base" name="manual_oficio_base" type="hidden" value="{{ form_data.manual_oficio_base }}">
         <input id="manual_numero_oficio" name="manual_numero_oficio" type="hidden" value="{{ form_data.manual_numero_oficio }}">
-        <input id="manual_periodo" name="manual_periodo" type="hidden" value="{{ form_data.manual_periodo }}">
         <input id="manual_fecha_notificacion" name="manual_fecha_notificacion" type="hidden" value="{{ form_data.manual_fecha_notificacion }}">
         <input id="manual_fuentes_objetivo" name="manual_fuentes_objetivo" type="hidden" value="{{ form_data.manual_fuentes_objetivo or '1' }}">
         <input type="hidden" id="manual_fuentes_detalle_json" name="manual_fuentes_detalle_json" value="{{ form_data.manual_fuentes_detalle_json|e }}">
         <input type="hidden" id="manual_pdp_detalle_json" name="manual_pdp_detalle_json" value="{{ form_data.manual_pdp_detalle_json|e }}">
         <datalist id="manual_oficio_options"></datalist>
-        <datalist id="manual_periodo_options"></datalist>
-
         <div class="loader-context-hidden" hidden aria-hidden="true">
           <div class="field" id="manual_oficio_base_field" style="display:none;">
             <label for="manual_oficio_base_selector">Oficio de cédula a contestar</label>
@@ -227,10 +224,6 @@
           </div>
           <div class="field" id="manual_numero_oficio_field">
             <label for="manual_numero_oficio" id="manual_numero_oficio_label">Número de oficio</label>
-          </div>
-          <div class="field" id="manual_periodo_field">
-            <label for="manual_periodo">Periodo</label>
-            <p class="helper" id="manual_periodo_helper">Ej. 01 de enero al 31 de diciembre</p>
           </div>
         </div>
 
@@ -261,7 +254,6 @@
                     <span class="loader-context-summary-label">Oficio</span>
                     <strong id="manualContextSummaryOficio">-</strong>
                     <div class="loader-context-inline">
-                      <span>Periodo <strong id="manualContextSummaryPeriodo">-</strong></span>
                       <span>Fecha <strong id="manualContextSummaryFecha">-</strong></span>
                     </div>
                   </article>
@@ -300,6 +292,18 @@
                       <option value="Financiera" {% if form_data.manual_tipo_auditoria == "Financiera" %}selected{% endif %}>Financiera</option>
                       <option value="Obra Pública" {% if form_data.manual_tipo_auditoria == "Obra Pública" %}selected{% endif %}>Obra Pública</option>
                     </select>
+                  </div>
+                  <div class="field" id="manual_periodo_field">
+                    <label for="manual_periodo">Periodo</label>
+                    <input
+                      id="manual_periodo"
+                      name="manual_periodo"
+                      type="text"
+                      value="{{ form_data.manual_periodo }}"
+                      list="manual_periodo_options"
+                      required
+                    >
+                    <datalist id="manual_periodo_options"></datalist>
                   </div>
                   <div class="field">
                     <label for="manual_fuente_id">Fuente</label>
@@ -411,6 +415,13 @@
                 </details>
               </div>
             </div>
+
+            <section class="loader-manual-subsection loader-summary-card loader-summary-card-compact" id="manualResumenFuentesSection">
+              <h3>Resumen antes de guardar</h3>
+              <div id="manualResumenFuentesBody" class="manual-resumen-table">
+                <p class="helper">Agrega fuentes para generar el resumen.</p>
+              </div>
+            </section>
 
             <aside class="loader-capture-aside" id="manualCaptureAside">
               <button
@@ -732,7 +743,6 @@
     const manualPeriodoField = document.getElementById("manual_periodo_field");
     const manualPeriodo = document.getElementById("manual_periodo");
     const manualPeriodoOptions = document.getElementById("manual_periodo_options");
-    const manualPeriodoHelper = document.getElementById("manual_periodo_helper");
     const manualContextStatus = document.getElementById("manual_context_status");
     const manualFuente = document.getElementById("manual_fuente_id");
     const manualFuentesObjetivo = document.getElementById("manual_fuentes_objetivo");
@@ -852,9 +862,9 @@
     const manualContextSummaryTipo = document.getElementById("manualContextSummaryTipo");
     const manualContextSummaryFuente = document.getElementById("manualContextSummaryFuente");
     const manualContextSummaryOficio = document.getElementById("manualContextSummaryOficio");
-    const manualContextSummaryPeriodo = document.getElementById("manualContextSummaryPeriodo");
     const manualContextSummaryFecha = document.getElementById("manualContextSummaryFecha");
     const manualContextSummaryFuentes = document.getElementById("manualContextSummaryFuentes");
+    const manualResumenContainer = document.getElementById("manualResumenFuentesBody");
     let isSyncingContextFields = false;
     const MIXED_TIPO_AUDITORIA = "Financiera y Obra Pública";
     const NEW_SOURCE_VALUE = "__new__";
@@ -1550,9 +1560,6 @@
       if (manualContextSummaryOficio) {
         manualContextSummaryOficio.textContent = String(principalNumeroOficio ? principalNumeroOficio.value || "-" : "-");
       }
-      if (manualContextSummaryPeriodo) {
-        manualContextSummaryPeriodo.textContent = String(principalPeriodo ? principalPeriodo.value || "-" : "-");
-      }
       if (manualContextSummaryFecha) {
         manualContextSummaryFecha.textContent = formatFechaForSummary(principalFechaNotificacion ? principalFechaNotificacion.value : "");
       }
@@ -2089,6 +2096,9 @@
       if (clearFeedback && manualFuentesDetalleFeedback) {
         manualFuentesDetalleFeedback.textContent = "";
       }
+      if (manualPeriodo) {
+        manualPeriodo.value = "";
+      }
       updateFuenteEditorMode();
       if (focus && manualFuente && typeof manualFuente.focus === "function") {
         manualFuente.focus();
@@ -2268,6 +2278,7 @@
         renderManualReviewSummary();
         updateManualSaveState();
         updateWizardModeAvailability();
+        renderResumenFuentes();
         return;
       }
       const activeTipo = manualTipoAuditoria ? String(manualTipoAuditoria.value || "").trim().toLowerCase() : "";
@@ -2309,10 +2320,122 @@
           `</article>`
         );
       }).join("");
+      renderResumenFuentes();
       updateFuenteEditorMode();
       renderManualReviewSummary();
       updateManualSaveState();
       updateWizardModeAvailability();
+    };
+
+    const formatResumenTipoLabel = (tipo, index) => {
+      const letter = String.fromCharCode(65 + (index % 26));
+      let display = tipo || "Sin tipo";
+      if (display === "Financiera") {
+        display = "Auditoría Financiera";
+      } else if (display === "Obra Pública") {
+        display = "Auditoría de Obra Pública";
+      }
+      return `${letter}) ${display}`;
+    };
+
+    const renderResumenFuentes = () => {
+      if (!manualResumenContainer) {
+        return;
+      }
+      if (!fuentesDetalleState.length) {
+        manualResumenContainer.innerHTML = '<p class="helper">Agrega fuentes para generar el resumen.</p>';
+        return;
+      }
+      const groupedMap = new Map();
+      const orderedTipos = [];
+      fuentesDetalleState.forEach((item) => {
+        const tipoKey = String(item.tipo_auditoria || "").trim() || "Sin tipo";
+        if (!groupedMap.has(tipoKey)) {
+          groupedMap.set(tipoKey, []);
+          orderedTipos.push(tipoKey);
+        }
+        groupedMap.get(tipoKey).push(item);
+      });
+      const sectionsHtml = orderedTipos.map((tipoKey, index) => {
+        const rows = groupedMap.get(tipoKey) || [];
+        const totals = rows.reduce(
+          (acc, row) => {
+            const sa = Math.max(0, Number.parseInt(String(row.cantidad_sa || 0), 10) || 0);
+            const pdp = Math.max(0, Number.parseInt(String(row.cantidad_pdp || 0), 10) || 0);
+            const pras = Math.max(0, Number.parseInt(String(row.cantidad_pras || 0), 10) || 0);
+            const pefcf = Math.max(0, Number.parseInt(String(row.cantidad_pefcf || 0), 10) || 0);
+            const r = Math.max(0, Number.parseInt(String(row.cantidad_r || 0), 10) || 0);
+            const total = sa + pdp + pras + pefcf + r;
+            return {
+              sa: acc.sa + sa,
+              pdp: acc.pdp + pdp,
+              pras: acc.pras + pras,
+              pefcf: acc.pefcf + pefcf,
+              r: acc.r + r,
+              total: acc.total + total,
+            };
+          },
+          { sa: 0, pdp: 0, pras: 0, pefcf: 0, r: 0, total: 0 },
+        );
+        const rowsHtml = rows
+          .map((item) => {
+            const periodoText = String(item.periodo || "").trim() || "-";
+            const sa = Math.max(0, Number.parseInt(String(item.cantidad_sa || 0), 10) || 0);
+            const pdp = Math.max(0, Number.parseInt(String(item.cantidad_pdp || 0), 10) || 0);
+            const pras = Math.max(0, Number.parseInt(String(item.cantidad_pras || 0), 10) || 0);
+            const pefcf = Math.max(0, Number.parseInt(String(item.cantidad_pefcf || 0), 10) || 0);
+            const r = Math.max(0, Number.parseInt(String(item.cantidad_r || 0), 10) || 0);
+            const rowTotal = sa + pdp + pras + pefcf + r;
+            return (
+              `<tr>` +
+              `<td>${escapeHtml(item.fuente_nombre || "")}</td>` +
+              `<td>${escapeHtml(periodoText)}</td>` +
+              `<td>${sa}</td>` +
+              `<td>${pdp}</td>` +
+              `<td>${pras}</td>` +
+              `<td>${pefcf}</td>` +
+              `<td>${r}</td>` +
+              `<td>${rowTotal}</td>` +
+              `</tr>`
+            );
+          })
+          .join("");
+        const label = formatResumenTipoLabel(tipoKey, index);
+        return (
+          `<div class="manual-resumen-section">` +
+          `<h4>${escapeHtml(label)}</h4>` +
+          `<div class="manual-resumen-table-wrapper">` +
+          `<table>` +
+          `<thead>` +
+          `<tr>` +
+          `<th>Nombre de la Fuente de Financiamiento</th>` +
+          `<th>Periodo</th>` +
+          `<th>SA</th>` +
+          `<th>PDP</th>` +
+          `<th>PRAS</th>` +
+          `<th>PEFCF</th>` +
+          `<th>R</th>` +
+          `<th>Total de las Obs. Emitidas</th>` +
+          `</tr>` +
+          `</thead>` +
+          `<tbody>${rowsHtml}</tbody>` +
+          `<tfoot>` +
+          `<tr class="manual-resumen-total">` +
+          `<th colspan="2">Total de las Observaciones Emitidas</th>` +
+          `<th>${totals.sa}</th>` +
+          `<th>${totals.pdp}</th>` +
+          `<th>${totals.pras}</th>` +
+          `<th>${totals.pefcf}</th>` +
+          `<th>${totals.r}</th>` +
+          `<th>${totals.total}</th>` +
+          `</tr>` +
+          `</tfoot>` +
+          `</table>` +
+          `</div>` +
+          `</div>`
+        );
+      }).join("");
+      manualResumenContainer.innerHTML = sectionsHtml;
     };
 
     const loadFuenteDetalleIntoEditor = (item, idx = -1) => {
@@ -2342,6 +2465,10 @@
         ensureCustomFuenteOption(principalFuente, normalizedFuente);
         manualFuente.value = `__obs__:${normalizedFuente}`;
         manualFuente.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (manualPeriodo) {
+        manualPeriodo.value = String(item.periodo || "");
+        manualPeriodo.dispatchEvent(new Event("input", { bubbles: true }));
       }
       ["manual_cantidad_sa", "manual_cantidad_pdp", "manual_cantidad_pras", "manual_cantidad_pefcf", "manual_cantidad_r"]
         .forEach((id) => {
@@ -2376,6 +2503,10 @@
       const cantidadPras = readCantidadValue("manual_cantidad_pras");
       const cantidadPefcf = readCantidadValue("manual_cantidad_pefcf");
       const cantidadR = readCantidadValue("manual_cantidad_r");
+      const manualPeriodoRaw = manualPeriodo ? String(manualPeriodo.value || "") : "";
+      const periodoValue = preservePeriodoWhitespace
+        ? manualPeriodoRaw
+        : normalizePeriodoValue(manualPeriodoRaw);
       const total = cantidadSa + cantidadPdp + cantidadPras + cantidadPefcf + cantidadR;
 
       if (!tipo) {
@@ -2384,6 +2515,10 @@
       }
       if (!fuenteNombre) {
         if (manualFuentesDetalleFeedback) manualFuentesDetalleFeedback.textContent = "Selecciona una fuente válida.";
+        return false;
+      }
+      if (!periodoValue) {
+        if (manualFuentesDetalleFeedback) manualFuentesDetalleFeedback.textContent = "Captura el periodo para esta fuente.";
         return false;
       }
       if (total <= 0) {
@@ -2403,6 +2538,7 @@
       const payload = {
         tipo_auditoria: tipo,
         fuente_nombre: fuenteNombre,
+        periodo: periodoValue,
         cantidad_sa: cantidadSa,
         cantidad_pdp: cantidadPdp,
         cantidad_pras: cantidadPras,
@@ -3468,11 +3604,6 @@
       }
       if (manualPeriodo) {
         manualPeriodo.readOnly = isSolventacion;
-      }
-      if (manualPeriodoHelper) {
-        manualPeriodoHelper.textContent = isSolventacion
-          ? "El periodo se hereda automáticamente del oficio base."
-          : "Ej. 01 de enero al 31 de diciembre";
       }
       syncSolventacionScopeSelection();
       blockCedula.style.display = isCedula ? "" : "none";

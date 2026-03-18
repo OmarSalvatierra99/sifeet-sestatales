@@ -1522,6 +1522,7 @@ def register_gabo_routes(app, deps):
                 {
                     "fuente_nombre": fuente_nombre,
                     "tipo_auditoria": tipo_auditoria,
+                    "periodo": " ".join(str(item.get("periodo") or "").split()),
                     "cantidad_sa": cantidad_sa,
                     "cantidad_pdp": cantidad_pdp,
                     "cantidad_pras": cantidad_pras,
