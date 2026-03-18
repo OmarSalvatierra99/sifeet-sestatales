@@ -1808,6 +1808,10 @@ tbody tr:hover td {
   gap: 1rem 1.05rem;
 }
 
+.loader-principal-form .loader-expediente-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .loader-oficio-picker-field,
 .loader-periodo-picker-field {
   gap: 0.55rem;

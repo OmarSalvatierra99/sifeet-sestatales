@@ -46,7 +46,6 @@
               <div class="loader-expediente-mini-meta">
                 <span class="loader-obs-chip">Estado <strong>Emitido</strong></span>
                 <span class="loader-obs-chip">Flujo <strong>Fuente por fuente</strong></span>
-                <button type="button" class="btn-secondary btn-compact" id="loaderCreateBackupBtn">Crear respaldo</button>
               </div>
             </div>
           <div class="loader-expediente-collection">
@@ -711,7 +710,6 @@
     const titularEnte = document.getElementById("titular_ente_id");
     const loaderOpenTitularesBtn = document.getElementById("loaderOpenTitularesBtn");
     const loaderOpenObsAdminBtn = document.getElementById("loaderOpenObsAdminBtn");
-    const loaderCreateBackupBtn = document.getElementById("loaderCreateBackupBtn");
 
     const principalEjercicio = document.getElementById("principal_ejercicio");
     const principalEnte = document.getElementById("principal_ente_id");
@@ -1464,19 +1462,6 @@
       loaderOpenTitularesBtn.href = params.toString()
         ? `${baseHref}?${params.toString()}`
         : baseHref;
-    };
-
-    const createLoaderBackup = async (label) => {
-      const response = await fetch("/carga/respaldo", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error || data.message || "No se pudo generar el respaldo.");
-      }
-      return String(data.backup_path || "").trim();
     };
 
     const resolveObsAdminTipoAuditoria = () => {
@@ -5571,19 +5556,6 @@
           syncPrincipalFiltersToForms({ syncTitular: true });
           fetchPrincipalPeriodoOptions();
           updateWizardModeAvailability();
-        });
-      }
-      if (loaderCreateBackupBtn) {
-        loaderCreateBackupBtn.addEventListener("click", async () => {
-          loaderCreateBackupBtn.disabled = true;
-          try {
-            const backupPath = await createLoaderBackup("respaldo-manual-carga");
-            showWizardToast(`Respaldo generado: ${backupPath}.`, "success");
-          } catch (error) {
-            showWizardToast(error instanceof Error ? error.message : "No se pudo generar el respaldo.", "error");
-          } finally {
-            loaderCreateBackupBtn.disabled = false;
-          }
         });
       }
       if (principalTipoAuditoria) {

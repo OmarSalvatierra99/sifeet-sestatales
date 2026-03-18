@@ -138,7 +138,6 @@
       <div class="table-meta">
         <span id="obsAdminCount">Selecciona un ente y un oficio; la consulta es automática.</span>
         <div class="obs-admin-actions-inline">
-          <button type="button" class="btn-secondary" id="obsAdminBackupBtn">Crear respaldo</button>
           <button type="button" class="btn-secondary" id="obsAdminSolveAllBtn">Solventar todo</button>
           <button type="button" class="btn-secondary" id="obsAdminPendingAllBtn">Dejar pendientes</button>
           <button type="button" class="btn-secondary" id="obsAdminDeleteSelectedBtn">Eliminar seleccionadas</button>
@@ -238,7 +237,6 @@
     const safetyHint = document.getElementById("obsAdminSafetyHint");
     const safetyModeChip = document.getElementById("obsAdminSafetyModeChip");
     const safetyScopeChip = document.getElementById("obsAdminSafetyScopeChip");
-    const backupBtn = document.getElementById("obsAdminBackupBtn");
     const solveAllBtn = document.getElementById("obsAdminSolveAllBtn");
     const pendingAllBtn = document.getElementById("obsAdminPendingAllBtn");
     const deleteSelectedBtn = document.getElementById("obsAdminDeleteSelectedBtn");
@@ -505,19 +503,6 @@
         );
       }
       fuenteInput.value = customValue;
-    };
-
-    const createManualBackup = async (label) => {
-      const response = await fetch("/carga/respaldo", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error || data.message || "No se pudo generar el respaldo.");
-      }
-      return String(data.backup_path || "").trim();
     };
 
     const loadOficios = async (selectedValue = "") => {
@@ -1530,21 +1515,6 @@
     if (deleteAllBtn) {
       deleteAllBtn.addEventListener("click", async () => {
         await deleteAllByFilters();
-      });
-    }
-
-    if (backupBtn) {
-      backupBtn.addEventListener("click", async () => {
-        backupBtn.disabled = true;
-        try {
-          const backupPath = await createManualBackup("respaldo-manual-admin");
-          showStatus(`Respaldo generado: ${backupPath}.`, "success");
-        } catch (error) {
-          showStatus(error instanceof Error ? error.message : "No se pudo generar el respaldo.", "error");
-        } finally {
-          backupBtn.disabled = false;
-          updateSafetyState();
-        }
       });
     }
 

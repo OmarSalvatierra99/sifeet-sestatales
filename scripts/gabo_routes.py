@@ -1800,14 +1800,6 @@ def register_gabo_routes(app, deps):
             }
         )
 
-    @app.post("/carga/respaldo")
-    @gabo_required
-    def carga_crear_respaldo():
-        payload = request.get_json(silent=True) or {}
-        etiqueta = " ".join((payload.get("label") or "manual").split())
-        backup_path = _create_db_snapshot(etiqueta or "manual")
-        return jsonify({"ok": True, "backup_path": backup_path})
-
     @app.get("/carga/pdp-catalogo")
     @gabo_required
     def carga_pdp_catalogo():
