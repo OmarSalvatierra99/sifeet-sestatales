@@ -129,16 +129,13 @@ def register_gabo_routes(app, deps):
     def _require_safe_bulk_scope(scope: dict, *, action_label: str) -> None:
         ejercicio = " ".join((scope.get("ejercicio") or "").split())
         ente_id = normalize_ente_id(scope.get("ente_id", ""))
-        tipo_auditoria = " ".join((scope.get("tipo_auditoria") or "").split())
-        fuente = " ".join((scope.get("fuente") or "").split())
-        periodo = " ".join((scope.get("periodo") or "").split())
         oficio = " ".join((scope.get("oficio") or "").split())
         if not ejercicio:
             raise ValueError("Debes seleccionar ejercicio para continuar.")
         _ensure_editable_ejercicio(ejercicio)
-        if not ente_id or not tipo_auditoria or not oficio or not (fuente or periodo):
+        if not ente_id or not oficio:
             raise ValueError(
-                f"Para {action_label} define ente, tipo de auditoría, oficio y al menos fuente o periodo."
+                f"Para {action_label} define ejercicio, ente y oficio."
             )
 
     def _first_readonly_observacion_ejercicio(db, ids: list[int], *, user=None) -> str:

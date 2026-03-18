@@ -517,7 +517,7 @@
     class="floating-clear-btn loader-obs-admin-btn"
     href="{{ url_for('carga_observaciones_admin') }}"
     data-base-href="{{ url_for('carga_observaciones_admin') }}"
-    aria-label="Abrir edición de observaciones"
+    aria-label="Abrir resultados de solventación"
   >
     <span class="floating-clear-icon" aria-hidden="true">
       <svg viewBox="0 0 24 24" fill="none">
@@ -525,7 +525,7 @@
         <path d="M12.8 7.2L16.8 11.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
       </svg>
     </span>
-    <span data-loader-obs-admin-label>Editar/Borrar obs.</span>
+    <span data-loader-obs-admin-label>Resultados de Solventación</span>
   </a>
   <script>
     const loaderModeButtons = Array.from(document.querySelectorAll("[data-loader-mode-target]"));
@@ -1641,11 +1641,11 @@
       const label = loaderOpenObsAdminBtn.querySelector("[data-loader-obs-admin-label]");
       const hasDirectScope = !!(ejercicio && enteId && tipoAuditoria && oficio && (fuenteNombre || periodo));
       if (label) {
-        label.textContent = "Editar/Borrar obs.";
+        label.textContent = "Resultados de Solventación";
       }
       loaderOpenObsAdminBtn.title = hasDirectScope
-        ? "Abrir edición con los filtros del contexto activo."
-        : "Abrir edición de observaciones.";
+        ? "Abrir resultados de solventación con los filtros del contexto activo."
+        : "Abrir resultados de solventación.";
     };
 
     const updateContextSummary = () => {
@@ -2588,6 +2588,29 @@
       showWizardToast("Fuente agregada en la tabla.", "success");
     };
 
+    const clearAllFuentesInline = () => {
+      if (!Array.isArray(fuentesDetalleState) || !fuentesDetalleState.length) {
+        showWizardToast("No hay fuentes para eliminar.", "info");
+        return;
+      }
+      const confirmed = window.confirm("¿Eliminar todas las fuentes de la tabla?");
+      if (!confirmed) {
+        return;
+      }
+      editingFuenteIndex = null;
+      fuentesDetalleState = [];
+      ensurePdpDetalleAlignedToFuentes();
+      syncFuentesDetalleState();
+      updateFuenteEditorMode();
+      renderFuentesDetalleRows();
+      renderPdpDetalleMenu();
+      renderResumenFuentes();
+      renderManualReviewSummary();
+      updateManualSaveState();
+      updateWizardModeAvailability();
+      showWizardToast("Se eliminaron todas las fuentes.", "info");
+    };
+
     const deleteFuenteRowInline = (rowIndex) => {
       const idx = Number.parseInt(String(rowIndex || "").trim(), 10);
       if (!Number.isFinite(idx) || idx < 0 || idx >= fuentesDetalleState.length) {
@@ -2875,7 +2898,10 @@
       if (!fuentesDetalleState.length) {
         manualResumenContainer.innerHTML = (
           '<div class="manual-resumen-actions-top">' +
+          '<div class="manual-resumen-actions-inline">' +
           '<button type="button" class="btn-secondary btn-compact" data-summary-add>Agregar fuente</button>' +
+          '<button type="button" class="btn-secondary btn-compact" data-summary-clear-all disabled>Eliminar todas</button>' +
+          '</div>' +
           '<p class="helper">Captura fuentes y cantidades directamente en esta tabla.</p>' +
           '</div>'
         );
@@ -3045,7 +3071,10 @@
       );
       manualResumenContainer.innerHTML =
         `<div class="manual-resumen-actions-top">` +
+        `<div class="manual-resumen-actions-inline">` +
         `<button type="button" class="btn-secondary btn-compact" data-summary-add>Agregar fuente</button>` +
+        `<button type="button" class="btn-secondary btn-compact" data-summary-clear-all>Eliminar todas</button>` +
+        `</div>` +
         `</div>` +
         `<datalist id="manual_resumen_periodos_options">${periodOptionsHtml}</datalist>` +
         sectionsHtml +
@@ -5492,6 +5521,11 @@
         const addButton = target.closest("[data-summary-add]");
         if (addButton instanceof HTMLElement) {
           addFuenteRowInline();
+          return;
+        }
+        const clearAllButton = target.closest("[data-summary-clear-all]");
+        if (clearAllButton instanceof HTMLElement) {
+          clearAllFuentesInline();
           return;
         }
         const removeButton = target.closest("[data-summary-remove-row]");

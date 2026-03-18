@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SIFEET Estatales · Editar/Borrar Observaciones</title>
+  <title>SIFEET Estatales · Resultados de Solventación</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
 </head>
@@ -14,7 +14,7 @@
       <div class="header-text">
         <p class="eyebrow">Órgano de Fiscalización Superior del Estado de Tlaxcala</p>
         <h1>SIFEET Estatales</h1>
-        <p class="subtitle">Edición y eliminación de observaciones</p>
+        <p class="subtitle">Resultados de Solventación</p>
       </div>
       <div class="header-badge user-badge">
         <div class="user-meta">
@@ -32,8 +32,8 @@
   <main class="page-content loader-content obs-admin-content">
     <section class="panel">
       <div class="panel-header">
-        <h2>Editar/Borrar observaciones</h2>
-        <p>Filtra observaciones ya cargadas para corregir estado/montos o eliminarlas.</p>
+        <h2>Resultados de Solventación</h2>
+        <p>Consulta observaciones cargadas por Ejercicio, Ente y Oficio.</p>
       </div>
 
       <form id="obsAdminFiltersForm" class="record-form filters-form" autocomplete="off">
@@ -53,48 +53,9 @@
             </select>
           </div>
           <div class="field">
-            <label for="obs_admin_tipo_auditoria">Tipo de auditoría</label>
-            <select id="obs_admin_tipo_auditoria" name="tipo_auditoria">
-              <option value="">Todos</option>
-              <option value="Financiera">Financiera</option>
-              <option value="Obra Pública">Obra Pública</option>
-              <option value="Financiera y Obra Pública">Financiera y Obra Pública</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="obs_admin_fuente">Fuente de financiamiento</label>
-            <select id="obs_admin_fuente" name="fuente">
-              <option value="">Todas</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="obs_admin_periodo">Periodo</label>
-            <input id="obs_admin_periodo" name="periodo" type="text" placeholder="Ej. 01 de enero al 31 de diciembre">
-          </div>
-          <div class="field">
             <label for="obs_admin_oficio">Oficio</label>
             <select id="obs_admin_oficio" name="oficio" disabled>
               <option value="">Selecciona primero un ente</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="obs_admin_estado">Estado</label>
-            <select id="obs_admin_estado" name="estado">
-              <option value="">Todos</option>
-              <option value="Emitido">Emitido</option>
-              <option value="Pendiente">Pendiente</option>
-              <option value="Solventado">Solventado</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="obs_admin_tipo_anexo">Tipo de anexo</label>
-            <select id="obs_admin_tipo_anexo" name="tipo_anexo">
-              <option value="">Todos</option>
-              <option value="SA">SA</option>
-              <option value="PDP">PDP</option>
-              <option value="PRAS">PRAS</option>
-              <option value="PEFCF">PEFCF</option>
-              <option value="R">R</option>
             </select>
           </div>
         </div>
@@ -117,39 +78,32 @@
         </div>
       </div>
 
-      <div class="loader-obs-toolbar obs-admin-toolbar">
-        <input id="obs_admin_quick_search" type="text" placeholder="Buscar en resultados (anexo, oficio, fuente, concepto...)">
-        <select id="obs_admin_quick_estado">
-          <option value="">Estado rápido: todos</option>
-          <option value="Emitido">Emitido</option>
-          <option value="Pendiente">Pendiente</option>
-          <option value="Solventado">Solventado</option>
-        </select>
-      </div>
-
       <div class="loader-preview-metrics">
         <span class="loader-obs-chip">Total: <strong id="obsAdminMetricTotal">0</strong></span>
         <span class="loader-obs-chip">Pendientes: <strong id="obsAdminMetricPendiente">0</strong></span>
         <span class="loader-obs-chip">Solventadas: <strong id="obsAdminMetricSolventado">0</strong></span>
       </div>
 
+      <section class="obs-admin-summary-card" id="obsAdminSummaryCard">
+        <div class="panel-header panel-header-compact">
+          <h3>Resumen por oficio</h3>
+          <p>Acciones emitidas y estatus por fuente, periodo y anexo.</p>
+        </div>
+        <div id="obsAdminSummaryBody" class="obs-admin-summary-body">
+          <p class="muted">Selecciona Ejercicio, Ente y Oficio para ver el resumen.</p>
+        </div>
+      </section>
+
       <div id="obsAdminStatus" class="status status-info" hidden></div>
 
       <div class="table-meta">
         <span id="obsAdminCount">Selecciona un ente y un oficio; la consulta es automática.</span>
-        <div class="obs-admin-actions-inline">
-          <button type="button" class="btn-secondary" id="obsAdminSolveAllBtn">Solventar todo</button>
-          <button type="button" class="btn-secondary" id="obsAdminPendingAllBtn">Dejar pendientes</button>
-          <button type="button" class="btn-secondary" id="obsAdminDeleteSelectedBtn">Eliminar seleccionadas</button>
-          <button type="button" class="btn-secondary" id="obsAdminDeleteAllBtn">Borrar todo (filtro)</button>
-        </div>
       </div>
 
       <div class="loader-obs-table-wrap">
         <table class="loader-obs-table obs-admin-table">
           <thead>
             <tr>
-              <th><input type="checkbox" id="obsAdminSelectAll" aria-label="Seleccionar todas"></th>
               <th>Observación</th>
               <th>Contexto</th>
               <th>Estado</th>
@@ -159,7 +113,7 @@
           </thead>
           <tbody id="obsAdminTableBody">
             <tr>
-              <td colspan="6" class="muted">Sin resultados para mostrar.</td>
+              <td colspan="5" class="muted">Sin resultados para mostrar.</td>
             </tr>
           </tbody>
         </table>
@@ -170,32 +124,6 @@
   <footer class="site-footer">
     © Órgano de Fiscalización Superior del Estado de Tlaxcala · SIFEET Estatales
   </footer>
-  <div class="floating-clear-btn obs-admin-fab-latest" aria-label="Filtro rápido por días">
-    <span class="floating-clear-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none">
-        <circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.8"/>
-        <path d="M12 8V12L14.8 13.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </span>
-    <span class="obs-admin-fab-latest-label">Últimas</span>
-    <select id="obs_admin_quick_latest">
-      <option value="">Todas</option>
-      <option value="1">Último día</option>
-      <option value="2">2 días</option>
-      <option value="3">3 días</option>
-      <option value="7">7 días</option>
-      <option value="15">15 días</option>
-      <option value="30">30 días</option>
-    </select>
-  </div>
-  <button class="floating-clear-btn obs-admin-fab-clear" type="button" id="obsAdminClearBtn" aria-label="Limpiar filtros">
-    <span class="floating-clear-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none">
-        <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v8h-2v-8Zm4 0h2v8h-2v-8ZM7 10h2v8H7v-8Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </span>
-    <span>Limpiar filtros</span>
-  </button>
   <a
     class="floating-clear-btn obs-admin-fab-back"
     href="{% if return_vista == 'titulares' %}{{ url_for('carga', vista='titulares') }}{% else %}{{ url_for('carga') }}{% endif %}"
@@ -216,20 +144,10 @@
     const filtersForm = document.getElementById("obsAdminFiltersForm");
     const ejercicioInput = document.getElementById("obs_admin_ejercicio");
     const enteInput = document.getElementById("obs_admin_ente_id");
-    const tipoAuditoriaInput = document.getElementById("obs_admin_tipo_auditoria");
-    const fuenteInput = document.getElementById("obs_admin_fuente");
-    const periodoInput = document.getElementById("obs_admin_periodo");
     const oficioInput = document.getElementById("obs_admin_oficio");
-    const estadoInput = document.getElementById("obs_admin_estado");
-    const tipoAnexoInput = document.getElementById("obs_admin_tipo_anexo");
-    const quickSearchInput = document.getElementById("obs_admin_quick_search");
-    const quickEstadoInput = document.getElementById("obs_admin_quick_estado");
-    const quickLatestInput = document.getElementById("obs_admin_quick_latest");
-    const clearBtn = document.getElementById("obsAdminClearBtn");
     const statusBox = document.getElementById("obsAdminStatus");
     const countLabel = document.getElementById("obsAdminCount");
     const tableBody = document.getElementById("obsAdminTableBody");
-    const selectAllCheckbox = document.getElementById("obsAdminSelectAll");
     const metricTotal = document.getElementById("obsAdminMetricTotal");
     const metricPendiente = document.getElementById("obsAdminMetricPendiente");
     const metricSolventado = document.getElementById("obsAdminMetricSolventado");
@@ -237,10 +155,7 @@
     const safetyHint = document.getElementById("obsAdminSafetyHint");
     const safetyModeChip = document.getElementById("obsAdminSafetyModeChip");
     const safetyScopeChip = document.getElementById("obsAdminSafetyScopeChip");
-    const solveAllBtn = document.getElementById("obsAdminSolveAllBtn");
-    const pendingAllBtn = document.getElementById("obsAdminPendingAllBtn");
-    const deleteSelectedBtn = document.getElementById("obsAdminDeleteSelectedBtn");
-    const deleteAllBtn = document.getElementById("obsAdminDeleteAllBtn");
+    const summaryBody = document.getElementById("obsAdminSummaryBody");
 
     let allRows = [];
     let filteredRows = [];
@@ -297,16 +212,6 @@
       return value;
     };
 
-    const parseCreatedAtMs = (rawValue) => {
-      const raw = String(rawValue || "").trim();
-      if (!raw) {
-        return NaN;
-      }
-      const normalized = raw.replace(" ", "T");
-      const parsed = Date.parse(normalized);
-      return Number.isFinite(parsed) ? parsed : NaN;
-    };
-
     const showStatus = (message, level = "info") => {
       if (!statusBox) return;
       statusBox.hidden = false;
@@ -322,37 +227,13 @@
     };
 
     const renderEmptyRow = (message) => {
-      tableBody.innerHTML = `<tr><td colspan="6" class="muted">${escapeHtml(message)}</td></tr>`;
-      if (selectAllCheckbox) {
-        selectAllCheckbox.checked = false;
-      }
-    };
-
-    const resolveFuenteFilter = () => {
-      if (!fuenteInput) {
-        return "";
-      }
-      const rawValue = String(fuenteInput.value || "").trim();
-      if (!rawValue) {
-        return "";
-      }
-      if (rawValue.startsWith("__obs__:")) {
-        return rawValue.replace("__obs__:", "").trim();
-      }
-      const selected = fuenteInput.options[fuenteInput.selectedIndex];
-      const selectedLabel = selected ? String(selected.textContent || "").trim() : "";
-      return selectedLabel || rawValue;
+      tableBody.innerHTML = `<tr><td colspan="5" class="muted">${escapeHtml(message)}</td></tr>`;
     };
 
     const readFilters = () => ({
       ejercicio: String(ejercicioInput ? ejercicioInput.value : "").trim(),
       ente_id: String(enteInput ? enteInput.value : "").trim(),
-      tipo_auditoria: String(tipoAuditoriaInput ? tipoAuditoriaInput.value : "").trim(),
-      fuente: resolveFuenteFilter(),
-      periodo: String(periodoInput ? periodoInput.value : "").trim(),
       oficio: String(oficioInput ? oficioInput.value : "").trim(),
-      estado: String(estadoInput ? estadoInput.value : "").trim(),
-      tipo_anexo: String(tipoAnexoInput ? tipoAnexoInput.value : "").trim(),
     });
 
     const buildQueryString = (filters) => {
@@ -370,19 +251,6 @@
     const getReadOnlyMessage = (value) => (
       `El ejercicio ${String(value || "").trim()} está concluido y solo se puede consultar.`
     );
-
-    const hasSafeMassScope = (filters) => {
-      const current = filters || readFilters();
-      return !!(
-        current
-        && current.ejercicio
-        && current.ente_id
-        && current.tipo_auditoria
-        && current.oficio
-        && (current.fuente || current.periodo)
-        && !isReadOnlyEjercicio(current.ejercicio)
-      );
-    };
 
     const hasEditableOfficeScope = (filters) => {
       const current = filters || readFilters();
@@ -414,35 +282,20 @@
         const label = selected ? String(selected.textContent || "").trim() : current.ente_id;
         parts.push(label || current.ente_id);
       }
-      if (current.tipo_auditoria) parts.push(current.tipo_auditoria);
       if (current.oficio) parts.push(`Oficio ${current.oficio}`);
-      if (current.fuente) parts.push(`Fuente ${current.fuente}`);
-      if (current.periodo) parts.push(current.periodo);
       return parts.join(" · ") || "Sin alcance definido";
-    };
-
-    const setBulkActionState = (button, disabled, title) => {
-      if (!(button instanceof HTMLButtonElement)) {
-        return;
-      }
-      const isBusy = button.dataset.busy === "1";
-      button.disabled = disabled || isBusy;
-      button.title = (disabled && !isBusy) ? (title || "") : "";
     };
 
     const updateSafetyState = () => {
       const filters = readFilters();
       const readOnly = isReadOnlyEjercicio(filters.ejercicio);
       const officeScope = hasOfficeQueryScope(filters);
-      const editableScope = hasEditableOfficeScope(filters);
-      const safeScope = hasSafeMassScope(filters);
+      const safeScope = hasEditableOfficeScope(filters);
       const count = Array.isArray(filteredRows) ? filteredRows.length : 0;
       const officeReason = "Selecciona un ente y un oficio para trabajar un solo oficio.";
       const reason = readOnly
         ? getReadOnlyMessage(filters.ejercicio)
-        : (!officeScope
-          ? officeReason
-          : "Para acciones masivas define auditoría y al menos fuente o periodo.");
+        : officeReason;
 
       if (safetyTitle) {
         safetyTitle.textContent = readOnly
@@ -465,44 +318,9 @@
       }
       if (safetyScopeChip) {
         safetyScopeChip.textContent = safeScope
-          ? "Acciones masivas listas"
+          ? "Alcance listo"
           : (officeScope ? "Alcance parcial" : "Ente/oficio requeridos");
       }
-
-      if (selectAllCheckbox instanceof HTMLInputElement) {
-        selectAllCheckbox.disabled = !editableScope;
-        selectAllCheckbox.title = !editableScope ? reason : "";
-      }
-      setBulkActionState(solveAllBtn, !safeScope, reason);
-      setBulkActionState(pendingAllBtn, !safeScope, reason);
-      setBulkActionState(deleteAllBtn, !safeScope, reason);
-      setBulkActionState(deleteSelectedBtn, !editableScope, reason);
-    };
-
-    const ensureFuenteOptionForScope = (targetLabel) => {
-      if (!fuenteInput) {
-        return;
-      }
-      const label = String(targetLabel || "").trim();
-      if (!label) {
-        fuenteInput.value = "";
-        return;
-      }
-      const options = Array.from(fuenteInput.options || []);
-      const exactOption = options.find((option) => String(option.textContent || "").trim().toLowerCase() === label.toLowerCase());
-      if (exactOption) {
-        fuenteInput.value = exactOption.value;
-        return;
-      }
-      const customValue = `__obs__:${label}`;
-      const existingCustom = options.find((option) => String(option.value || "").trim() === customValue);
-      if (!existingCustom) {
-        fuenteInput.insertAdjacentHTML(
-          "beforeend",
-          `<option value="${escapeHtml(customValue)}">${escapeHtml(label)}</option>`,
-        );
-      }
-      fuenteInput.value = customValue;
     };
 
     const loadOficios = async (selectedValue = "") => {
@@ -511,9 +329,6 @@
       }
       const ejercicio = String(ejercicioInput.value || "").trim();
       const enteId = String(enteInput.value || "").trim();
-      const tipoAuditoria = String(tipoAuditoriaInput ? tipoAuditoriaInput.value : "").trim();
-      const fuente = resolveFuenteFilter();
-      const periodo = String(periodoInput ? periodoInput.value : "").trim();
 
       if (!ejercicio || !enteId) {
         oficioInput.innerHTML = '<option value="">Selecciona primero un ente</option>';
@@ -529,15 +344,6 @@
           ejercicio,
           ente_id: enteId,
         });
-        if (tipoAuditoria) {
-          params.set("tipo_auditoria", tipoAuditoria);
-        }
-        if (fuente) {
-          params.set("fuente", fuente);
-        }
-        if (periodo) {
-          params.set("periodo", periodo);
-        }
         const response = await fetch(`/carga/observaciones-claves?${params.toString()}`);
         if (!response.ok) {
           throw new Error("No se pudieron cargar oficios.");
@@ -590,15 +396,235 @@
       if (metricSolventado) metricSolventado.textContent = String(solventadas);
     };
 
-    const syncSelectAllState = () => {
-      if (!selectAllCheckbox) return;
-      const checks = Array.from(tableBody.querySelectorAll(".obs-admin-row-check"));
-      if (!checks.length) {
-        selectAllCheckbox.checked = false;
+    const anexoSortOrder = {
+      SA: 1,
+      PDP: 2,
+      PRAS: 3,
+      PEFCF: 4,
+      R: 5,
+    };
+
+    const tipoSortOrder = {
+      Financiera: 1,
+      "Obra Pública": 2,
+    };
+
+    const formatTipoSectionTitle = (tipo, index) => {
+      const letter = String.fromCharCode(65 + index);
+      if (tipo === "Obra Pública") {
+        return `${letter}) Auditoría de Obra Pública`;
+      }
+      return `${letter}) Auditoría Financiera`;
+    };
+
+    const parsePositiveInt = (value) => {
+      const parsed = Number.parseInt(String(value || "").trim(), 10);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    };
+
+    const buildProgressiveText = (values) => {
+      if (!Array.isArray(values) || !values.length) {
+        return "0";
+      }
+      return values.join(",");
+    };
+
+    const renderSummaryByOficio = (rows) => {
+      if (!summaryBody) {
         return;
       }
-      const checkedCount = checks.filter((item) => item instanceof HTMLInputElement && item.checked).length;
-      selectAllCheckbox.checked = checkedCount > 0 && checkedCount === checks.length;
+      const safeRows = Array.isArray(rows) ? rows : [];
+      if (!safeRows.length) {
+        summaryBody.innerHTML = '<p class="muted">Sin observaciones para mostrar en el resumen.</p>';
+        return;
+      }
+
+      const groupedByTipo = new Map();
+      safeRows.forEach((row) => {
+        const tipo = String(row.tipo_auditoria || "").trim() || "Financiera";
+        const fuente = String(row.fuente_financiamiento || "").trim() || "-";
+        const periodo = String(row.periodo_cedula || "").trim() || "-";
+        const anexo = normalizeTipoAnexo(row.tipo_anexo) || "-";
+        const key = `${fuente}||${periodo}||${anexo}`;
+        if (!groupedByTipo.has(tipo)) {
+          groupedByTipo.set(tipo, new Map());
+        }
+        const tipoMap = groupedByTipo.get(tipo);
+        if (!tipoMap.has(key)) {
+          tipoMap.set(key, {
+            fuente,
+            periodo,
+            anexo,
+            rows: [],
+          });
+        }
+        tipoMap.get(key).rows.push(row);
+      });
+
+      const orderedTipos = Array.from(groupedByTipo.keys()).sort((a, b) => {
+        const orderA = tipoSortOrder[a] || 99;
+        const orderB = tipoSortOrder[b] || 99;
+        if (orderA !== orderB) {
+          return orderA - orderB;
+        }
+        return a.localeCompare(b, "es", { sensitivity: "base" });
+      });
+
+      const sectionsHtml = orderedTipos.map((tipo, tipoIndex) => {
+        const tipoRows = Array.from(groupedByTipo.get(tipo).values());
+
+        let totalEmitidas = 0;
+        let totalSolventadas = 0;
+        let totalNoSolventadas = 0;
+
+        const groupedByFuente = new Map();
+        tipoRows.forEach((group) => {
+          const fuenteKey = String(group.fuente || "").trim().toLowerCase();
+          const periodoKey = String(group.periodo || "").trim().toLowerCase();
+          if (!groupedByFuente.has(fuenteKey)) {
+            groupedByFuente.set(fuenteKey, {
+              fuente: group.fuente,
+              rowCount: 0,
+              periods: new Map(),
+            });
+          }
+          const fuenteEntry = groupedByFuente.get(fuenteKey);
+          if (!fuenteEntry.periods.has(periodoKey)) {
+            fuenteEntry.periods.set(periodoKey, {
+              periodo: group.periodo,
+              rowCount: 0,
+              groups: [],
+            });
+          }
+          const periodEntry = fuenteEntry.periods.get(periodoKey);
+          periodEntry.groups.push(group);
+          periodEntry.rowCount += 1;
+          fuenteEntry.rowCount += 1;
+        });
+
+        const orderedFuentes = Array.from(groupedByFuente.values()).sort((a, b) => (
+          String(a.fuente || "").localeCompare(String(b.fuente || ""), "es", { sensitivity: "base" })
+        ));
+
+        const rowsHtmlParts = [];
+        orderedFuentes.forEach((fuenteEntry) => {
+          const orderedPeriods = Array.from(fuenteEntry.periods.values()).sort((a, b) => (
+            String(a.periodo || "").localeCompare(String(b.periodo || ""), "es", { sensitivity: "base" })
+          ));
+          let renderedFuenteCell = false;
+
+          orderedPeriods.forEach((periodEntry) => {
+            periodEntry.groups.sort((a, b) => {
+              const anexoA = anexoSortOrder[a.anexo] || 99;
+              const anexoB = anexoSortOrder[b.anexo] || 99;
+              if (anexoA !== anexoB) {
+                return anexoA - anexoB;
+              }
+              return String(a.anexo || "").localeCompare(String(b.anexo || ""), "es", { sensitivity: "base" });
+            });
+
+            let renderedPeriodoCell = false;
+            periodEntry.groups.forEach((group) => {
+              const isFuenteStart = !renderedFuenteCell;
+              const isPeriodoStart = !renderedPeriodoCell;
+              const items = Array.isArray(group.rows) ? group.rows.slice() : [];
+              items.sort((a, b) => {
+                const numA = parsePositiveInt(a.numero_observacion);
+                const numB = parsePositiveInt(b.numero_observacion);
+                if (numA !== numB) {
+                  if (!numA) return 1;
+                  if (!numB) return -1;
+                  return numA - numB;
+                }
+                return Number(a.id || 0) - Number(b.id || 0);
+              });
+
+              const solventadasIndices = [];
+              const noSolventadasIndices = [];
+              items.forEach((item, index) => {
+                const progressive = index + 1;
+                if (normalizeEstado(item.estado) === "Solventado") {
+                  solventadasIndices.push(progressive);
+                } else {
+                  noSolventadasIndices.push(progressive);
+                }
+              });
+
+              const emitidas = items.length;
+              const solventadasTotal = solventadasIndices.length;
+              const noSolventadasTotal = noSolventadasIndices.length;
+              totalEmitidas += emitidas;
+              totalSolventadas += solventadasTotal;
+              totalNoSolventadas += noSolventadasTotal;
+
+              const rowCells = [];
+              if (!renderedFuenteCell) {
+                rowCells.push(
+                  `<td rowspan="${fuenteEntry.rowCount}" class="obs-admin-summary-group-cell">${escapeHtml(fuenteEntry.fuente)}</td>`
+                );
+                renderedFuenteCell = true;
+              }
+              if (!renderedPeriodoCell) {
+                rowCells.push(
+                  `<td rowspan="${periodEntry.rowCount}" class="obs-admin-summary-group-cell">${escapeHtml(periodEntry.periodo)}</td>`
+                );
+                renderedPeriodoCell = true;
+              }
+              rowCells.push(`<td>${escapeHtml(group.anexo)}</td>`);
+              rowCells.push(`<td>${emitidas}</td>`);
+              rowCells.push(`<td>${escapeHtml(buildProgressiveText(solventadasIndices))}</td>`);
+              rowCells.push(`<td><strong>${solventadasTotal}</strong></td>`);
+              rowCells.push(`<td>${escapeHtml(buildProgressiveText(noSolventadasIndices))}</td>`);
+              rowCells.push(`<td><strong>${noSolventadasTotal}</strong></td>`);
+              const rowClasses = [];
+              if (isFuenteStart) rowClasses.push("obs-admin-summary-row-fuente-start");
+              if (isPeriodoStart) rowClasses.push("obs-admin-summary-row-periodo-start");
+              const classAttr = rowClasses.length ? ` class="${rowClasses.join(" ")}"` : "";
+              rowsHtmlParts.push(`<tr${classAttr}>${rowCells.join("")}</tr>`);
+            });
+          });
+        });
+
+        const rowsHtml = rowsHtmlParts.join("");
+
+        const totalHtml = (
+          `<tr class="obs-admin-summary-total">` +
+          `<th>TOTAL</th>` +
+          `<th></th>` +
+          `<th></th>` +
+          `<th>${totalEmitidas}</th>` +
+          `<th></th>` +
+          `<th>${totalSolventadas}</th>` +
+          `<th></th>` +
+          `<th>${totalNoSolventadas}</th>` +
+          `</tr>`
+        );
+
+        return (
+          `<div class="obs-admin-summary-section">` +
+          `<h4>${escapeHtml(formatTipoSectionTitle(tipo, tipoIndex))}</h4>` +
+          `<div class="obs-admin-summary-table-wrap">` +
+          `<table class="obs-admin-summary-table">` +
+          `<thead>` +
+          `<tr>` +
+          `<th>Nombre de la Fuente de Financiamiento</th>` +
+          `<th>Periodo</th>` +
+          `<th>Anexo</th>` +
+          `<th>Acciones Emitidas</th>` +
+          `<th>Solventadas (Número progresivo)</th>` +
+          `<th>Solventadas (Total)</th>` +
+          `<th>No Solventadas (Número progresivo)</th>` +
+          `<th>No Solventadas (Total)</th>` +
+          `</tr>` +
+          `</thead>` +
+          `<tbody>${rowsHtml}${totalHtml}</tbody>` +
+          `</table>` +
+          `</div>` +
+          `</div>`
+        );
+      }).join("");
+
+      summaryBody.innerHTML = sectionsHtml;
     };
 
     const updateRowVisualState = (row) => {
@@ -710,7 +736,6 @@
 
         return (
           `<tr class="obs-row ${estadoClass}" data-observacion-id="${id}" data-tipo-anexo="${escapeHtml(tipoAnexo)}" data-monto-emitido="${escapeHtml(emitido.toFixed(2))}">` +
-            `<td><input type="checkbox" class="obs-admin-row-check" value="${id}" aria-label="Seleccionar observación ${id}"${disabledAttr}${disabledTitle}></td>` +
             `<td>` +
               `<div class="obs-admin-observacion-main">` +
                 `<strong>ID ${id} · ${escapeHtml(observacionLabel)}</strong>` +
@@ -748,63 +773,16 @@
       Array.from(tableBody.querySelectorAll("tr")).forEach((row) => {
         updateRowVisualState(row);
       });
-      syncSelectAllState();
       updateSafetyState();
     };
 
     const applyClientFilters = () => {
-      const search = String(quickSearchInput ? quickSearchInput.value : "").trim().toLowerCase();
-      const quickEstado = String(quickEstadoInput ? quickEstadoInput.value : "").trim();
-      const latestDays = Number.parseInt(
-        String(quickLatestInput ? quickLatestInput.value : "").trim(),
-        10,
-      );
-      let rows = allRows.filter((row) => {
-        const estado = normalizeEstado(row.estado);
-        if (quickEstado && estado !== quickEstado) {
-          return false;
-        }
-        if (!search) {
-          return true;
-        }
-        const haystack = [
-          row.id,
-          row.ente_id,
-          row.ente_nombre,
-          row.ente_numero,
-          row.tipo_anexo,
-          row.numero_observacion,
-          row.tipo_auditoria,
-          row.fuente_financiamiento,
-          row.periodo_cedula,
-          row.oficio,
-          row.created_at,
-          row.pdp_concepto_irregularidad,
-          row.pdp_subconcepto_irregularidad,
-          estado,
-        ]
-          .map((item) => String(item || "").toLowerCase())
-          .join(" ");
-        return haystack.includes(search);
-      });
-      if (Number.isFinite(latestDays) && latestDays > 0) {
-        const now = Date.now();
-        const threshold = now - (latestDays * 24 * 60 * 60 * 1000);
-        rows = rows
-          .filter((row) => {
-            const createdAtMs = parseCreatedAtMs(row.created_at);
-            return Number.isFinite(createdAtMs) && createdAtMs >= threshold;
-          })
-          .sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
-      }
-      filteredRows = rows;
+      filteredRows = Array.isArray(allRows) ? allRows.slice() : [];
       renderRows(filteredRows);
+      renderSummaryByOficio(filteredRows);
       updateMetrics(filteredRows);
       if (countLabel) {
-        const latestLabel = Number.isFinite(latestDays) && latestDays > 0
-          ? ` · últimos ${latestDays} día(s)`
-          : "";
-        countLabel.textContent = `${filteredRows.length} de ${allRows.length} observaciones${latestLabel}.`;
+        countLabel.textContent = `${filteredRows.length} observaciones.`;
       }
       updateSafetyState();
     };
@@ -821,6 +799,9 @@
         filteredRows = [];
         updateMetrics([]);
         renderEmptyRow("Selecciona un ente y un oficio para consultar observaciones de un solo oficio.");
+        if (summaryBody) {
+          summaryBody.innerHTML = '<p class="muted">Selecciona un ente y un oficio para ver el resumen.</p>';
+        }
         if (countLabel) {
           countLabel.textContent = "Selecciona un ente y un oficio; la consulta es automática.";
         }
@@ -851,6 +832,9 @@
         filteredRows = [];
         updateMetrics([]);
         renderEmptyRow("No se pudieron consultar las observaciones.");
+        if (summaryBody) {
+          summaryBody.innerHTML = '<p class="muted">No se pudo construir el resumen con los filtros actuales.</p>';
+        }
         if (countLabel) {
           countLabel.textContent = "Sin resultados.";
         }
@@ -999,225 +983,6 @@
       }
     };
 
-    const deleteSelected = async () => {
-      const checks = Array.from(tableBody.querySelectorAll(".obs-admin-row-check"))
-        .filter((item) => item instanceof HTMLInputElement && item.checked);
-      const ids = checks
-        .map((item) => Number(item.value || 0))
-        .filter((id) => Number.isFinite(id) && id > 0);
-      if (!ids.length) {
-        showStatus("Selecciona al menos una observación para eliminar.", "info");
-        return;
-      }
-      const filters = readFilters();
-      if (!hasEditableOfficeScope(filters)) {
-        showStatus("Selecciona un ente y un oficio para editar un solo oficio.", "error");
-        return;
-      }
-      if (isReadOnlyEjercicio(filters.ejercicio)) {
-        showStatus(getReadOnlyMessage(filters.ejercicio), "error");
-        return;
-      }
-      const confirmed = window.confirm(
-        `¿Seguro que deseas eliminar ${ids.length} observación(es) seleccionada(s)?`
-      );
-      if (!confirmed) {
-        return;
-      }
-      deleteSelectedBtn.disabled = true;
-      try {
-        const response = await fetch("/carga/observaciones-admin/borrar", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ids,
-            scope: {
-              ejercicio: filters.ejercicio,
-              ente_id: filters.ente_id,
-              oficio: filters.oficio,
-            },
-          }),
-        });
-        const data = await response.json();
-        if (!response.ok || !data.ok) {
-          throw new Error(data.error || "No se pudieron eliminar las observaciones seleccionadas.");
-        }
-        await fetchRows({ announce: false });
-        showStatus(
-          `Observaciones eliminadas: ${data.deleted || ids.length}.`
-          + (data.backup_path ? ` Respaldo: ${data.backup_path}.` : ""),
-          "success",
-        );
-      } catch (error) {
-        showStatus(error && error.message ? error.message : "Error al eliminar seleccionadas.", "error");
-      } finally {
-        updateSafetyState();
-      }
-    };
-
-    const deleteAllByFilters = async () => {
-      const filters = readFilters();
-      if (!filters.ejercicio) {
-        showStatus("Debes seleccionar ejercicio para borrar.", "error");
-        return;
-      }
-      if (!hasSafeMassScope(filters)) {
-        showStatus(
-          isReadOnlyEjercicio(filters.ejercicio)
-            ? getReadOnlyMessage(filters.ejercicio)
-            : "Antes de borrar por filtro define ente, auditoría, oficio y al menos fuente o periodo.",
-          "error",
-        );
-        return;
-      }
-      const totalInView = filteredRows.length;
-      const confirmed = window.confirm(
-        `¿Seguro que deseas BORRAR TODO lo encontrado con estos filtros?` +
-        `\nObservaciones visibles: ${totalInView}.` +
-        `\nEsta acción no se puede deshacer.`
-      );
-      if (!confirmed) {
-        return;
-      }
-      deleteAllBtn.disabled = true;
-      try {
-        const response = await fetch("/carga/observaciones-admin/borrar-todo", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(filters),
-        });
-        const data = await response.json();
-        if (!response.ok || !data.ok) {
-          throw new Error(data.error || "No se pudo borrar el conjunto filtrado.");
-        }
-        await fetchRows({ announce: false });
-        showStatus(
-          `Observaciones eliminadas: ${data.deleted || 0}.`
-          + (data.backup_path ? ` Respaldo: ${data.backup_path}.` : ""),
-          "success",
-        );
-      } catch (error) {
-        showStatus(error && error.message ? error.message : "Error al borrar por filtros.", "error");
-      } finally {
-        deleteAllBtn.disabled = false;
-        updateSafetyState();
-      }
-    };
-
-    const solveAllVisible = async () => {
-      const ids = (Array.isArray(filteredRows) ? filteredRows : [])
-        .map((row) => Number(row.id || 0))
-        .filter((id) => Number.isFinite(id) && id > 0);
-      if (!ids.length) {
-        showStatus("No hay observaciones visibles para solventar.", "info");
-        return;
-      }
-      const filters = readFilters();
-      if (!hasSafeMassScope(filters)) {
-        showStatus(
-          isReadOnlyEjercicio(filters.ejercicio)
-            ? getReadOnlyMessage(filters.ejercicio)
-            : "Antes de solventar todo define ente, auditoría, oficio y al menos fuente o periodo.",
-          "error",
-        );
-        return;
-      }
-      const confirmed = window.confirm(
-        `¿Marcar ${ids.length} observación(es) visibles como solventadas?` +
-        `\nEn PDP se copiará el monto emitido a monto solventado y el pendiente quedará en 0.`
-      );
-      if (!confirmed) {
-        return;
-      }
-      if (solveAllBtn) {
-        solveAllBtn.dataset.busy = "1";
-        solveAllBtn.disabled = true;
-      }
-      try {
-        const response = await fetch("/carga/observaciones-admin/solventar", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ids, scope: filters }),
-        });
-        const data = await response.json();
-        if (!response.ok || !data.ok) {
-          throw new Error(data.error || "No se pudieron solventar las observaciones visibles.");
-        }
-        await fetchRows({ announce: false });
-        showStatus(
-          `Observaciones solventadas: ${data.updated || ids.length}.`
-          + (data.pdp ? ` PDP actualizadas: ${data.pdp}.` : "")
-          + (data.backup_path ? ` Respaldo: ${data.backup_path}.` : ""),
-          "success",
-        );
-      } catch (error) {
-        showStatus(error && error.message ? error.message : "Error al solventar observaciones.", "error");
-      } finally {
-        if (solveAllBtn) {
-          delete solveAllBtn.dataset.busy;
-          solveAllBtn.disabled = false;
-        }
-        updateSafetyState();
-      }
-    };
-
-    const markAllPendingVisible = async () => {
-      const ids = (Array.isArray(filteredRows) ? filteredRows : [])
-        .map((row) => Number(row.id || 0))
-        .filter((id) => Number.isFinite(id) && id > 0);
-      if (!ids.length) {
-        showStatus("No hay observaciones visibles para dejar en pendiente.", "info");
-        return;
-      }
-      const filters = readFilters();
-      if (!hasSafeMassScope(filters)) {
-        showStatus(
-          isReadOnlyEjercicio(filters.ejercicio)
-            ? getReadOnlyMessage(filters.ejercicio)
-            : "Antes de dejar pendientes define ente, auditoría, oficio y al menos fuente o periodo.",
-          "error",
-        );
-        return;
-      }
-      const confirmed = window.confirm(
-        `¿Marcar ${ids.length} observación(es) visibles como pendientes?`
-        + `\nEn PDP se reiniciará el monto solventado a 0 y el pendiente quedará igual al emitido.`
-      );
-      if (!confirmed) {
-        return;
-      }
-      if (pendingAllBtn) {
-        pendingAllBtn.dataset.busy = "1";
-        pendingAllBtn.disabled = true;
-      }
-      try {
-        const response = await fetch("/carga/observaciones-admin/pendiente", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ids, scope: filters }),
-        });
-        const data = await response.json();
-        if (!response.ok || !data.ok) {
-          throw new Error(data.error || "No se pudieron dejar pendientes las observaciones visibles.");
-        }
-        await fetchRows({ announce: false });
-        showStatus(
-          `Observaciones en pendiente: ${data.updated || ids.length}.`
-          + (data.pdp ? ` PDP reiniciadas: ${data.pdp}.` : "")
-          + (data.backup_path ? ` Respaldo: ${data.backup_path}.` : ""),
-          "success",
-        );
-      } catch (error) {
-        showStatus(error && error.message ? error.message : "Error al dejar observaciones en pendiente.", "error");
-      } finally {
-        if (pendingAllBtn) {
-          delete pendingAllBtn.dataset.busy;
-          pendingAllBtn.disabled = false;
-        }
-        updateSafetyState();
-      }
-    };
-
     const loadEntes = async (selectedValue = "") => {
       if (!ejercicioInput || !enteInput) {
         return;
@@ -1251,77 +1016,17 @@
       }
     };
 
-    const loadFuentes = async (selectedValue = "") => {
-      if (!fuenteInput || !ejercicioInput || !enteInput) {
-        return;
-      }
-      const ejercicio = String(ejercicioInput.value || "").trim();
-      const enteId = String(enteInput.value || "").trim();
-      const tipoAuditoria = String(tipoAuditoriaInput ? tipoAuditoriaInput.value : "").trim();
-      if (!ejercicio || !enteId) {
-        fuenteInput.innerHTML = '<option value="">Todas</option>';
-        fuenteInput.value = "";
-        return;
-      }
-      fuenteInput.innerHTML = '<option value="">Cargando fuentes...</option>';
-      try {
-        const params = new URLSearchParams({
-          ejercicio,
-          ente_id: enteId,
-        });
-        if (tipoAuditoria) {
-          params.set("tipo_auditoria", tipoAuditoria);
-        }
-        const response = await fetch(`/carga/fuentes-ente?${params.toString()}`);
-        if (!response.ok) {
-          throw new Error("No se pudieron cargar fuentes.");
-        }
-        const rows = await response.json();
-        const options = Array.isArray(rows) ? rows : [];
-        fuenteInput.innerHTML = '<option value="">Todas</option>' + options.map((row) => (
-          `<option value="${escapeHtml(row.id)}">${escapeHtml(row.nombre || "")}</option>`
-        )).join("");
-        const selected = String(selectedValue || "").trim();
-        if (selected && options.some((row) => String(row.id || "").trim() === selected)) {
-          fuenteInput.value = selected;
-        } else if (selected) {
-          ensureFuenteOptionForScope(selected);
-        } else {
-          fuenteInput.value = "";
-        }
-      } catch (_error) {
-        fuenteInput.innerHTML = '<option value="">No se pudieron cargar fuentes</option>';
-        fuenteInput.value = "";
-      }
-    };
-
     const applyInitialScope = async () => {
       const hasInitialScope = Object.values(initialScope || {}).some((value) => String(value || "").trim());
       if (ejercicioInput && initialScope.ejercicio) {
         ejercicioInput.value = initialScope.ejercicio;
       }
-      if (tipoAuditoriaInput && initialScope.tipo_auditoria) {
-        tipoAuditoriaInput.value = initialScope.tipo_auditoria;
-      }
-      if (periodoInput && initialScope.periodo) {
-        periodoInput.value = initialScope.periodo;
-      }
       if (oficioInput && initialScope.oficio) {
         oficioInput.value = initialScope.oficio;
-      }
-      if (estadoInput && initialScope.estado) {
-        estadoInput.value = initialScope.estado;
-      }
-      if (tipoAnexoInput && initialScope.tipo_anexo) {
-        tipoAnexoInput.value = initialScope.tipo_anexo;
       }
       await loadEntes(initialScope.ente_id || "");
       if (enteInput && initialScope.ente_id) {
         enteInput.value = initialScope.ente_id;
-      }
-      await loadFuentes(initialScope.fuente || "");
-      if (fuenteInput && initialScope.fuente) {
-        ensureFuenteOptionForScope(initialScope.fuente);
       }
       await loadOficios(initialScope.oficio || "");
       await fetchRows({ announce: false });
@@ -1340,7 +1045,6 @@
       ejercicioInput.addEventListener("change", async () => {
         clearStatus();
         await loadEntes("");
-        await loadFuentes("");
         await loadOficios("");
         await fetchRows({ announce: false });
       });
@@ -1349,48 +1053,7 @@
     if (enteInput) {
       enteInput.addEventListener("change", async () => {
         clearStatus();
-        await loadFuentes("");
         await loadOficios("");
-        await fetchRows({ announce: false });
-      });
-    }
-
-    if (tipoAuditoriaInput) {
-      tipoAuditoriaInput.addEventListener("change", async () => {
-        clearStatus();
-        await loadFuentes(String(fuenteInput ? fuenteInput.value : "").trim());
-        await loadOficios(String(oficioInput ? oficioInput.value : "").trim());
-        await fetchRows({ announce: false });
-      });
-    }
-
-    if (fuenteInput) {
-      fuenteInput.addEventListener("change", async () => {
-        clearStatus();
-        await loadOficios(String(oficioInput ? oficioInput.value : "").trim());
-        await fetchRows({ announce: false });
-      });
-    }
-
-    [estadoInput, tipoAnexoInput].forEach((field) => {
-      if (!field) return;
-      field.addEventListener("change", async () => {
-        clearStatus();
-        await fetchRows({ announce: false });
-      });
-    });
-
-    if (periodoInput) {
-      periodoInput.addEventListener("change", async () => {
-        clearStatus();
-        await loadOficios(String(oficioInput ? oficioInput.value : "").trim());
-        await fetchRows({ announce: false });
-      });
-      periodoInput.addEventListener("keydown", async (event) => {
-        if (event.key !== "Enter") return;
-        event.preventDefault();
-        clearStatus();
-        await loadOficios(String(oficioInput ? oficioInput.value : "").trim());
         await fetchRows({ announce: false });
       });
     }
@@ -1402,63 +1065,10 @@
       });
     }
 
-    if (quickSearchInput) {
-      quickSearchInput.addEventListener("input", applyClientFilters);
-    }
-    if (quickEstadoInput) {
-      quickEstadoInput.addEventListener("change", applyClientFilters);
-    }
-    if (quickLatestInput) {
-      quickLatestInput.addEventListener("change", async () => {
-        if (!allRows.length) {
-          await fetchRows({ announce: false });
-          return;
-        }
-        applyClientFilters();
-      });
-    }
-
-    if (clearBtn) {
-      clearBtn.addEventListener("click", async () => {
-        if (filtersForm) {
-          filtersForm.reset();
-        }
-        if (quickSearchInput) {
-          quickSearchInput.value = "";
-        }
-        if (quickEstadoInput) {
-          quickEstadoInput.value = "";
-        }
-        if (quickLatestInput) {
-          quickLatestInput.value = "";
-        }
-        await loadEntes("");
-        await loadFuentes("");
-        await loadOficios("");
-        await fetchRows({ announce: false });
-        showStatus("Filtros limpiados.", "info");
-      });
-    }
-
-    if (selectAllCheckbox) {
-      selectAllCheckbox.addEventListener("change", () => {
-        const checks = Array.from(tableBody.querySelectorAll(".obs-admin-row-check"));
-        checks.forEach((item) => {
-          if (item instanceof HTMLInputElement) {
-            item.checked = selectAllCheckbox.checked;
-          }
-        });
-      });
-    }
-
     if (tableBody) {
       tableBody.addEventListener("change", (event) => {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
-        if (target.classList.contains("obs-admin-row-check")) {
-          syncSelectAllState();
-          return;
-        }
         const row = target.closest("tr");
         if (row) {
           updateRowVisualState(row);
@@ -1491,30 +1101,6 @@
             await deleteOne(row, deleteBtn);
           }
         }
-      });
-    }
-
-    if (deleteSelectedBtn) {
-      deleteSelectedBtn.addEventListener("click", async () => {
-        await deleteSelected();
-      });
-    }
-
-    if (solveAllBtn) {
-      solveAllBtn.addEventListener("click", async () => {
-        await solveAllVisible();
-      });
-    }
-
-    if (pendingAllBtn) {
-      pendingAllBtn.addEventListener("click", async () => {
-        await markAllPendingVisible();
-      });
-    }
-
-    if (deleteAllBtn) {
-      deleteAllBtn.addEventListener("click", async () => {
-        await deleteAllByFilters();
       });
     }
 
