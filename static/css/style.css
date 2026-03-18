@@ -4147,7 +4147,7 @@ tbody tr:hover td {
 }
 
 .loader-obs-table-wrap {
-  max-height: 430px;
+  max-height: 620px;
   overflow: auto;
   border-radius: 12px;
   border: 1px solid #cfded4;
@@ -4281,6 +4281,10 @@ tbody tr:hover td {
   border-radius: 16px;
   background: linear-gradient(180deg, #ffffff 0%, #f7fbf8 100%);
   padding: 0.85rem 0.9rem;
+}
+
+#obsAdminAmountCard {
+  margin-bottom: 1rem;
 }
 
 .obs-admin-summary-body {
@@ -4420,7 +4424,31 @@ tbody tr:hover td {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: 0.65rem;
+}
+
+.obs-admin-content .table-meta {
+  margin-top: 1rem;
+  margin-bottom: 0.7rem;
+}
+
+.obs-admin-table-filters {
+  margin-bottom: 0.8rem;
+  border: 1px solid #d7e4dc;
+  border-radius: 12px;
+  background: #f8fcf9;
+  padding: 0.7rem 0.8rem;
+}
+
+.obs-admin-table-filters-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  align-items: end;
+}
+
+.obs-admin-content .loader-obs-table-wrap {
+  margin-top: 0.55rem;
+  max-height: 68vh;
 }
 
 .obs-admin-table {
@@ -4435,7 +4463,8 @@ tbody tr:hover td {
   overflow-wrap: anywhere;
   word-break: break-word;
   vertical-align: middle;
-  font-size: 0.78rem;
+  font-size: 0.84rem;
+  padding: 0.58rem 0.62rem;
 }
 
 .obs-admin-detail-section-row th {
@@ -4454,31 +4483,22 @@ tbody tr:hover td {
 
 .obs-admin-table th:nth-child(1),
 .obs-admin-table td:nth-child(1) {
-  width: 28%;
+  width: 31%;
 }
 
 .obs-admin-table th:nth-child(2),
 .obs-admin-table td:nth-child(2) {
-  width: 34%;
+  width: 39%;
 }
 
 .obs-admin-table th:nth-child(3),
 .obs-admin-table td:nth-child(3) {
-  width: 160px;
+  width: 170px;
 }
 
 .obs-admin-table th:nth-child(4),
 .obs-admin-table td:nth-child(4) {
-  width: 250px;
-}
-
-.obs-admin-table th:nth-child(5),
-.obs-admin-table td:nth-child(5) {
-  width: 150px;
-}
-
-.obs-admin-table td:last-child {
-  white-space: normal;
+  width: 320px;
 }
 
 .obs-admin-observacion-main,
@@ -4490,14 +4510,14 @@ tbody tr:hover td {
 
 .obs-admin-observacion-main strong {
   color: var(--color-accent);
-  font-size: 0.82rem;
+  font-size: 0.89rem;
 }
 
 .obs-admin-observacion-main span,
 .obs-admin-contexto span,
 .obs-admin-pdp-cell span {
   color: var(--color-muted);
-  font-size: 0.76rem;
+  font-size: 0.8rem;
   line-height: 1.25;
 }
 
@@ -4508,21 +4528,20 @@ tbody tr:hover td {
 
 .obs-admin-pdp-cell label {
   color: var(--color-muted);
-  font-size: 0.72rem;
+  font-size: 0.76rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 
-.obs-admin-row-actions {
-  display: grid;
-  gap: 0.3rem;
+.luis-wide-layout {
+  --container-max: 1380px;
 }
 
-.obs-admin-row-actions .btn-secondary {
-  width: 100%;
-  padding: 0.34rem 0.6rem;
-  font-size: 0.76rem;
+.luis-wide-layout .page-content {
+  max-width: min(1380px, calc(100vw - 1.4rem));
+  padding-left: 0.7rem;
+  padding-right: 0.7rem;
 }
 
 .obs-admin-estado {
@@ -5141,13 +5160,8 @@ tbody tr:hover td {
     width: 100%;
   }
 
-  .obs-admin-row-actions {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .obs-admin-row-actions .btn-secondary {
-    width: 100%;
+  .obs-admin-table-filters-grid {
+    grid-template-columns: 1fr;
   }
 
   .loader-obs-scope-money {

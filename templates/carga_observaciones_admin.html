@@ -109,9 +109,34 @@
       <div class="table-meta">
         <span id="obsAdminCount">Selecciona un ente y un oficio; la consulta es automática.</span>
         <div class="obs-admin-actions-inline">
+          <button type="button" class="btn-secondary" id="obsAdminSaveFilteredBtn">Guardar cambios (filtro)</button>
           <button type="button" class="btn-secondary" id="obsAdminSolveAllBtn">Solventar todo</button>
+          <button type="button" class="btn-secondary" id="obsAdminOpenPdpQuickBtn">Carga rápida de montos PDP</button>
         </div>
       </div>
+
+      <section class="obs-admin-table-filters" aria-label="Filtros de observaciones cargadas">
+        <div class="form-grid obs-admin-table-filters-grid">
+          <div class="field">
+            <label for="obs_admin_filter_tipo_anexo">Tipo de anexo</label>
+            <select id="obs_admin_filter_tipo_anexo">
+              <option value="">Todos</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="obs_admin_filter_fuente">Fuente de financiamiento</label>
+            <select id="obs_admin_filter_fuente">
+              <option value="">Todas</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="obs_admin_filter_periodo">Periodo</label>
+            <select id="obs_admin_filter_periodo">
+              <option value="">Todos</option>
+            </select>
+          </div>
+        </div>
+      </section>
 
       <div class="loader-obs-table-wrap">
         <table class="loader-obs-table obs-admin-table">
@@ -121,12 +146,11 @@
               <th>Contexto</th>
               <th>Estado</th>
               <th>PDP</th>
-              <th>Acciones</th>
             </tr>
           </thead>
           <tbody id="obsAdminTableBody">
             <tr>
-              <td colspan="5" class="muted">Sin resultados para mostrar.</td>
+              <td colspan="4" class="muted">Sin resultados para mostrar.</td>
             </tr>
           </tbody>
         </table>
@@ -170,10 +194,17 @@
     const safetyScopeChip = document.getElementById("obsAdminSafetyScopeChip");
     const summaryBody = document.getElementById("obsAdminSummaryBody");
     const amountSummaryBody = document.getElementById("obsAdminAmountSummaryBody");
+    const saveFilteredBtn = document.getElementById("obsAdminSaveFilteredBtn");
     const solveAllBtn = document.getElementById("obsAdminSolveAllBtn");
+    const openPdpQuickBtn = document.getElementById("obsAdminOpenPdpQuickBtn");
+    const filterTipoAnexoInput = document.getElementById("obs_admin_filter_tipo_anexo");
+    const filterFuenteInput = document.getElementById("obs_admin_filter_fuente");
+    const filterPeriodoInput = document.getElementById("obs_admin_filter_periodo");
 
+    const OBS_TABLE_COLSPAN = 4;
     let allRows = [];
     let filteredRows = [];
+    let originalRowsSnapshot = new Map();
 
     const escapeHtml = (value) => (
       String(value || "")
@@ -214,6 +245,67 @@
       return clean;
     };
 
+    const readTableFilters = () => ({
+      tipoAnexo: String(filterTipoAnexoInput ? filterTipoAnexoInput.value : "").trim().toUpperCase(),
+      fuente: String(filterFuenteInput ? filterFuenteInput.value : "").trim().toLowerCase(),
+      periodo: String(filterPeriodoInput ? filterPeriodoInput.value : "").trim().toLowerCase(),
+    });
+
+    const setSelectOptions = (selectNode, options, placeholder, selectedValue = "") => {
+      if (!(selectNode instanceof HTMLSelectElement)) return;
+      const selectedNorm = String(selectedValue || "").trim().toLowerCase();
+      const normalizedOptions = Array.isArray(options) ? options.filter(Boolean) : [];
+      selectNode.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>` + normalizedOptions
+        .map((item) => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`)
+        .join("");
+      const match = normalizedOptions.find((item) => item.toLowerCase() === selectedNorm);
+      selectNode.value = match || "";
+      selectNode.disabled = normalizedOptions.length === 0;
+    };
+
+    const resetTableFilters = () => {
+      setSelectOptions(filterTipoAnexoInput, [], "Todos");
+      setSelectOptions(filterFuenteInput, [], "Todas");
+      setSelectOptions(filterPeriodoInput, [], "Todos");
+    };
+
+    const populateTableFilters = () => {
+      const rows = Array.isArray(allRows) ? allRows : [];
+      const current = readTableFilters();
+
+      const anexoSeen = new Map();
+      const fuenteSeen = new Map();
+      const periodoSeen = new Map();
+      rows.forEach((row) => {
+        const anexo = normalizeTipoAnexo(row && row.tipo_anexo);
+        if (anexo) anexoSeen.set(anexo.toLowerCase(), anexo);
+        const fuente = String((row && row.fuente_financiamiento) || "").trim();
+        if (fuente) fuenteSeen.set(fuente.toLowerCase(), fuente);
+        const periodo = String((row && row.periodo_cedula) || "").trim();
+        if (periodo) periodoSeen.set(periodo.toLowerCase(), periodo);
+      });
+
+      const anexoOrder = ["SA", "PDP", "PRAS", "PEFCF", "R"];
+      const anexoOptions = Array.from(anexoSeen.values()).sort((a, b) => {
+        const orderA = anexoOrder.indexOf(a);
+        const orderB = anexoOrder.indexOf(b);
+        if (orderA !== -1 || orderB !== -1) {
+          return (orderA === -1 ? 99 : orderA) - (orderB === -1 ? 99 : orderB);
+        }
+        return a.localeCompare(b, "es", { sensitivity: "base" });
+      });
+      const fuenteOptions = Array.from(fuenteSeen.values()).sort((a, b) => (
+        a.localeCompare(b, "es", { sensitivity: "base" })
+      ));
+      const periodoOptions = Array.from(periodoSeen.values()).sort((a, b) => (
+        a.localeCompare(b, "es", { sensitivity: "base" })
+      ));
+
+      setSelectOptions(filterTipoAnexoInput, anexoOptions, "Todos", current.tipoAnexo);
+      setSelectOptions(filterFuenteInput, fuenteOptions, "Todas", current.fuente);
+      setSelectOptions(filterPeriodoInput, periodoOptions, "Todos", current.periodo);
+    };
+
     const parseMoneyInput = (rawValue) => {
       const raw = String(rawValue || "").trim();
       if (!raw) {
@@ -242,7 +334,21 @@
     };
 
     const renderEmptyRow = (message) => {
-      tableBody.innerHTML = `<tr><td colspan="5" class="muted">${escapeHtml(message)}</td></tr>`;
+      tableBody.innerHTML = `<tr><td colspan="${OBS_TABLE_COLSPAN}" class="muted">${escapeHtml(message)}</td></tr>`;
+    };
+
+    const captureOriginalRowsSnapshot = (rows) => {
+      const map = new Map();
+      (Array.isArray(rows) ? rows : []).forEach((row) => {
+        const id = Number((row && row.id) || 0);
+        if (!id) return;
+        map.set(id, {
+          estado: normalizeEstado(row && row.estado),
+          tipoAnexo: normalizeTipoAnexo(row && row.tipo_anexo),
+          montoPdpSolventado: Number.parseFloat(String((row && row.monto_pdp_solventado) || "0")) || 0,
+        });
+      });
+      originalRowsSnapshot = map;
     };
 
     const readFilters = () => ({
@@ -307,6 +413,11 @@
       const officeScope = hasOfficeQueryScope(filters);
       const safeScope = hasEditableOfficeScope(filters);
       const count = Array.isArray(filteredRows) ? filteredRows.length : 0;
+      const pdpCount = Array.isArray(filteredRows)
+        ? filteredRows.filter((row) => normalizeTipoAnexo(row && row.tipo_anexo) === "PDP").length
+        : 0;
+      const pdpFilterActive = isPdpAnexoFilterSelected();
+      const selectedAnexo = String(filterTipoAnexoInput ? filterTipoAnexoInput.value : "").trim().toUpperCase();
       const officeReason = "Selecciona un ente y un oficio para trabajar un solo oficio.";
       const reason = readOnly
         ? getReadOnlyMessage(filters.ejercicio)
@@ -344,6 +455,36 @@
           : (readOnly
             ? getReadOnlyMessage(filters.ejercicio)
             : "Selecciona un ente y un oficio con observaciones para habilitar esta acción.");
+      }
+      if (saveFilteredBtn) {
+        const enabled = safeScope && !!selectedAnexo && count > 0;
+        saveFilteredBtn.disabled = !enabled;
+        if (!safeScope) {
+          saveFilteredBtn.title = readOnly
+            ? getReadOnlyMessage(filters.ejercicio)
+            : "Selecciona un ente y un oficio para habilitar el guardado por filtro.";
+        } else if (!selectedAnexo) {
+          saveFilteredBtn.title = "Selecciona Tipo de anexo para guardar cambios del bloque.";
+        } else if (!count) {
+          saveFilteredBtn.title = "No hay observaciones visibles con los filtros actuales.";
+        } else {
+          saveFilteredBtn.title = "Guardar cambios de las observaciones visibles del anexo seleccionado.";
+        }
+      }
+      if (openPdpQuickBtn) {
+        const enabled = safeScope && pdpFilterActive && pdpCount > 0;
+        openPdpQuickBtn.disabled = !enabled;
+        if (!safeScope) {
+          openPdpQuickBtn.title = readOnly
+            ? getReadOnlyMessage(filters.ejercicio)
+            : "Selecciona un ente y un oficio con observaciones para habilitar esta acción.";
+        } else if (enabled) {
+          openPdpQuickBtn.title = "Capturar montos solventados PDP en lote con los filtros visibles.";
+        } else if (!pdpFilterActive) {
+          openPdpQuickBtn.title = "Selecciona Tipo de anexo = PDP para habilitar esta acción.";
+        } else {
+          openPdpQuickBtn.title = "No hay observaciones PDP con los filtros actuales.";
+        }
       }
     };
 
@@ -497,6 +638,23 @@
       });
       return safeRows;
     };
+
+    const getVisiblePdpRows = () => {
+      const ordered = sortObservacionesForDetail(filteredRows || []);
+      return ordered
+        .filter((row) => normalizeTipoAnexo(row && row.tipo_anexo) === "PDP")
+        .map((row) => ({
+          id: Number((row && row.id) || 0),
+          fuente: String((row && row.fuente_financiamiento) || "").trim() || "-",
+          periodo: String((row && row.periodo_cedula) || "").trim() || "-",
+          emitido: Number.parseFloat(String((row && row.monto_pdp_emitido) || "0")) || 0,
+          estado: normalizeEstado(row && row.estado),
+        }));
+    };
+
+    const isPdpAnexoFilterSelected = () => (
+      String(filterTipoAnexoInput ? filterTipoAnexoInput.value : "").trim().toUpperCase() === "PDP"
+    );
 
     const renderSummaryByOficio = (rows) => {
       if (!summaryBody) {
@@ -940,12 +1098,6 @@
               `</select>` +
             `</td>` +
             `<td>${pdpCellHtml}</td>` +
-            `<td>` +
-              `<div class="obs-admin-row-actions">` +
-                `<button type="button" class="btn-secondary btn-compact obs-admin-save-btn"${disabledAttr}${disabledTitle}>Guardar</button>` +
-                `<button type="button" class="btn-secondary btn-compact obs-admin-delete-btn"${disabledAttr}${disabledTitle}>Eliminar</button>` +
-              `</div>` +
-            `</td>` +
           `</tr>`
         );
       };
@@ -954,7 +1106,7 @@
       orderedTipos.forEach((tipo, index) => {
         htmlParts.push(
           `<tr class="obs-admin-detail-section-row">` +
-          `<th colspan="5">${escapeHtml(formatTipoSectionTitle(tipo, index))}</th>` +
+          `<th colspan="${OBS_TABLE_COLSPAN}">${escapeHtml(formatTipoSectionTitle(tipo, index))}</th>` +
           `</tr>`
         );
         const tipoRows = groupedByTipo.get(tipo) || [];
@@ -972,13 +1124,26 @@
     };
 
     const applyClientFilters = () => {
-      filteredRows = Array.isArray(allRows) ? allRows.slice() : [];
+      const tableFilters = readTableFilters();
+      filteredRows = (Array.isArray(allRows) ? allRows : []).filter((row) => {
+        const tipoAnexo = normalizeTipoAnexo(row && row.tipo_anexo);
+        const fuente = String((row && row.fuente_financiamiento) || "").trim().toLowerCase();
+        const periodo = String((row && row.periodo_cedula) || "").trim().toLowerCase();
+        if (tableFilters.tipoAnexo && tipoAnexo !== tableFilters.tipoAnexo) return false;
+        if (tableFilters.fuente && fuente !== tableFilters.fuente) return false;
+        if (tableFilters.periodo && periodo !== tableFilters.periodo) return false;
+        return true;
+      });
       renderRows(filteredRows);
       renderSummaryByOficio(filteredRows);
       renderAmountSummaryByFuentePeriodo(filteredRows);
       updateMetrics(filteredRows);
       if (countLabel) {
-        countLabel.textContent = `${filteredRows.length} observaciones.`;
+        const total = Array.isArray(allRows) ? allRows.length : 0;
+        const hasExtraFilters = !!(tableFilters.tipoAnexo || tableFilters.fuente || tableFilters.periodo);
+        countLabel.textContent = hasExtraFilters
+          ? `${filteredRows.length} observaciones (de ${total} cargadas).`
+          : `${filteredRows.length} observaciones.`;
       }
       updateSafetyState();
     };
@@ -993,6 +1158,8 @@
       if (!filters.ente_id || !filters.oficio) {
         allRows = [];
         filteredRows = [];
+        originalRowsSnapshot = new Map();
+        resetTableFilters();
         updateMetrics([]);
         renderEmptyRow("Selecciona un ente y un oficio para consultar observaciones de un solo oficio.");
         if (summaryBody) {
@@ -1022,6 +1189,8 @@
           throw new Error(data.error || "No se pudo consultar observaciones.");
         }
         allRows = Array.isArray(data.rows) ? data.rows : [];
+        captureOriginalRowsSnapshot(allRows);
+        populateTableFilters();
         applyClientFilters();
         if (announce) {
           showStatus(`Consulta completada: ${allRows.length} observaciones encontradas.`, "success");
@@ -1029,6 +1198,8 @@
       } catch (error) {
         allRows = [];
         filteredRows = [];
+        originalRowsSnapshot = new Map();
+        resetTableFilters();
         updateMetrics([]);
         renderEmptyRow("No se pudieron consultar las observaciones.");
         if (summaryBody) {
@@ -1079,109 +1250,168 @@
       };
     };
 
-    const saveRow = async (row, button) => {
-      const payloadResult = buildRowPayload(row);
-      if (payloadResult.error) {
-        showStatus(payloadResult.error, "error");
-        return;
+    const hasRowChangesAgainstSnapshot = (payloadResult) => {
+      const id = Number(payloadResult && payloadResult.id);
+      if (!id) return false;
+      const snapshot = originalRowsSnapshot.get(id);
+      if (!snapshot) return true;
+      const currentEstado = normalizeEstado((payloadResult.payload && payloadResult.payload.estado) || "Emitido");
+      if (currentEstado !== normalizeEstado(snapshot.estado)) {
+        return true;
       }
-      const filters = readFilters();
-      if (!hasEditableOfficeScope(filters)) {
-        showStatus("Selecciona un ente y un oficio para editar un solo oficio.", "error");
-        return;
+      const tipoAnexo = normalizeTipoAnexo(snapshot.tipoAnexo || "");
+      if (tipoAnexo !== "PDP") {
+        return false;
       }
-      if (isReadOnlyEjercicio(filters.ejercicio)) {
-        showStatus(getReadOnlyMessage(filters.ejercicio), "error");
-        return;
-      }
-      if (button instanceof HTMLButtonElement) {
-        button.disabled = true;
-      }
-      try {
-        const response = await fetch(
-          `/carga/observaciones-cargadas/${encodeURIComponent(payloadResult.id)}/actualizar`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              ...payloadResult.payload,
-              scope: {
-                ejercicio: filters.ejercicio,
-                ente_id: filters.ente_id,
-                oficio: filters.oficio,
-              },
-            }),
-          },
-        );
-        const data = await response.json();
-        if (!response.ok || !data.ok) {
-          throw new Error(data.error || "No se pudo actualizar la observación.");
-        }
-        await fetchRows({ announce: false });
-        showStatus(
-          `Observación ${payloadResult.id} actualizada.`
-          + (data.backup_path ? ` Respaldo: ${data.backup_path}.` : ""),
-          "success",
-        );
-      } catch (error) {
-        showStatus(error && error.message ? error.message : "Error al guardar cambios.", "error");
-      } finally {
-        if (button instanceof HTMLButtonElement) {
-          button.disabled = false;
-        }
-      }
+      const currentMonto = Number.parseFloat(
+        String((payloadResult.payload && payloadResult.payload.monto_pdp_solventado) || "0")
+      ) || 0;
+      const originalMonto = Number.parseFloat(String(snapshot.montoPdpSolventado || 0)) || 0;
+      return Math.abs(currentMonto - originalMonto) > 0.00001;
     };
 
-    const deleteOne = async (row, button) => {
-      const id = Number(row.dataset.observacionId || 0);
-      if (!id) {
-        showStatus("Observación inválida.", "error");
-        return;
-      }
+    const saveFilteredChanges = async () => {
       const filters = readFilters();
       if (!hasEditableOfficeScope(filters)) {
-        showStatus("Selecciona un ente y un oficio para editar un solo oficio.", "error");
+        showStatus("Selecciona un ente y un oficio para guardar observaciones.", "error");
         return;
       }
       if (isReadOnlyEjercicio(filters.ejercicio)) {
         showStatus(getReadOnlyMessage(filters.ejercicio), "error");
         return;
       }
-      const ok = window.confirm(`¿Seguro que deseas eliminar la observación ID ${id}?`);
-      if (!ok) {
+      const selectedAnexo = String(filterTipoAnexoInput ? filterTipoAnexoInput.value : "").trim().toUpperCase();
+      if (!selectedAnexo) {
+        showStatus("Selecciona Tipo de anexo para guardar cambios del bloque.", "info");
         return;
       }
-      if (button instanceof HTMLButtonElement) {
-        button.disabled = true;
+
+      const visibleRows = Array.from(
+        tableBody ? tableBody.querySelectorAll("tr[data-observacion-id]") : []
+      );
+      const matchingRows = visibleRows.filter(
+        (row) => normalizeTipoAnexo(row.dataset.tipoAnexo || "") === selectedAnexo
+      );
+      if (!matchingRows.length) {
+        showStatus("No hay observaciones visibles para guardar con el anexo seleccionado.", "info");
+        return;
       }
-      try {
-        const response = await fetch(`/carga/observaciones-admin/${encodeURIComponent(id)}/borrar`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            scope: {
-              ejercicio: filters.ejercicio,
-              ente_id: filters.ente_id,
-              oficio: filters.oficio,
-            },
-          }),
+
+      const pendingUpdates = [];
+      for (const row of matchingRows) {
+        const payloadResult = buildRowPayload(row);
+        if (payloadResult.error) {
+          showStatus(payloadResult.error, "error");
+          return;
+        }
+        if (!hasRowChangesAgainstSnapshot(payloadResult)) {
+          continue;
+        }
+        const snapshot = originalRowsSnapshot.get(payloadResult.id);
+        const beforeEstado = normalizeEstado(snapshot ? snapshot.estado : "Emitido");
+        const afterEstado = normalizeEstado((payloadResult.payload && payloadResult.payload.estado) || "Emitido");
+        const beforeMonto = snapshot ? Number.parseFloat(String(snapshot.montoPdpSolventado || "0")) || 0 : 0;
+        const afterMonto = Number.parseFloat(
+          String((payloadResult.payload && payloadResult.payload.monto_pdp_solventado) || "0")
+        ) || 0;
+        pendingUpdates.push({
+          ...payloadResult,
+          beforeEstado,
+          afterEstado,
+          beforeMonto,
+          afterMonto,
+          isPdp: selectedAnexo === "PDP",
         });
-        const data = await response.json();
-        if (!response.ok || !data.ok) {
-          throw new Error(data.error || "No se pudo eliminar la observación.");
+      }
+
+      if (!pendingUpdates.length) {
+        showStatus("No hay cambios pendientes por guardar para el anexo seleccionado.", "info");
+        return;
+      }
+
+      const estadoSummary = { Emitido: 0, Pendiente: 0, Solventado: 0 };
+      pendingUpdates.forEach((item) => {
+        if (Object.prototype.hasOwnProperty.call(estadoSummary, item.afterEstado)) {
+          estadoSummary[item.afterEstado] += 1;
+        }
+      });
+      const pdpMontoChanges = pendingUpdates.filter(
+        (item) => item.isPdp && Math.abs((item.afterMonto || 0) - (item.beforeMonto || 0)) > 0.00001
+      );
+      const pdpMontoAntes = pdpMontoChanges.reduce((acc, item) => acc + (item.beforeMonto || 0), 0);
+      const pdpMontoAhora = pdpMontoChanges.reduce((acc, item) => acc + (item.afterMonto || 0), 0);
+      const idsPreview = pendingUpdates
+        .slice(0, 20)
+        .map((item) => String(item.id))
+        .join(", ");
+
+      const confirmLines = [
+        "ATENCION: se guardarán cambios en bloque.",
+        `Oficio: ${filters.oficio}`,
+        `Tipo de anexo: ${selectedAnexo}`,
+        `Observaciones cambiadas: ${pendingUpdates.length}`,
+        `- Emitido: ${estadoSummary.Emitido}`,
+        `- Pendiente: ${estadoSummary.Pendiente}`,
+        `- Solventado: ${estadoSummary.Solventado}`,
+      ];
+      if (selectedAnexo === "PDP") {
+        confirmLines.push(`- Cambios de monto PDP: ${pdpMontoChanges.length}`);
+        confirmLines.push(`- Monto PDP antes: ${formatMoney(pdpMontoAntes)}`);
+        confirmLines.push(`- Monto PDP ahora: ${formatMoney(pdpMontoAhora)}`);
+        confirmLines.push("Confirma con cuidado: los montos PDP también serán actualizados.");
+      }
+      if (idsPreview) {
+        confirmLines.push(`IDs (vista previa): ${idsPreview}${pendingUpdates.length > 20 ? "..." : ""}`);
+      }
+      confirmLines.push("");
+      confirmLines.push("¿Confirmas guardar los cambios?");
+
+      if (!window.confirm(confirmLines.join("\n"))) {
+        return;
+      }
+
+      if (saveFilteredBtn instanceof HTMLButtonElement) {
+        saveFilteredBtn.disabled = true;
+      }
+      let updated = 0;
+      const failed = [];
+      try {
+        for (const item of pendingUpdates) {
+          const response = await fetch(
+            `/carga/observaciones-cargadas/${encodeURIComponent(item.id)}/actualizar`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                ...item.payload,
+                scope: {
+                  ejercicio: filters.ejercicio,
+                  ente_id: filters.ente_id,
+                  oficio: filters.oficio,
+                },
+              }),
+            },
+          );
+          const data = await response.json();
+          if (!response.ok || !data.ok) {
+            failed.push(`ID ${item.id}: ${data.error || "No se pudo actualizar."}`);
+            continue;
+          }
+          updated += 1;
         }
         await fetchRows({ announce: false });
-        showStatus(
-          `Observación ${id} eliminada.`
-          + (data.backup_path ? ` Respaldo: ${data.backup_path}.` : ""),
-          "success",
-        );
-      } catch (error) {
-        showStatus(error && error.message ? error.message : "Error al eliminar observación.", "error");
-      } finally {
-        if (button instanceof HTMLButtonElement) {
-          button.disabled = false;
+        if (failed.length) {
+          showStatus(`Guardadas ${updated} observaciones. Fallaron ${failed.length}.`, "error");
+          return;
         }
+        showStatus(`Cambios guardados: ${updated} observación(es).`, "success");
+      } catch (error) {
+        showStatus(error && error.message ? error.message : "Error al guardar cambios del bloque.", "error");
+      } finally {
+        if (saveFilteredBtn instanceof HTMLButtonElement) {
+          saveFilteredBtn.disabled = false;
+        }
+        updateSafetyState();
       }
     };
 
@@ -1250,6 +1480,138 @@
       lines.push("");
       lines.push("¿Confirmas solventar todo?");
       return lines.join("\n");
+    };
+
+    const applyPdpQuickByFilters = async () => {
+      const filters = readFilters();
+      if (!hasEditableOfficeScope(filters)) {
+        showStatus("Selecciona un ente y un oficio para capturar montos PDP.", "error");
+        return;
+      }
+      if (isReadOnlyEjercicio(filters.ejercicio)) {
+        showStatus(getReadOnlyMessage(filters.ejercicio), "error");
+        return;
+      }
+      if (!isPdpAnexoFilterSelected()) {
+        showStatus("Selecciona Tipo de anexo = PDP para usar la carga rápida de montos.", "info");
+        return;
+      }
+
+      const scopedRows = getVisiblePdpRows();
+      if (!scopedRows.length) {
+        showStatus("No hay observaciones PDP con los filtros seleccionados.", "info");
+        return;
+      }
+
+      const activeFuente = String(filterFuenteInput ? filterFuenteInput.value : "").trim() || "Todas";
+      const activePeriodo = String(filterPeriodoInput ? filterPeriodoInput.value : "").trim() || "Todos";
+
+      const updates = [];
+      const visibleRows = Array.from(
+        tableBody ? tableBody.querySelectorAll("tr[data-observacion-id]") : []
+      ).filter((row) => normalizeTipoAnexo(row.dataset.tipoAnexo || "") === "PDP");
+
+      for (const rowElement of visibleRows) {
+        const id = Number(rowElement.dataset.observacionId || 0);
+        const emitido = Number.parseFloat(String(rowElement.dataset.montoEmitido || "0")) || 0;
+        const solventadoInput = rowElement.querySelector(".obs-admin-solventado");
+        const estadoSelect = rowElement.querySelector(".obs-admin-estado");
+        const solventado = solventadoInput ? parseMoneyInput(solventadoInput.value) : null;
+        const estado = normalizeEstado(estadoSelect ? estadoSelect.value : "Emitido");
+
+        if (!id) {
+          showStatus("Se encontró una observación PDP inválida en la tabla.", "error");
+          return;
+        }
+        if (solventado === null) {
+          showStatus(`Captura un monto válido para la observación ID ${id}.`, "error");
+          return;
+        }
+        if (solventado > emitido) {
+          showStatus(
+            `La observación ID ${id} excede el emitido (${formatMoney(emitido)}).`,
+            "error",
+          );
+          return;
+        }
+        updates.push({
+          id,
+          emitido,
+          solventado,
+          estado,
+        });
+      }
+
+      if (!updates.length) {
+        showStatus("No hay observaciones PDP visibles para aplicar.", "info");
+        return;
+      }
+
+      const totalMonto = updates.reduce((acc, item) => acc + item.solventado, 0);
+      const confirmLines = [
+        "ATENCION: se actualizarán en lote los montos PDP capturados en la tabla visible.",
+        "El estado (Emitido/Pendiente/Solventado) no cambiará automáticamente.",
+        `Fuente: ${activeFuente}`,
+        `Periodo: ${activePeriodo}`,
+        `Registros: ${updates.length}`,
+        `Monto total solventado: ${formatMoney(totalMonto)}`,
+        "",
+        "¿Confirmas aplicar y guardar?",
+      ];
+      if (!window.confirm(confirmLines.join("\n"))) {
+        return;
+      }
+
+      if (openPdpQuickBtn instanceof HTMLButtonElement) {
+        openPdpQuickBtn.disabled = true;
+      }
+      let updated = 0;
+      const failed = [];
+      try {
+        for (const item of updates) {
+          const response = await fetch(
+            `/carga/observaciones-cargadas/${encodeURIComponent(item.id)}/actualizar`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                estado: item.estado,
+                monto_pdp_emitido: item.emitido.toFixed(2),
+                monto_pdp_solventado: item.solventado.toFixed(2),
+                scope: {
+                  ejercicio: filters.ejercicio,
+                  ente_id: filters.ente_id,
+                  oficio: filters.oficio,
+                },
+              }),
+            },
+          );
+          const data = await response.json();
+          if (!response.ok || !data.ok) {
+            failed.push(`ID ${item.id}: ${data.error || "No se pudo actualizar."}`);
+            continue;
+          }
+          updated += 1;
+        }
+
+        await fetchRows({ announce: false });
+        if (failed.length) {
+          showStatus(
+            `PDP actualizadas: ${updated}. Con incidencias: ${failed.length}.`,
+            "error",
+          );
+          return;
+        }
+
+        showStatus(`PDP actualizadas en lote: ${updated}.`, "success");
+      } catch (error) {
+        showStatus(error && error.message ? error.message : "Error al guardar montos PDP.", "error");
+      } finally {
+        if (openPdpQuickBtn instanceof HTMLButtonElement) {
+          openPdpQuickBtn.disabled = false;
+        }
+        updateSafetyState();
+      }
     };
 
     const solventarTodoVisible = async () => {
@@ -1399,9 +1761,39 @@
       });
     }
 
+    if (filterTipoAnexoInput) {
+      filterTipoAnexoInput.addEventListener("change", () => {
+        applyClientFilters();
+      });
+    }
+
+    if (filterFuenteInput) {
+      filterFuenteInput.addEventListener("change", () => {
+        applyClientFilters();
+      });
+    }
+
+    if (filterPeriodoInput) {
+      filterPeriodoInput.addEventListener("change", () => {
+        applyClientFilters();
+      });
+    }
+
+    if (saveFilteredBtn) {
+      saveFilteredBtn.addEventListener("click", async () => {
+        await saveFilteredChanges();
+      });
+    }
+
     if (solveAllBtn) {
       solveAllBtn.addEventListener("click", async () => {
         await solventarTodoVisible();
+      });
+    }
+
+    if (openPdpQuickBtn) {
+      openPdpQuickBtn.addEventListener("click", async () => {
+        await applyPdpQuickByFilters();
       });
     }
 
@@ -1421,25 +1813,6 @@
         const row = target.closest("tr");
         if (row) {
           updateRowVisualState(row);
-        }
-      });
-      tableBody.addEventListener("click", async (event) => {
-        const target = event.target;
-        if (!(target instanceof HTMLElement)) return;
-        const saveBtn = target.closest(".obs-admin-save-btn");
-        if (saveBtn) {
-          const row = saveBtn.closest("tr");
-          if (row) {
-            await saveRow(row, saveBtn);
-          }
-          return;
-        }
-        const deleteBtn = target.closest(".obs-admin-delete-btn");
-        if (deleteBtn) {
-          const row = deleteBtn.closest("tr");
-          if (row) {
-            await deleteOne(row, deleteBtn);
-          }
         }
       });
     }
