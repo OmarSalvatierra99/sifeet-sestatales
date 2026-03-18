@@ -2294,6 +2294,11 @@ tbody tr:hover td {
   margin: 0;
 }
 
+#manual_periodo,
+#manual_periodo_options {
+  display: none;
+}
+
 .loader-source-editor-head-compact {
   margin-bottom: 0.65rem;
   padding-bottom: 0.65rem;
@@ -4741,4 +4746,8 @@ tbody tr:hover td {
   .login-logo-wrap .ofs-logo {
     width: 56px;
   }
+}
+
+.loader-manual-subsection.loader-summary-card {
+  margin-top: 2rem;
 }
