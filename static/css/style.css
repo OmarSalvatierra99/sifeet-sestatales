@@ -1742,6 +1742,16 @@ tbody tr:hover td {
   font-size: 0.82rem;
 }
 
+.loader-page {
+  --container-max: 1380px;
+}
+
+.loader-page .page-content.loader-content {
+  max-width: min(1380px, calc(100vw - 1.4rem));
+  padding-left: 0.7rem;
+  padding-right: 0.7rem;
+}
+
 .loader-content {
   grid-template-columns: 1fr;
   gap: 1.1rem;
@@ -3190,9 +3200,23 @@ tbody tr:hover td {
 
 .manual-resumen-table-wrapper table {
   width: 100%;
-  min-width: 1220px;
+  min-width: 1420px;
   border-collapse: separate;
   border-spacing: 0;
+}
+
+.manual-resumen-col-fuente,
+.manual-resumen-cell-fuente {
+  min-width: 330px;
+}
+
+.manual-resumen-col-periodo,
+.manual-resumen-cell-periodo {
+  min-width: 320px;
+}
+
+.manual-resumen-cell-periodo input[data-row-field="periodo"] {
+  min-width: 300px;
 }
 
 .manual-resumen-table-wrapper thead th {
@@ -4615,7 +4639,7 @@ tbody tr:hover td {
   }
 
   .manual-resumen-table-wrapper table {
-    min-width: 980px;
+    min-width: 1180px;
   }
 
   .manual-resumen-pdp-item {
@@ -4683,6 +4707,12 @@ tbody tr:hover td {
   .page-content {
     padding: 1.8rem 1rem 2.2rem;
     gap: 1.15rem;
+  }
+
+  .loader-page .page-content.loader-content {
+    max-width: calc(100vw - 1rem);
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
   }
 
   .panel {

@@ -253,7 +253,7 @@
                   </div>
                   <div class="field" id="manual_periodo_field">
                     <label for="principal_periodo_selector">Periodo</label>
-                    <select id="principal_periodo_selector" required>
+                    <select id="principal_periodo_selector">
                       <option value="">Selecciona un periodo cargado</option>
                       <option value="__new_periodo__">+ Agregar nuevo periodo...</option>
                     </select>
@@ -511,6 +511,21 @@
       </svg>
     </span>
     <span>{% if initial_loader_mode == 'titulares' %}Volver a cédula{% else %}Cargar titulares{% endif %}</span>
+  </a>
+  <a
+    id="loaderOpenObsAdminBtn"
+    class="floating-clear-btn loader-obs-admin-btn"
+    href="{{ url_for('carga_observaciones_admin') }}"
+    data-base-href="{{ url_for('carga_observaciones_admin') }}"
+    aria-label="Abrir edición de observaciones"
+  >
+    <span class="floating-clear-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M5 19H9L18 10L14 6L5 15V19Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M12.8 7.2L16.8 11.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <span data-loader-obs-admin-label>Editar/Borrar obs.</span>
   </a>
   <script>
     const loaderModeButtons = Array.from(document.querySelectorAll("[data-loader-mode-target]"));
@@ -1132,12 +1147,6 @@
           addFuente(option.value || "");
         });
       }
-      (Array.isArray(fuentesDetalleState) ? fuentesDetalleState : []).forEach((row) => {
-        addFuente(row && row.fuente_nombre ? row.fuente_nombre : "");
-      });
-      if (manualFuenteNuevaInput) {
-        addFuente(manualFuenteNuevaInput.value || "");
-      }
       return Array.from(fuenteMap.values()).sort((a, b) => (
         String(a || "").localeCompare(String(b || ""), "es", { sensitivity: "base" })
       ));
@@ -1534,6 +1543,34 @@
       }
     };
 
+    const enforceFuentesDetalleScope = () => {
+      if (!Array.isArray(fuentesDetalleState) || !fuentesDetalleState.length) {
+        return false;
+      }
+      const allowedTipos = getAllowedSourceTipos();
+      if (!allowedTipos.length) {
+        return false;
+      }
+      let changed = false;
+      const nextRows = fuentesDetalleState.map((item) => {
+        const row = item && typeof item === "object" ? { ...item } : {};
+        const currentTipo = String(row.tipo_auditoria || "").trim();
+        const nextTipo = allowedTipos.includes(currentTipo) ? currentTipo : allowedTipos[0];
+        if (nextTipo !== currentTipo) {
+          row.tipo_auditoria = nextTipo;
+          changed = true;
+        }
+        return row;
+      });
+      if (!changed) {
+        return false;
+      }
+      fuentesDetalleState = nextRows;
+      ensurePdpDetalleAlignedToFuentes();
+      syncFuentesDetalleState();
+      return true;
+    };
+
     const updateTitularesOpenLink = () => {
       if (!loaderOpenTitularesBtn || !loaderOpenTitularesBtn.dataset.baseHref) {
         return;
@@ -1855,6 +1892,12 @@
       const nextManualTipo = manualTipoAuditoria ? String(manualTipoAuditoria.value || "").trim() : "";
       if (manualTipoAuditoria && nextManualTipo !== previousManualTipo) {
         manualTipoAuditoria.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      const constrainedRows = enforceFuentesDetalleScope();
+      if (constrainedRows) {
+        renderFuentesDetalleRows();
+        renderResumenFuentes();
+        renderManualReviewSummary();
       }
       const titularScopeTipo = isMixedScopeTipo(tipoAuditoria) ? "" : tipoAuditoria;
       if (syncTitular && titularTipoAuditoria && setFieldValue(titularTipoAuditoria, titularScopeTipo)) {
@@ -2840,16 +2883,43 @@
       }
       const normalizedPdp = ensurePdpDetalleAlignedToFuentes();
       const fuenteCatalog = collectManualFuenteCatalog();
-      const fuenteOptionsHtml = fuenteCatalog
-        .map((fuenteNombre) => `<option value="${escapeHtml(fuenteNombre)}"></option>`)
-        .join("");
       const periodCatalog = collectManualPeriodoCatalog();
       const periodOptionsHtml = periodCatalog
         .map((periodoLabel) => `<option value="${escapeHtml(periodoLabel)}"></option>`)
         .join("");
+      const buildFuenteSelectOptionsHtml = (selectedFuente) => {
+        const selected = normalizeInlineText(selectedFuente || "");
+        const hasSelectedInCatalog = fuenteCatalog.some((item) => (
+          String(item || "").trim().toLowerCase() === selected.toLowerCase()
+        ));
+        const options = [];
+        options.push(`<option value=""${selected ? "" : " selected"}>Selecciona fuente</option>`);
+        if (selected && !hasSelectedInCatalog) {
+          options.push(
+            `<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)}</option>`
+          );
+        }
+        fuenteCatalog.forEach((fuenteNombre) => {
+          const source = normalizeInlineText(fuenteNombre);
+          if (!source) {
+            return;
+          }
+          const isSelected = source.toLowerCase() === selected.toLowerCase();
+          options.push(
+            `<option value="${escapeHtml(source)}"${isSelected ? " selected" : ""}>${escapeHtml(source)}</option>`
+          );
+        });
+        return options.join("");
+      };
       const groupedByTipo = new Map();
+      const allowedTipos = getAllowedSourceTipos();
+      const resolveTipoWithinScope = (value) => {
+        const pool = allowedTipos.length ? allowedTipos : ["Financiera", "Obra Pública"];
+        const normalized = String(value || "").trim();
+        return pool.includes(normalized) ? normalized : pool[0];
+      };
       fuentesDetalleState.forEach((row, rowIndex) => {
-        const tipoKey = String(row && row.tipo_auditoria || "").trim() || "Financiera";
+        const tipoKey = resolveTipoWithinScope(row && row.tipo_auditoria);
         if (!groupedByTipo.has(tipoKey)) {
           groupedByTipo.set(tipoKey, []);
         }
@@ -2857,13 +2927,11 @@
       });
       const orderedTipos = getOrderedResumenTipos(Array.from(groupedByTipo.keys()));
       const grandTotals = { sa: 0, pdp: 0, monto_pdp_emitido: 0, pras: 0, pefcf: 0, r: 0, total: 0 };
-      const allowedTipos = getAllowedSourceTipos();
       const tipoOptionsHtml = (selectedTipo) => {
         const pool = allowedTipos.length ? allowedTipos : ["Financiera", "Obra Pública"];
-        const withSelected = pool.includes(selectedTipo) ? pool : [selectedTipo, ...pool];
-        const unique = Array.from(new Set(withSelected.filter(Boolean)));
-        return unique
-          .map((tipo) => `<option value="${escapeHtml(tipo)}"${tipo === selectedTipo ? " selected" : ""}>${escapeHtml(tipo)}</option>`)
+        const normalizedSelected = pool.includes(selectedTipo) ? selectedTipo : pool[0];
+        return pool
+          .map((tipo) => `<option value="${escapeHtml(tipo)}"${tipo === normalizedSelected ? " selected" : ""}>${escapeHtml(tipo)}</option>`)
           .join("");
       };
       const sectionsHtml = orderedTipos.map((tipoKey, index) => {
@@ -2904,11 +2972,11 @@
           grandTotals.monto_pdp_emitido += rowMontoPdpEmitido;
           return (
             `<tr data-row-index="${rowIndex}">` +
-            `<td>` +
-            `<input type="text" list="manual_resumen_fuentes_options" data-row-field="fuente_nombre" data-row-index="${rowIndex}" value="${escapeHtml(fuenteNombre)}" placeholder="Fuente de financiamiento">` +
-            `<select data-row-field="tipo_auditoria" data-row-index="${rowIndex}" class="manual-resumen-tipo-select">${tipoOptionsHtml(String(row.tipo_auditoria || "Financiera"))}</select>` +
+            `<td class="manual-resumen-cell-fuente">` +
+            `<select data-row-field="fuente_nombre" data-row-index="${rowIndex}">${buildFuenteSelectOptionsHtml(fuenteNombre)}</select>` +
+            `<select data-row-field="tipo_auditoria" data-row-index="${rowIndex}" class="manual-resumen-tipo-select">${tipoOptionsHtml(resolveTipoWithinScope(row.tipo_auditoria))}</select>` +
             `</td>` +
-            `<td>` +
+            `<td class="manual-resumen-cell-periodo">` +
             `<input type="text" list="manual_resumen_periodos_options" data-row-field="periodo" data-row-index="${rowIndex}" value="${escapeHtml(periodo)}" placeholder="Periodo">` +
             `<small class="manual-resumen-inline-help">Elige un periodo cargado o escribe uno nuevo.</small>` +
             `</td>` +
@@ -2933,8 +3001,8 @@
           `<table>` +
           `<thead>` +
           `<tr>` +
-          `<th>Nombre de la Fuente de Financiamiento</th>` +
-          `<th>Periodo</th>` +
+          `<th class="manual-resumen-col-fuente">Nombre de la Fuente de Financiamiento</th>` +
+          `<th class="manual-resumen-col-periodo">Periodo</th>` +
           `<th>SA</th>` +
           `<th>PDP</th>` +
           `<th>PRAS</th>` +
@@ -2975,20 +3043,10 @@
         `</div>` +
         `</div>`
       );
-      const fuenteCatalogText = fuenteCatalog.length
-        ? fuenteCatalog.map((fuenteNombre) => escapeHtml(fuenteNombre)).join(" · ")
-        : "Sin fuentes cargadas previas.";
-      const periodCatalogText = periodCatalog.length
-        ? periodCatalog.map((periodoLabel) => escapeHtml(periodoLabel)).join(" · ")
-        : "Sin periodos cargados previos.";
       manualResumenContainer.innerHTML =
         `<div class="manual-resumen-actions-top">` +
         `<button type="button" class="btn-secondary btn-compact" data-summary-add>Agregar fuente</button>` +
-        `<p class="helper">Edita, elimina y detalla PDP sin salir de la tabla.</p>` +
         `</div>` +
-        `<p class="helper manual-resumen-catalog">Fuentes de Financiamiento cargadas: ${fuenteCatalogText}</p>` +
-        `<p class="helper manual-resumen-catalog">Periodos cargados: ${periodCatalogText}</p>` +
-        `<datalist id="manual_resumen_fuentes_options">${fuenteOptionsHtml}</datalist>` +
         `<datalist id="manual_resumen_periodos_options">${periodOptionsHtml}</datalist>` +
         sectionsHtml +
         grandTotalHtml;
