@@ -2199,8 +2199,37 @@
         manualResumenContainer.innerHTML = '<p class="helper">Agrega fuentes para generar el resumen.</p>';
         return;
       }
+      const showMontoPdpEmitido = currentUserName === "gabo";
       const groupedMap = new Map();
       const orderedTipos = [];
+      const buildFuenteResumenKey = (item) => {
+        const tipo = String((item && item.tipo_auditoria) || "").trim().toLowerCase();
+        const fuente = String((item && item.fuente_nombre) || "").trim().toLowerCase();
+        const periodo = normalizePeriodoValue(String((item && item.periodo) || "")).toLowerCase();
+        return `${tipo}||${fuente}||${periodo}`;
+      };
+      const montoPdpByFuenteKey = new Map();
+      if (showMontoPdpEmitido) {
+        const totalPdpFuentes = getTotalPdpFromFuentes();
+        const normalizedPdp = normalizePdpDetalleState(
+          totalPdpFuentes,
+          pdpDetalleState.length ? pdpDetalleState : parsePdpDetalleState(),
+        );
+        let pdpOffset = 0;
+        fuentesDetalleState.forEach((item) => {
+          const pdpCount = Math.max(0, Number.parseInt(String(item.cantidad_pdp || 0), 10) || 0);
+          let montoFuente = 0;
+          for (let idx = 0; idx < pdpCount; idx += 1) {
+            const detail = normalizedPdp[pdpOffset + idx] || {};
+            const monto = parseMoneyInput(detail.monto);
+            if (monto !== null) {
+              montoFuente += monto;
+            }
+          }
+          pdpOffset += pdpCount;
+          montoPdpByFuenteKey.set(buildFuenteResumenKey(item), montoFuente);
+        });
+      }
       fuentesDetalleState.forEach((item) => {
         const tipoKey = String(item.tipo_auditoria || "").trim() || "Sin tipo";
         if (!groupedMap.has(tipoKey)) {
@@ -2253,6 +2282,47 @@
             );
           })
           .join("");
+        const montoPdpRows = showMontoPdpEmitido
+          ? rows.map((item) => {
+            const key = buildFuenteResumenKey(item);
+            const monto = Number(montoPdpByFuenteKey.get(key) || 0);
+            return {
+              fuente: String(item.fuente_nombre || "").trim(),
+              monto,
+            };
+          })
+          : [];
+        const totalMontoPdp = montoPdpRows.reduce((sum, item) => sum + item.monto, 0);
+        const montoPdpRowsHtml = montoPdpRows
+          .map((item) => (
+            `<tr>` +
+            `<td>${escapeHtml(item.fuente || "")}</td>` +
+            `<td>${escapeHtml(formatMoney(item.monto))}</td>` +
+            `</tr>`
+          ))
+          .join("");
+        const montoPdpSectionHtml = showMontoPdpEmitido
+          ? (
+            `<div class="manual-resumen-table-wrapper">` +
+            `<h5>Monto PDP Emitido</h5>` +
+            `<table>` +
+            `<thead>` +
+            `<tr>` +
+            `<th>Nombre de la Fuente de Financiamiento</th>` +
+            `<th>Monto PDP Emitido</th>` +
+            `</tr>` +
+            `</thead>` +
+            `<tbody>${montoPdpRowsHtml}</tbody>` +
+            `<tfoot>` +
+            `<tr class="manual-resumen-total">` +
+            `<th>Total Monto PDP Emitido</th>` +
+            `<th>${escapeHtml(formatMoney(totalMontoPdp))}</th>` +
+            `</tr>` +
+            `</tfoot>` +
+            `</table>` +
+            `</div>`
+          )
+          : "";
         const label = formatResumenTipoLabel(tipoKey, index);
         return (
           `<div class="manual-resumen-section">` +
@@ -2285,6 +2355,7 @@
           `</tfoot>` +
           `</table>` +
           `</div>` +
+          montoPdpSectionHtml +
           `</div>`
         );
       }).join("");
@@ -2920,6 +2991,7 @@
       if (!pdpDetalleState.length) {
         manualPdpBreakdown.innerHTML = "";
         renderManualReviewSummary();
+        renderResumenFuentes();
         return;
       }
       const resumen = pdpDetalleState.reduce((acc, item) => {
@@ -2998,6 +3070,7 @@
         `</div>` +
         `<div class="loader-pdp-accordion-list">${cards}</div>`;
       renderManualReviewSummary();
+      renderResumenFuentes();
     };
 
     const getTotalPdpFromFuentes = () => (

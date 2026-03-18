@@ -2477,6 +2477,10 @@ tbody tr:hover td {
   margin: 0;
 }
 
+.loader-fuente-editor-grid .field {
+  width: 100%;
+}
+
 .loader-fuente-editor-grid > #manual_fuente_nueva_wrap {
   grid-column: 1 / -1;
   max-width: 420px;
