@@ -151,18 +151,6 @@
               </div>
             </section>
           </div>
-          <div class="loader-expediente-status-card loader-expediente-status-inline">
-            <div class="loader-expediente-status-head">
-              <span class="loader-current-mode-label">Resumen rápido</span>
-              <strong>Oficio en captura</strong>
-            </div>
-            <div class="loader-preview-metrics loader-principal-metrics">
-              <span class="loader-obs-chip">Fuentes guardadas: <strong id="manualFuentesTotal">0</strong></span>
-              <span class="loader-obs-chip">Observaciones: <strong id="manualTotalObservaciones">0</strong></span>
-              <span class="loader-obs-chip">PDP: <strong id="manualTotalPdp">0</strong></span>
-              <span class="loader-obs-chip">Monto PDP: <strong id="manualTotalPdpMonto">$0.00</strong></span>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -415,13 +403,6 @@
               </div>
             </div>
 
-            <section class="loader-manual-subsection loader-summary-card loader-summary-card-compact" id="manualResumenFuentesSection">
-              <h3>Resumen antes de guardar</h3>
-              <div id="manualResumenFuentesBody" class="manual-resumen-table">
-                <p class="helper">Agrega fuentes para generar el resumen.</p>
-              </div>
-            </section>
-
             <aside class="loader-capture-aside" id="manualCaptureAside">
               <button
                 type="button"
@@ -487,6 +468,15 @@
               </section>
             </aside>
           </div>
+
+            <section class="loader-manual-subsection loader-summary-card loader-summary-card-compact" id="manualResumenFuentesSection">
+              <h3>Resumen antes de guardar</h3>
+              <div id="manualResumenFuentesBody" class="manual-resumen-table">
+                <p class="helper">Fuentes capturadas</p>
+                <p class="helper">Sin fuentes registradas.</p>
+                <p class="helper">Agrega fuentes para generar el resumen.</p>
+              </div>
+            </section>
 
           <div class="loader-step-nav loader-step-nav-submit">
             <button class="btn-primary" type="submit" name="action" value="manual_save" id="manualSaveBtn">Guardar oficio</button>
@@ -767,10 +757,6 @@
     const manualAsideObsSummary = document.getElementById("manualAsideObsSummary");
     const manualAsidePdpSummary = document.getElementById("manualAsidePdpSummary");
     const manualAsideActivaSummary = document.getElementById("manualAsideActivaSummary");
-    const manualFuentesTotal = document.getElementById("manualFuentesTotal");
-    const manualTotalObservaciones = document.getElementById("manualTotalObservaciones");
-    const manualTotalPdp = document.getElementById("manualTotalPdp");
-    const manualTotalPdpMonto = document.getElementById("manualTotalPdpMonto");
     const manualFuentesDetalleFeedback = document.getElementById("manual_fuentes_detalle_feedback");
     const manualReviewChecklist = document.getElementById("manualReviewChecklist");
     const manualTipoScopeHint = document.getElementById("manual_tipo_scope_hint");
@@ -2244,18 +2230,6 @@
           + Number(item.cantidad_r || 0),
         0,
       );
-      if (manualFuentesTotal) {
-        manualFuentesTotal.textContent = String(fuentesDetalleState.length);
-      }
-      if (manualTotalObservaciones) {
-        manualTotalObservaciones.textContent = String(totalObs);
-      }
-      if (manualTotalPdp) {
-        manualTotalPdp.textContent = String(getTotalPdpTargetCount());
-      }
-      if (manualTotalPdpMonto) {
-        manualTotalPdpMonto.textContent = formatMoney(getTotalPdpMonto());
-      }
       renderFuentesProgress();
       if (!fuentesDetalleState.length) {
         manualFuentesDetalleList.innerHTML = '<p class="muted">Sin fuentes registradas.</p>';
@@ -2328,7 +2302,10 @@
         return;
       }
       if (!fuentesDetalleState.length) {
-        manualResumenContainer.innerHTML = '<p class="helper">Agrega fuentes para generar el resumen.</p>';
+        manualResumenContainer.innerHTML =
+          '<p class="helper">Fuentes capturadas</p>'
+          + '<p class="helper">Sin fuentes registradas.</p>'
+          + '<p class="helper">Agrega fuentes para generar el resumen.</p>';
         return;
       }
       const groupedMap = new Map();
@@ -3035,9 +3012,6 @@
       }
       if (!pdpDetalleState.length) {
         manualPdpBreakdown.innerHTML = "";
-        if (manualTotalPdpMonto) {
-          manualTotalPdpMonto.textContent = formatMoney(0);
-        }
         renderManualReviewSummary();
         return;
       }
@@ -3116,9 +3090,6 @@
         `<span class="loader-obs-chip">Monto total PDP: <strong>${escapeHtml(formatMoney(resumen.totalMonto))}</strong></span>` +
         `</div>` +
         `<div class="loader-pdp-accordion-list">${cards}</div>`;
-      if (manualTotalPdpMonto) {
-        manualTotalPdpMonto.textContent = formatMoney(resumen.totalMonto);
-      }
       renderManualReviewSummary();
     };
 
