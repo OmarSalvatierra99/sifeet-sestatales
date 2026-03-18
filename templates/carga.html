@@ -127,23 +127,6 @@
                     <input id="principal_fecha_notificacion" type="date" value="{{ form_data.manual_fecha_notificacion }}" required>
                   </div>
                 </div>
-                <div class="field loader-periodo-picker-field">
-                  <label for="principal_periodo_selector">Periodo</label>
-                  <select id="principal_periodo_selector" required>
-                    <option value="">Selecciona un periodo cargado</option>
-                    <option value="__new_periodo__">+ Agregar nuevo periodo...</option>
-                  </select>
-                  <div id="principal_periodo_nuevo_wrap" style="display:none;">
-                    <input
-                      id="principal_periodo_nuevo"
-                      type="text"
-                      value="{{ form_data.manual_periodo }}"
-                      placeholder="Ej. 01 de enero al 31 de diciembre"
-                      aria-label="Nuevo periodo del oficio"
-                    >
-                  </div>
-                  <input id="principal_periodo" type="hidden" value="{{ form_data.manual_periodo }}">
-                </div>
                 <div class="field">
                   <label for="principal_fuentes_objetivo">Fuentes previstas</label>
                   <input id="principal_fuentes_objetivo" type="number" min="1" step="1" value="{{ form_data.manual_fuentes_objetivo or '1' }}">
@@ -228,35 +211,28 @@
                     <h3 id="manualStep1Title">Contexto activo</h3>
                   </div>
                 </div>
-                <div class="loader-context-summary-grid">
-                  <article class="loader-context-summary-block loader-context-summary-block-primary">
-                    <span class="loader-context-summary-label">Ente</span>
-                    <strong id="manualContextSummaryEnte">-</strong>
-                    <div class="loader-context-inline">
-                      <span>Ejercicio <strong id="manualContextSummaryEjercicio">-</strong></span>
-                      <span>Alcance <strong id="manualContextSummaryTipo">-</strong></span>
-                    </div>
-                  </article>
-                  <article class="loader-context-summary-block">
-                    <span class="loader-context-summary-label">Oficio</span>
-                    <strong id="manualContextSummaryOficio">-</strong>
-                    <div class="loader-context-inline">
-                      <span>Fecha <strong id="manualContextSummaryFecha">-</strong></span>
-                    </div>
-                  </article>
-                  <article class="loader-context-summary-block">
-                    <span class="loader-context-summary-label">Fuente</span>
-                    <strong id="manualContextSummaryFuente">-</strong>
-                    <div class="loader-context-inline">
-                      <span>Meta <strong id="manualContextSummaryFuentes">-</strong> fuentes</span>
-                    </div>
-                  </article>
+              <div class="loader-context-summary-grid">
+                <article class="loader-context-summary-block loader-context-summary-block-primary">
+                  <span class="loader-context-summary-label">Ente</span>
+                  <strong id="manualContextSummaryEnte">-</strong>
+                  <div class="loader-context-inline">
+                    <span>Ejercicio <strong id="manualContextSummaryEjercicio">-</strong></span>
+                    <span>Alcance <strong id="manualContextSummaryTipo">-</strong></span>
+                  </div>
+                </article>
+                <article class="loader-context-summary-block">
+                  <span class="loader-context-summary-label">Oficio</span>
+                  <strong id="manualContextSummaryOficio">-</strong>
+                  <div class="loader-context-inline">
+                    <span>Fecha de notificación <strong id="manualContextSummaryFecha">-</strong></span>
+                  </div>
+                </article>
                 </div>
-                <p class="helper" id="manual_context_status"></p>
-              </div>
+              <p class="helper" id="manual_context_status"></p>
+            </div>
 
-              <div
-                class="loader-manual-subsection loader-fuente-subsection loader-fuente-subsection-compact"
+            <div
+              class="loader-manual-subsection loader-fuente-subsection loader-fuente-subsection-compact"
                 id="manual-cantidades-cedula"
                 style="{% if form_data.manual_asunto != 'Notificación de Cédula de Resultados' %}display:none;{% endif %}"
               >
@@ -281,14 +257,28 @@
                     </select>
                   </div>
                   <div class="field" id="manual_periodo_field">
-                    <label for="manual_periodo">Periodo</label>
+                    <label for="principal_periodo_selector">Periodo</label>
+                    <select id="principal_periodo_selector" required>
+                      <option value="">Selecciona un periodo cargado</option>
+                      <option value="__new_periodo__">+ Agregar nuevo periodo...</option>
+                    </select>
+                    <div id="principal_periodo_nuevo_wrap" style="display:none;">
+                      <input
+                        id="principal_periodo_nuevo"
+                        type="text"
+                        value="{{ form_data.manual_periodo }}"
+                        placeholder="Ej. 01 de enero al 31 de diciembre"
+                        aria-label="Nuevo periodo del oficio"
+                      >
+                    </div>
+                    <input id="principal_periodo" type="hidden" value="{{ form_data.manual_periodo }}">
                     <input
                       id="manual_periodo"
                       name="manual_periodo"
                       type="text"
                       value="{{ form_data.manual_periodo }}"
                       list="manual_periodo_options"
-                      required
+                      data-synced
                     >
                     <datalist id="manual_periodo_options"></datalist>
                   </div>
@@ -760,10 +750,8 @@
     const manualContextSummaryEjercicio = document.getElementById("manualContextSummaryEjercicio");
     const manualContextSummaryEnte = document.getElementById("manualContextSummaryEnte");
     const manualContextSummaryTipo = document.getElementById("manualContextSummaryTipo");
-    const manualContextSummaryFuente = document.getElementById("manualContextSummaryFuente");
     const manualContextSummaryOficio = document.getElementById("manualContextSummaryOficio");
     const manualContextSummaryFecha = document.getElementById("manualContextSummaryFecha");
-    const manualContextSummaryFuentes = document.getElementById("manualContextSummaryFuentes");
     const manualResumenContainer = document.getElementById("manualResumenFuentesBody");
     let isSyncingContextFields = false;
     const MIXED_TIPO_AUDITORIA = "Financiera y Obra Pública";
@@ -1441,17 +1429,11 @@
       if (titularContextSummaryTipo) {
         titularContextSummaryTipo.textContent = String(principalTipoAuditoria ? principalTipoAuditoria.value || "-" : "-");
       }
-      if (manualContextSummaryFuente) {
-        manualContextSummaryFuente.textContent = fuenteLabel;
-      }
       if (manualContextSummaryOficio) {
         manualContextSummaryOficio.textContent = String(principalNumeroOficio ? principalNumeroOficio.value || "-" : "-");
       }
       if (manualContextSummaryFecha) {
         manualContextSummaryFecha.textContent = formatFechaForSummary(principalFechaNotificacion ? principalFechaNotificacion.value : "");
-      }
-      if (manualContextSummaryFuentes) {
-        manualContextSummaryFuentes.textContent = String(principalFuentesObjetivo ? principalFuentesObjetivo.value || "-" : "-");
       }
       updateTitularesOpenLink();
       updateObsAdminOpenLink();
