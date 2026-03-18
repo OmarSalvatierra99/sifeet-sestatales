@@ -502,6 +502,10 @@
         warning: "#B18934",
       };
       const resumenTiposOrden = ["SA", "PDP", "PRAS", "PEFCF", "R"];
+      const getResumenTipoRank = (tipo) => {
+        const index = resumenTiposOrden.indexOf(tipo);
+        return index === -1 ? Number.POSITIVE_INFINITY : index;
+      };
       const createEmptyDashboardSummary = () => ({
         tipos: [],
         totals: { emitidas: 0, solventadas: 0, pendientes: 0 },
@@ -1391,24 +1395,22 @@
         if (!summaryStaticStackedBarCanvas) {
           return;
         }
-        const safeRows = (Array.isArray(rows) ? rows : [])
-          .map((row) => ({
-            tipo_anexo: row.tipo_anexo || "Sin tipo",
-            emitidas: Number(row.emitidas || 0),
-            solventadas: Number(row.solventadas || 0),
-            pendientes: Number(row.pendientes || 0),
-          }))
-          .filter((row) => row.emitidas > 0)
-          .sort((a, b) => {
-            const rankA = resumenTiposOrden.indexOf(a.tipo_anexo);
-            const rankB = resumenTiposOrden.indexOf(b.tipo_anexo);
-            if (rankA !== rankB) {
-              const aPos = rankA === -1 ? Number.POSITIVE_INFINITY : rankA;
-              const bPos = rankB === -1 ? Number.POSITIVE_INFINITY : rankB;
-              return aPos - bPos;
-            }
-            return String(a.tipo_anexo).localeCompare(String(b.tipo_anexo));
-          });
+          const safeRows = (Array.isArray(rows) ? rows : [])
+            .map((row) => ({
+              tipo_anexo: row.tipo_anexo || "Sin tipo",
+              emitidas: Number(row.emitidas || 0),
+              solventadas: Number(row.solventadas || 0),
+              pendientes: Number(row.pendientes || 0),
+            }))
+            .filter((row) => row.emitidas > 0)
+            .sort((a, b) => {
+              const rankA = getResumenTipoRank(a.tipo_anexo);
+              const rankB = getResumenTipoRank(b.tipo_anexo);
+              if (rankA !== rankB) {
+                return rankA - rankB;
+              }
+              return String(a.tipo_anexo).localeCompare(String(b.tipo_anexo));
+            });
         const labels = safeRows.map((row) => row.tipo_anexo);
         const emitidas = safeRows.map((row) => row.emitidas);
         const solventadasAbs = safeRows.map((row) => row.solventadas);
@@ -1802,7 +1804,15 @@
 
         if (summaryTipoAnexo) {
           summaryTipoAnexo.innerHTML = "<option value=\"\">Todos</option>";
-          tipos.forEach((item) => {
+          const tiposOrdenados = tipos.slice().sort((a, b) => {
+            const rankA = getResumenTipoRank(a);
+            const rankB = getResumenTipoRank(b);
+            if (rankA !== rankB) {
+              return rankA - rankB;
+            }
+            return String(a).localeCompare(String(b));
+          });
+          tiposOrdenados.forEach((item) => {
             const option = document.createElement("option");
             option.value = item;
             option.textContent = item;
@@ -1877,11 +1887,9 @@
               },
             ])
             .sort((a, b) => {
-              const indexA = resumenTiposOrden.indexOf(a[0]);
-              const indexB = resumenTiposOrden.indexOf(b[0]);
-              if (indexA !== indexB) {
-                const rankA = indexA === -1 ? Number.POSITIVE_INFINITY : indexA;
-                const rankB = indexB === -1 ? Number.POSITIVE_INFINITY : indexB;
+              const rankA = getResumenTipoRank(a[0]);
+              const rankB = getResumenTipoRank(b[0]);
+              if (rankA !== rankB) {
                 return rankA - rankB;
               }
               return a[0].localeCompare(b[0]);
