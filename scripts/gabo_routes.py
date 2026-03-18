@@ -1516,13 +1516,16 @@ def register_gabo_routes(app, deps):
             cantidad_pras = parse_non_negative_int(str(item.get("cantidad_pras", "0")), "Cantidad PRAS")
             cantidad_pefcf = parse_non_negative_int(str(item.get("cantidad_pefcf", "0")), "Cantidad PEFCF")
             cantidad_r = parse_non_negative_int(str(item.get("cantidad_r", "0")), "Cantidad R")
+            periodo = " ".join(str(item.get("periodo") or "").split())
+            if not periodo:
+                continue
             if (cantidad_sa + cantidad_pdp + cantidad_pras + cantidad_pefcf + cantidad_r) <= 0:
                 continue
             rows.append(
                 {
                     "fuente_nombre": fuente_nombre,
                     "tipo_auditoria": tipo_auditoria,
-                    "periodo": " ".join(str(item.get("periodo") or "").split()),
+                    "periodo": periodo,
                     "cantidad_sa": cantidad_sa,
                     "cantidad_pdp": cantidad_pdp,
                     "cantidad_pras": cantidad_pras,
@@ -1766,37 +1769,30 @@ def register_gabo_routes(app, deps):
         if not ente_row:
             return jsonify({"ok": False, "message": "El ente seleccionado no existe para ese ejercicio."}), 404
 
-        try:
-            fuente_id, fuente_nombre_final = resolve_fuente_catalogo(
-                db,
-                fuente_nombre,
-                create_missing=True,
-            )
-            if fuente_id is None:
-                raise ValueError("No se pudo registrar la fuente.")
-            register_fuente_for_ente(
-                db,
-                ejercicio=ejercicio,
-                ente_id_norm=ente_id,
-                fuente_id=fuente_id,
-                tipo_auditoria=tipo_auditoria,
-                created_by=user["username"],
-            )
-            db.commit()
-        except ValueError as exc:
-            db.rollback()
-            return jsonify({"ok": False, "message": str(exc)}), 400
-        except Exception:
-            db.rollback()
-            return jsonify({"ok": False, "message": "No se pudo registrar la fuente."}), 500
+        existing_fuente = db.execute(
+            """
+            SELECT id, TRIM(COALESCE(nombre, '')) AS nombre
+            FROM fuentes_financiamiento
+            WHERE LOWER(TRIM(nombre)) = LOWER(TRIM(?))
+            LIMIT 1
+            """,
+            (fuente_nombre,),
+        ).fetchone()
+        if existing_fuente:
+            fuente_id_value = str(int(existing_fuente["id"]))
+            fuente_nombre_final = (existing_fuente["nombre"] or "").strip()
+        else:
+            fuente_id_value = f"__obs__:{fuente_nombre}"
+            fuente_nombre_final = fuente_nombre
 
         return jsonify(
             {
                 "ok": True,
-                "id": str(fuente_id),
+                "id": fuente_id_value,
                 "nombre": fuente_nombre_final,
                 "ente_id": ente_id,
                 "tipo_auditoria": tipo_auditoria,
+                "deferred_save": True,
             }
         )
 
@@ -2931,6 +2927,13 @@ def register_gabo_routes(app, deps):
                     raw_montos_pdp = form_data["manual_montos_pdp"]
                     raw_pdp_detalle_json = form_data["manual_pdp_detalle_json"]
                     fuentes_detalle_rows = parse_manual_fuentes_detalle(form_data["manual_fuentes_detalle_json"])
+                    usa_fuentes_detalle = (
+                        asunto == "Notificación de Cédula de Resultados"
+                        and len(fuentes_detalle_rows) > 0
+                    )
+                    if usa_fuentes_detalle and not periodo:
+                        periodo = " ".join((fuentes_detalle_rows[0].get("periodo") or "").split())
+                        form_data["manual_periodo"] = periodo
                     manual_edit_id = None
                     if manual_id_raw:
                         try:
@@ -2967,10 +2970,6 @@ def register_gabo_routes(app, deps):
                         backup_path = _create_db_snapshot("carga-manual-save")
                     fuente_id = None
                     fuente_nombre = ""
-                    usa_fuentes_detalle = (
-                        asunto == "Notificación de Cédula de Resultados"
-                        and len(fuentes_detalle_rows) > 0
-                    )
                     if manual_edit_id:
                         edit_scope_row = db.execute(
                             """
@@ -3100,6 +3099,12 @@ def register_gabo_routes(app, deps):
                             first_row = fuentes_detalle_rows[0]
                             tipo_auditoria = str(first_row["tipo_auditoria"])
                             form_data["manual_tipo_auditoria"] = tipo_auditoria
+                            periodo_fuente = " ".join((first_row.get("periodo") or "").split())
+                            if not periodo_fuente:
+                                raise ValueError("Cada fuente debe incluir periodo.")
+                            periodo = periodo_fuente
+                            form_data["manual_periodo"] = periodo_fuente
+                            periodo_titular = periodo_fuente
                             cantidad_sa = int(first_row["cantidad_sa"])
                             cantidad_pdp = int(first_row["cantidad_pdp"])
                             cantidad_pras = int(first_row["cantidad_pras"])
@@ -3559,7 +3564,10 @@ def register_gabo_routes(app, deps):
                                         fuentes_detalle_rows[1:], start=1
                                     ):
                                         extra_fuente_nombre = " ".join(str(extra_row["fuente_nombre"]).split())
+                                        extra_periodo = " ".join(str(extra_row.get("periodo") or "").split())
                                         if not extra_fuente_nombre:
+                                            continue
+                                        if not extra_periodo:
                                             continue
                                         extra_fuente_db = db.execute(
                                             """
@@ -3610,7 +3618,7 @@ def register_gabo_routes(app, deps):
                                                     asunto,
                                                     ejercicio,
                                                     extra_fuente_id,
-                                                    periodo,
+                                                    extra_periodo,
                                                     extra_tipo_item,
                                                 ),
                                             ).fetchone()
@@ -3691,8 +3699,8 @@ def register_gabo_routes(app, deps):
                                                     ejercicio,
                                                     extra_fuente_id,
                                                     extra_fuente_nombre,
-                                                    periodo,
-                                                    periodo_titular,
+                                                    extra_periodo,
+                                                    extra_periodo,
                                                     fecha_notificacion,
                                                     ramo_33,
                                                     estado,
@@ -3721,8 +3729,8 @@ def register_gabo_routes(app, deps):
                                                 fuente_nombre=extra_fuente_nombre,
                                                 ramo_33=ramo_33,
                                                 estado=estado,
-                                                periodo_cedula=periodo,
-                                                periodo_titular=periodo_titular,
+                                                periodo_cedula=extra_periodo,
+                                                periodo_titular=extra_periodo,
                                                 oficio=numero_oficio,
                                                 fecha_notificacion=fecha_notificacion,
                                                 cantidad_sa=cantidad_sa_extra,
