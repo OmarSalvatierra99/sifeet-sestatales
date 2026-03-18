@@ -4385,6 +4385,14 @@ tbody tr:hover td {
   border-top: 2px solid #bad2c3;
 }
 
+.obs-admin-amount-table th:nth-child(n+3),
+.obs-admin-amount-table td:nth-child(n+3),
+.obs-admin-money-cell {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 .loader-obs-table.obs-admin-table thead th {
   border-right: 1px solid #d7e3db;
   border-bottom: 1px solid #c8d8cd;

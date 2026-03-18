@@ -94,6 +94,16 @@
         </div>
       </section>
 
+      <section class="obs-admin-summary-card" id="obsAdminAmountCard">
+        <div class="panel-header panel-header-compact">
+          <h3>Resumen de montos por fuente y periodo</h3>
+          <p>Monto emitido, solventado y pendiente por bloque.</p>
+        </div>
+        <div id="obsAdminAmountSummaryBody" class="obs-admin-summary-body">
+          <p class="muted">Selecciona Ejercicio, Ente y Oficio para ver montos.</p>
+        </div>
+      </section>
+
       <div id="obsAdminStatus" class="status status-info" hidden></div>
 
       <div class="table-meta">
@@ -156,6 +166,7 @@
     const safetyModeChip = document.getElementById("obsAdminSafetyModeChip");
     const safetyScopeChip = document.getElementById("obsAdminSafetyScopeChip");
     const summaryBody = document.getElementById("obsAdminSummaryBody");
+    const amountSummaryBody = document.getElementById("obsAdminAmountSummaryBody");
 
     let allRows = [];
     let filteredRows = [];
@@ -627,6 +638,95 @@
       summaryBody.innerHTML = sectionsHtml;
     };
 
+    const renderAmountSummaryByFuentePeriodo = (rows) => {
+      if (!amountSummaryBody) {
+        return;
+      }
+      const safeRows = Array.isArray(rows) ? rows : [];
+      if (!safeRows.length) {
+        amountSummaryBody.innerHTML = '<p class="muted">Sin montos para mostrar.</p>';
+        return;
+      }
+
+      const grouped = new Map();
+      safeRows.forEach((row) => {
+        const fuente = String(row.fuente_financiamiento || "").trim() || "-";
+        const periodo = String(row.periodo_cedula || "").trim() || "-";
+        const key = `${fuente.toLowerCase()}||${periodo.toLowerCase()}`;
+        if (!grouped.has(key)) {
+          grouped.set(key, {
+            fuente,
+            periodo,
+            emitido: 0,
+            solventado: 0,
+            pendiente: 0,
+          });
+        }
+        const target = grouped.get(key);
+        const emitido = Number.parseFloat(String(row.monto_pdp_emitido || "0"));
+        const solventado = Number.parseFloat(String(row.monto_pdp_solventado || "0"));
+        const pendienteRaw = Number.parseFloat(String(row.monto_pdp_pendiente || "0"));
+        const safeEmitido = Number.isFinite(emitido) && emitido > 0 ? emitido : 0;
+        const safeSolventado = Number.isFinite(solventado) && solventado > 0 ? solventado : 0;
+        const safePendiente = Number.isFinite(pendienteRaw)
+          ? Math.max(0, pendienteRaw)
+          : Math.max(0, safeEmitido - safeSolventado);
+        target.emitido += safeEmitido;
+        target.solventado += safeSolventado;
+        target.pendiente += safePendiente;
+      });
+
+      const rowsData = Array.from(grouped.values()).sort((a, b) => {
+        const fuenteCmp = a.fuente.localeCompare(b.fuente, "es", { sensitivity: "base" });
+        if (fuenteCmp !== 0) {
+          return fuenteCmp;
+        }
+        return a.periodo.localeCompare(b.periodo, "es", { sensitivity: "base" });
+      });
+
+      const totals = rowsData.reduce((acc, item) => {
+        acc.emitido += item.emitido;
+        acc.solventado += item.solventado;
+        acc.pendiente += item.pendiente;
+        return acc;
+      }, { emitido: 0, solventado: 0, pendiente: 0 });
+
+      const rowsHtml = rowsData.map((item) => (
+        `<tr>` +
+        `<td>${escapeHtml(item.fuente)}</td>` +
+        `<td>${escapeHtml(item.periodo)}</td>` +
+        `<td class="obs-admin-money-cell"><strong>${escapeHtml(formatMoney(item.emitido))}</strong></td>` +
+        `<td class="obs-admin-money-cell"><strong>${escapeHtml(formatMoney(item.solventado))}</strong></td>` +
+        `<td class="obs-admin-money-cell"><strong>${escapeHtml(formatMoney(item.pendiente))}</strong></td>` +
+        `</tr>`
+      )).join("");
+
+      const totalHtml = (
+        `<tr class="obs-admin-summary-total">` +
+        `<th colspan="2">TOTAL GENERAL</th>` +
+        `<th class="obs-admin-money-cell">${escapeHtml(formatMoney(totals.emitido))}</th>` +
+        `<th class="obs-admin-money-cell">${escapeHtml(formatMoney(totals.solventado))}</th>` +
+        `<th class="obs-admin-money-cell">${escapeHtml(formatMoney(totals.pendiente))}</th>` +
+        `</tr>`
+      );
+
+      amountSummaryBody.innerHTML =
+        `<div class="obs-admin-summary-table-wrap">` +
+        `<table class="obs-admin-summary-table obs-admin-amount-table">` +
+        `<thead>` +
+        `<tr>` +
+        `<th>Nombre de la Fuente de Financiamiento</th>` +
+        `<th>Periodo</th>` +
+        `<th>Monto emitido</th>` +
+        `<th>Monto solventado</th>` +
+        `<th>Monto pendiente</th>` +
+        `</tr>` +
+        `</thead>` +
+        `<tbody>${rowsHtml}${totalHtml}</tbody>` +
+        `</table>` +
+        `</div>`;
+    };
+
     const updateRowVisualState = (row) => {
       if (!(row instanceof HTMLElement)) {
         return;
@@ -780,6 +880,7 @@
       filteredRows = Array.isArray(allRows) ? allRows.slice() : [];
       renderRows(filteredRows);
       renderSummaryByOficio(filteredRows);
+      renderAmountSummaryByFuentePeriodo(filteredRows);
       updateMetrics(filteredRows);
       if (countLabel) {
         countLabel.textContent = `${filteredRows.length} observaciones.`;
@@ -801,6 +902,9 @@
         renderEmptyRow("Selecciona un ente y un oficio para consultar observaciones de un solo oficio.");
         if (summaryBody) {
           summaryBody.innerHTML = '<p class="muted">Selecciona un ente y un oficio para ver el resumen.</p>';
+        }
+        if (amountSummaryBody) {
+          amountSummaryBody.innerHTML = '<p class="muted">Selecciona un ente y un oficio para ver montos.</p>';
         }
         if (countLabel) {
           countLabel.textContent = "Selecciona un ente y un oficio; la consulta es automática.";
@@ -834,6 +938,9 @@
         renderEmptyRow("No se pudieron consultar las observaciones.");
         if (summaryBody) {
           summaryBody.innerHTML = '<p class="muted">No se pudo construir el resumen con los filtros actuales.</p>';
+        }
+        if (amountSummaryBody) {
+          amountSummaryBody.innerHTML = '<p class="muted">No se pudo construir el resumen de montos.</p>';
         }
         if (countLabel) {
           countLabel.textContent = "Sin resultados.";
