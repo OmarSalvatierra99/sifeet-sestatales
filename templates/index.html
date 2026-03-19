@@ -248,67 +248,67 @@
             <span>Exportar a Excel</span>
           </button>
         </div>
-        <div class="obs-responsables" id="obsResponsables" hidden>
-          <h3>Titulares y administrativos del periodo</h3>
-          <div class="table-wrap">
-            <table class="table-compact obs-responsables-table">
-              <thead id="obsResponsablesHead">
-                <tr>
-                  <th rowspan="2">No</th>
-                  <th rowspan="2">Ente Fiscalizable</th>
-                  <th rowspan="2">Periodos Informe</th>
-                  <th rowspan="2">Titular</th>
-                  <th rowspan="2">Periodos Administrativo / Responsable de<br>Obra</th>
-                  <th rowspan="2">Administrativo / Encargado de<br>Obra</th>
-                  <th rowspan="2">Periodo<br>Cédula</th>
-                  <th colspan="7">EMITIDAS</th>
-                  <th colspan="7">SOLVENTADAS</th>
-                  <th colspan="7">PENDIENTES</th>
-                </tr>
-                <tr>
-                  <th>R</th>
-                  <th>SA</th>
-                  <th>PDP</th>
-                  <th>PRAS</th>
-                  <th>PECFF</th>
-                  <th>Emitidas</th>
-                  <th>Monto Daño ($)</th>
-                  <th>R</th>
-                  <th>SA</th>
-                  <th>PO</th>
-                  <th>PRAS</th>
-                  <th>PECFF</th>
-                  <th>Solventadas</th>
-                  <th>Monto Daño ($)</th>
-                  <th>R</th>
-                  <th>SA</th>
-                  <th>PDP</th>
-                  <th>PRAS</th>
-                  <th>PECFF</th>
-                  <th>Pendientes</th>
-                  <th>Monto Daño ($)</th>
-                </tr>
-              </thead>
-              <tbody id="obsResponsablesBody">
-                <tr>
-                  <td colspan="28" class="muted">Selecciona una cédula de resultados para consultar responsables.</td>
-                </tr>
-              </tbody>
-            </table>
+        <div class="obs-responsables" id="obsResponsables">
+            <h3>Titulares y administrativos del periodo</h3>
+            <div class="table-wrap">
+              <table class="table-compact obs-responsables-table">
+                <thead id="obsResponsablesHead">
+                  <tr>
+                    <th rowspan="2">No</th>
+                    <th rowspan="2">Ente Fiscalizable</th>
+                    <th rowspan="2">Periodos Informe</th>
+                    <th rowspan="2">Titular</th>
+                    <th rowspan="2">Periodos Administrativo / Responsable de<br>Obra</th>
+                    <th rowspan="2">Administrativo / Encargado de<br>Obra</th>
+                    <th rowspan="2">Periodo<br>Cédula</th>
+                    <th colspan="7">EMITIDAS</th>
+                    <th colspan="7">SOLVENTADAS</th>
+                    <th colspan="7">PENDIENTES</th>
+                  </tr>
+                  <tr>
+                    <th>R</th>
+                    <th>SA</th>
+                    <th>PDP</th>
+                    <th>PRAS</th>
+                    <th>PECFF</th>
+                    <th>Emitidas</th>
+                    <th>Monto Daño ($)</th>
+                    <th>R</th>
+                    <th>SA</th>
+                    <th>PO</th>
+                    <th>PRAS</th>
+                    <th>PECFF</th>
+                    <th>Solventadas</th>
+                    <th>Monto Daño ($)</th>
+                    <th>R</th>
+                    <th>SA</th>
+                    <th>PDP</th>
+                    <th>PRAS</th>
+                    <th>PECFF</th>
+                    <th>Pendientes</th>
+                    <th>Monto Daño ($)</th>
+                  </tr>
+                </thead>
+                <tbody id="obsResponsablesBody">
+                  <tr>
+                    <td colspan="28" class="muted">Selecciona al menos un ente para ver el resumen de titulares y administrativos.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-        <div class="panel-inline-actions" id="responsablesPeriodoExportWrap" hidden>
-          <button class="panel-action-btn" type="button" id="responsables_periodo_export">
-            <span class="floating-clear-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none">
-                <path d="M12 4v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                <path d="M8 10l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M5 18h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-              </svg>
-            </span>
-            <span>Exportar a Excel</span>
-          </button>
-        </div>
+          <div class="panel-inline-actions" id="responsablesPeriodoExportWrap">
+            <button class="panel-action-btn" type="button" id="responsables_periodo_export">
+              <span class="floating-clear-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="M12 4v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                  <path d="M8 10l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M5 18h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <span>Exportar a Excel</span>
+            </button>
+          </div>
       </section>
 
       <section class="panel observaciones-panel">
@@ -318,7 +318,9 @@
         </div>
         <div class="table-meta">
           <span id="obsCount" aria-live="polite">Selecciona un ejercicio para ver resultados.</span>
-          <input id="obs_quick_search" name="obs_quick_search" type="search" placeholder="Buscar en esta página de resultados" />
+          {% if not (user and user.username == 'luis') %}
+            <input id="obs_quick_search" name="obs_quick_search" type="search" placeholder="Buscar en esta página de resultados" />
+          {% endif %}
         </div>
         <div class="table-wrap">
           <table class="table-compact">
@@ -448,6 +450,7 @@
     const obsTableBody = document.getElementById("obsTableBody");
     const obsCount = document.getElementById("obsCount");
     const obsQuickSearch = document.getElementById("obs_quick_search");
+    const responsablesEmptyMessage = "Selecciona al menos un ente para ver el resumen de titulares y administrativos.";
     const queryMeta = document.getElementById("queryMeta");
     const activeFiltersPanel = document.getElementById("activeFiltersPanel");
     const activeFiltersChips = document.getElementById("activeFiltersChips");
@@ -1159,7 +1162,7 @@
           `;
         };
         if (!selectedEnte.length) {
-          obsResponsablesBody.innerHTML = "";
+          renderMessage(responsablesEmptyMessage);
           return;
         }
         if (!safeGroups.length) {
@@ -2182,15 +2185,19 @@
         }
         if (!ejercicio) {
           if (obsResponsables) {
-            obsResponsables.hidden = true;
+            obsResponsables.hidden = false;
           }
           if (responsablesPeriodoExportWrap) {
-            responsablesPeriodoExportWrap.hidden = true;
+            responsablesPeriodoExportWrap.hidden = false;
           }
           obsTableBody.innerHTML = "<tr><td colspan=\"10\" class=\"muted\">Selecciona un ejercicio.</td></tr>";
           obsCount.textContent = "Selecciona un ejercicio para ver resultados.";
           if (obsResponsablesBody) {
-            obsResponsablesBody.innerHTML = "";
+            obsResponsablesBody.innerHTML = `
+              <tr>
+                <td colspan="28" class="muted">${escapeHtml(responsablesEmptyMessage)}</td>
+              </tr>
+            `;
           }
           obsRows = [];
           obsTotalRows = 0;
@@ -2260,10 +2267,10 @@
           renderPdpSummary();
           renderPendientesPorPeriodo();
           if (obsResponsables) {
-            obsResponsables.hidden = !enteIds.length;
+            obsResponsables.hidden = false;
           }
           if (responsablesPeriodoExportWrap) {
-            responsablesPeriodoExportWrap.hidden = !enteIds.length;
+            responsablesPeriodoExportWrap.hidden = false;
           }
           obsTableBody.innerHTML = "<tr><td colspan=\"10\" class=\"muted\">No se pudo cargar la información.</td></tr>";
           if (obsResponsablesBody) {
@@ -2282,14 +2289,18 @@
         const cedulas = getSelectedValues(cedulaResultados);
         const entes = getSelectedValues(obsEnteInput);
         if (obsResponsables) {
-          obsResponsables.hidden = !entes.length;
+          obsResponsables.hidden = false;
         }
         if (responsablesPeriodoExportWrap) {
-          responsablesPeriodoExportWrap.hidden = !entes.length;
+          responsablesPeriodoExportWrap.hidden = false;
         }
         if (!entes.length) {
           if (obsResponsablesBody) {
-            obsResponsablesBody.innerHTML = "";
+            obsResponsablesBody.innerHTML = `
+              <tr>
+                <td colspan="28" class="muted">${escapeHtml(responsablesEmptyMessage)}</td>
+              </tr>
+            `;
           }
           return;
         }

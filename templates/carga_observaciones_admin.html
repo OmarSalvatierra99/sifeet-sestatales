@@ -158,6 +158,32 @@
     </section>
   </main>
 
+  <div class="obs-admin-modal-backdrop" id="obsAdminPdpQuickModal" hidden>
+    <div class="obs-admin-modal-card" role="dialog" aria-modal="true" aria-labelledby="obsAdminPdpQuickTitle">
+      <div class="obs-admin-modal-head">
+        <h3 id="obsAdminPdpQuickTitle">Carga rápida de montos PDP</h3>
+        <p>Pega líneas con el formato <strong>Índice — Monto</strong> para actualizar montos solventados.</p>
+      </div>
+      <div class="obs-admin-modal-meta">
+        <span><strong>Fuente:</strong> <span id="obsAdminPdpQuickFuente">Todas</span></span>
+        <span><strong>Periodo:</strong> <span id="obsAdminPdpQuickPeriodo">Todos</span></span>
+        <span><strong>PDP visibles:</strong> <span id="obsAdminPdpQuickTotal">0</span></span>
+      </div>
+      <label for="obsAdminPdpQuickTextarea" class="obs-admin-modal-label">Montos solventados PDP</label>
+      <textarea
+        id="obsAdminPdpQuickTextarea"
+        rows="10"
+        placeholder="1 — $0.00&#10;2 — $0.00&#10;3 — $213,365.74&#10;4 — $5,798.84"
+      ></textarea>
+      <p class="helper">Solo se aplican a las observaciones PDP visibles con los filtros actuales.</p>
+      <p class="obs-admin-modal-feedback" id="obsAdminPdpQuickFeedback" hidden></p>
+      <div class="obs-admin-modal-actions">
+        <button type="button" class="btn-secondary" id="obsAdminPdpQuickCancelBtn">Cerrar, sin guardar</button>
+        <button type="button" class="btn-secondary" id="obsAdminPdpQuickApplyBtn">Aplicar y guardar</button>
+      </div>
+    </div>
+  </div>
+
   <footer class="site-footer">
     © Órgano de Fiscalización Superior del Estado de Tlaxcala · SIFEET Estatales
   </footer>
@@ -200,6 +226,15 @@
     const filterTipoAnexoInput = document.getElementById("obs_admin_filter_tipo_anexo");
     const filterFuenteInput = document.getElementById("obs_admin_filter_fuente");
     const filterPeriodoInput = document.getElementById("obs_admin_filter_periodo");
+    const pdpQuickModal = document.getElementById("obsAdminPdpQuickModal");
+    const pdpQuickFuente = document.getElementById("obsAdminPdpQuickFuente");
+    const pdpQuickPeriodo = document.getElementById("obsAdminPdpQuickPeriodo");
+    const pdpQuickTotal = document.getElementById("obsAdminPdpQuickTotal");
+    const pdpQuickTextarea = document.getElementById("obsAdminPdpQuickTextarea");
+    const pdpQuickFeedback = document.getElementById("obsAdminPdpQuickFeedback");
+    const pdpQuickCancelBtn = document.getElementById("obsAdminPdpQuickCancelBtn");
+    const pdpQuickApplyBtn = document.getElementById("obsAdminPdpQuickApplyBtn");
+    const isGaboUser = {{ (user.username == "gabo") | tojson }};
 
     const OBS_TABLE_COLSPAN = 4;
     let allRows = [];
@@ -656,6 +691,291 @@
       String(filterTipoAnexoInput ? filterTipoAnexoInput.value : "").trim().toUpperCase() === "PDP"
     );
 
+    const setPdpQuickFeedback = (message = "", level = "info") => {
+      if (!pdpQuickFeedback) return;
+      const text = String(message || "").trim();
+      if (!text) {
+        pdpQuickFeedback.hidden = true;
+        pdpQuickFeedback.textContent = "";
+        pdpQuickFeedback.dataset.level = "";
+        return;
+      }
+      pdpQuickFeedback.hidden = false;
+      pdpQuickFeedback.dataset.level = level;
+      pdpQuickFeedback.textContent = text;
+    };
+
+    const closePdpQuickModal = () => {
+      if (!pdpQuickModal) return;
+      pdpQuickModal.hidden = true;
+      document.body.classList.remove("is-modal-open");
+      setPdpQuickFeedback("");
+      if (openPdpQuickBtn instanceof HTMLButtonElement) {
+        openPdpQuickBtn.focus();
+      }
+    };
+
+    const openPdpQuickModalForGabo = () => {
+      const filters = readFilters();
+      if (!hasEditableOfficeScope(filters)) {
+        showStatus("Selecciona un ente y un oficio para capturar montos PDP.", "error");
+        return;
+      }
+      if (isReadOnlyEjercicio(filters.ejercicio)) {
+        showStatus(getReadOnlyMessage(filters.ejercicio), "error");
+        return;
+      }
+      if (!isPdpAnexoFilterSelected()) {
+        showStatus("Selecciona Tipo de anexo = PDP para usar la carga rápida de montos.", "info");
+        return;
+      }
+      const scopedRows = getVisiblePdpRows();
+      if (!scopedRows.length) {
+        showStatus("No hay observaciones PDP con los filtros seleccionados.", "info");
+        return;
+      }
+
+      if (pdpQuickFuente) {
+        pdpQuickFuente.textContent = String(filterFuenteInput ? filterFuenteInput.value : "").trim() || "Todas";
+      }
+      if (pdpQuickPeriodo) {
+        pdpQuickPeriodo.textContent = String(filterPeriodoInput ? filterPeriodoInput.value : "").trim() || "Todos";
+      }
+      if (pdpQuickTotal) {
+        pdpQuickTotal.textContent = String(scopedRows.length);
+      }
+      if (pdpQuickTextarea) {
+        pdpQuickTextarea.value = "";
+      }
+      setPdpQuickFeedback("");
+      if (pdpQuickModal) {
+        pdpQuickModal.hidden = false;
+        document.body.classList.add("is-modal-open");
+      }
+      if (pdpQuickTextarea) {
+        window.setTimeout(() => {
+          pdpQuickTextarea.focus();
+        }, 0);
+      }
+    };
+
+    const parsePdpQuickText = (rawText, totalRows) => {
+      const lines = String(rawText || "")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (!lines.length) {
+        return { error: "Pega al menos una línea con índice y monto." };
+      }
+
+      const usedIndexes = new Set();
+      let nextAutoIndex = 1;
+      const updates = [];
+      const pickNextAutoIndex = () => {
+        while (usedIndexes.has(nextAutoIndex) && nextAutoIndex <= totalRows) {
+          nextAutoIndex += 1;
+        }
+        return nextAutoIndex;
+      };
+
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index];
+        const lineNumber = index + 1;
+
+        let progressive = 0;
+        let amountToken = "";
+
+        let matched = line.match(/^(\d+)\s*(?:—|–|-|\||:)\s*(.+)$/u);
+        if (matched) {
+          progressive = Number.parseInt(matched[1], 10);
+          amountToken = String(matched[2] || "").trim();
+        } else {
+          matched = line.match(/^(\d+)\s+(\$?\s*[0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*$/u);
+          if (matched) {
+            progressive = Number.parseInt(matched[1], 10);
+            amountToken = String(matched[2] || "").trim();
+          } else {
+            progressive = pickNextAutoIndex();
+            amountToken = line;
+          }
+        }
+
+        const amount = parseMoneyInput(amountToken);
+        if (amount === null) {
+          return { error: `Línea ${lineNumber}: monto inválido.` };
+        }
+        if (!Number.isFinite(progressive) || progressive < 1 || progressive > totalRows) {
+          return { error: `Línea ${lineNumber}: índice fuera de rango (1-${totalRows}).` };
+        }
+        if (usedIndexes.has(progressive)) {
+          return { error: `Línea ${lineNumber}: índice repetido (${progressive}).` };
+        }
+        usedIndexes.add(progressive);
+        updates.push({ index: progressive, amount });
+      }
+
+      updates.sort((a, b) => a.index - b.index);
+      return { updates };
+    };
+
+    const applyPdpQuickModalForGabo = async () => {
+      const filters = readFilters();
+      if (!hasEditableOfficeScope(filters)) {
+        showStatus("Selecciona un ente y un oficio para capturar montos PDP.", "error");
+        return;
+      }
+      if (isReadOnlyEjercicio(filters.ejercicio)) {
+        showStatus(getReadOnlyMessage(filters.ejercicio), "error");
+        return;
+      }
+      if (!isPdpAnexoFilterSelected()) {
+        showStatus("Selecciona Tipo de anexo = PDP para usar la carga rápida de montos.", "info");
+        return;
+      }
+
+      const scopedRows = getVisiblePdpRows();
+      if (!scopedRows.length) {
+        setPdpQuickFeedback("No hay observaciones PDP con los filtros seleccionados.", "error");
+        return;
+      }
+
+      const parsed = parsePdpQuickText(pdpQuickTextarea ? pdpQuickTextarea.value : "", scopedRows.length);
+      if (parsed.error) {
+        setPdpQuickFeedback(parsed.error, "error");
+        return;
+      }
+
+      const rowStateById = new Map();
+      const visibleRows = Array.from(
+        tableBody ? tableBody.querySelectorAll("tr[data-observacion-id]") : []
+      ).filter((row) => normalizeTipoAnexo(row.dataset.tipoAnexo || "") === "PDP");
+      visibleRows.forEach((row) => {
+        const id = Number(row.dataset.observacionId || 0);
+        if (!id) return;
+        const estadoSelect = row.querySelector(".obs-admin-estado");
+        rowStateById.set(id, {
+          estado: normalizeEstado(estadoSelect ? estadoSelect.value : "Emitido"),
+          emitido: Number.parseFloat(String(row.dataset.montoEmitido || "0")) || 0,
+        });
+      });
+
+      const updates = [];
+      for (const item of parsed.updates) {
+        const sourceRow = scopedRows[item.index - 1];
+        if (!sourceRow || !sourceRow.id) {
+          setPdpQuickFeedback(`No se encontró la observación PDP #${item.index} del bloque visible.`, "error");
+          return;
+        }
+        const state = rowStateById.get(sourceRow.id) || {};
+        const emitido = Number.isFinite(state.emitido) ? state.emitido : sourceRow.emitido;
+        if (item.amount > emitido) {
+          setPdpQuickFeedback(
+            `Índice ${item.index}: el monto supera el emitido (${formatMoney(emitido)}).`,
+            "error",
+          );
+          return;
+        }
+        const estado = normalizeEstado(state.estado || sourceRow.estado || "Emitido");
+        const effectiveSolventado = estado === "Solventado" ? emitido : item.amount;
+        updates.push({
+          index: item.index,
+          id: sourceRow.id,
+          estado,
+          emitido,
+          solventado: effectiveSolventado,
+        });
+      }
+
+      if (!updates.length) {
+        setPdpQuickFeedback("No hay montos para aplicar.", "error");
+        return;
+      }
+
+      const activeFuente = String(filterFuenteInput ? filterFuenteInput.value : "").trim() || "Todas";
+      const activePeriodo = String(filterPeriodoInput ? filterPeriodoInput.value : "").trim() || "Todos";
+      const totalMonto = updates.reduce((acc, item) => acc + item.solventado, 0);
+      const preview = updates
+        .slice(0, 20)
+        .map((item) => `${item.index} -> ID ${item.id}: ${formatMoney(item.solventado)}`)
+        .join("\n");
+
+      const confirmLines = [
+        "ATENCION: se guardarán montos solventados PDP en lote.",
+        "El estado actual de cada observación se conservará.",
+        `Fuente: ${activeFuente}`,
+        `Periodo: ${activePeriodo}`,
+        `Registros: ${updates.length}`,
+        `Monto total: ${formatMoney(totalMonto)}`,
+      ];
+      if (preview) {
+        confirmLines.push("");
+        confirmLines.push("Vista previa:");
+        confirmLines.push(preview + (updates.length > 20 ? "\n..." : ""));
+      }
+      confirmLines.push("");
+      confirmLines.push("¿Confirmas aplicar y guardar?");
+
+      if (!window.confirm(confirmLines.join("\n"))) {
+        return;
+      }
+
+      if (pdpQuickApplyBtn instanceof HTMLButtonElement) {
+        pdpQuickApplyBtn.disabled = true;
+      }
+      if (openPdpQuickBtn instanceof HTMLButtonElement) {
+        openPdpQuickBtn.disabled = true;
+      }
+      let updated = 0;
+      const failed = [];
+      try {
+        for (const item of updates) {
+          const response = await fetch(
+            `/carga/observaciones-cargadas/${encodeURIComponent(item.id)}/actualizar`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                estado: item.estado,
+                monto_pdp_emitido: item.emitido.toFixed(2),
+                monto_pdp_solventado: item.solventado.toFixed(2),
+                scope: {
+                  ejercicio: filters.ejercicio,
+                  ente_id: filters.ente_id,
+                  oficio: filters.oficio,
+                },
+              }),
+            },
+          );
+          const data = await response.json();
+          if (!response.ok || !data.ok) {
+            failed.push(`ID ${item.id}: ${data.error || "No se pudo actualizar."}`);
+            continue;
+          }
+          updated += 1;
+        }
+        await fetchRows({ announce: false });
+        if (failed.length) {
+          setPdpQuickFeedback(`Actualizadas ${updated}. Fallaron ${failed.length}.`, "error");
+          showStatus(`PDP actualizadas: ${updated}. Con incidencias: ${failed.length}.`, "error");
+          return;
+        }
+        closePdpQuickModal();
+        showStatus(`PDP actualizadas en lote: ${updated}.`, "success");
+      } catch (error) {
+        const message = error && error.message ? error.message : "Error al guardar montos PDP.";
+        setPdpQuickFeedback(message, "error");
+        showStatus(message, "error");
+      } finally {
+        if (pdpQuickApplyBtn instanceof HTMLButtonElement) {
+          pdpQuickApplyBtn.disabled = false;
+        }
+        if (openPdpQuickBtn instanceof HTMLButtonElement) {
+          openPdpQuickBtn.disabled = false;
+        }
+        updateSafetyState();
+      }
+    };
+
     const renderSummaryByOficio = (rows) => {
       if (!summaryBody) {
         return;
@@ -666,70 +986,61 @@
         return;
       }
 
+      const requiredAnexos = ["SA", "PDP", "PRAS", "PEFCF", "R"];
       const groupedByTipo = new Map();
+
       safeRows.forEach((row) => {
-        const tipo = String(row.tipo_auditoria || "").trim() || "Financiera";
-        const fuente = String(row.fuente_financiamiento || "").trim() || "-";
-        const periodo = String(row.periodo_cedula || "").trim() || "-";
-        const anexo = normalizeTipoAnexo(row.tipo_anexo) || "-";
-        const key = `${fuente}||${periodo}||${anexo}`;
-        if (!groupedByTipo.has(tipo)) {
-          groupedByTipo.set(tipo, new Map());
-        }
-        const tipoMap = groupedByTipo.get(tipo);
-        if (!tipoMap.has(key)) {
-          tipoMap.set(key, {
-            fuente,
-            periodo,
-            anexo,
-            rows: [],
+        const tipo = normalizeTipoAuditoria(row && row.tipo_auditoria);
+        const fuente = String((row && row.fuente_financiamiento) || "").trim() || "-";
+        const periodo = String((row && row.periodo_cedula) || "").trim() || "-";
+        const anexo = normalizeTipoAnexo(row && row.tipo_anexo) || "-";
+        const tipoKey = tipo.toLowerCase();
+        const fuenteKey = fuente.toLowerCase();
+        const periodoKey = periodo.toLowerCase();
+
+        if (!groupedByTipo.has(tipoKey)) {
+          groupedByTipo.set(tipoKey, {
+            tipo,
+            fuentes: new Map(),
           });
         }
-        tipoMap.get(key).rows.push(row);
+        const tipoEntry = groupedByTipo.get(tipoKey);
+        if (!tipoEntry.fuentes.has(fuenteKey)) {
+          tipoEntry.fuentes.set(fuenteKey, {
+            fuente,
+            rowCount: 0,
+            periods: new Map(),
+          });
+        }
+        const fuenteEntry = tipoEntry.fuentes.get(fuenteKey);
+        if (!fuenteEntry.periods.has(periodoKey)) {
+          fuenteEntry.periods.set(periodoKey, {
+            periodo,
+            anexos: new Map(),
+          });
+        }
+        const periodEntry = fuenteEntry.periods.get(periodoKey);
+        if (!periodEntry.anexos.has(anexo)) {
+          periodEntry.anexos.set(anexo, []);
+        }
+        periodEntry.anexos.get(anexo).push(row);
       });
 
-      const orderedTipos = Array.from(groupedByTipo.keys()).sort((a, b) => {
-        const orderA = tipoSortOrder[a] || 99;
-        const orderB = tipoSortOrder[b] || 99;
+      const orderedTipos = Array.from(groupedByTipo.values()).sort((a, b) => {
+        const orderA = tipoSortOrder[a.tipo] || 99;
+        const orderB = tipoSortOrder[b.tipo] || 99;
         if (orderA !== orderB) {
           return orderA - orderB;
         }
-        return a.localeCompare(b, "es", { sensitivity: "base" });
+        return a.tipo.localeCompare(b.tipo, "es", { sensitivity: "base" });
       });
 
-      const sectionsHtml = orderedTipos.map((tipo, tipoIndex) => {
-        const tipoRows = Array.from(groupedByTipo.get(tipo).values());
-
+      const sectionsHtml = orderedTipos.map((tipoEntry, tipoIndex) => {
         let totalEmitidas = 0;
         let totalSolventadas = 0;
         let totalNoSolventadas = 0;
 
-        const groupedByFuente = new Map();
-        tipoRows.forEach((group) => {
-          const fuenteKey = String(group.fuente || "").trim().toLowerCase();
-          const periodoKey = String(group.periodo || "").trim().toLowerCase();
-          if (!groupedByFuente.has(fuenteKey)) {
-            groupedByFuente.set(fuenteKey, {
-              fuente: group.fuente,
-              rowCount: 0,
-              periods: new Map(),
-            });
-          }
-          const fuenteEntry = groupedByFuente.get(fuenteKey);
-          if (!fuenteEntry.periods.has(periodoKey)) {
-            fuenteEntry.periods.set(periodoKey, {
-              periodo: group.periodo,
-              rowCount: 0,
-              groups: [],
-            });
-          }
-          const periodEntry = fuenteEntry.periods.get(periodoKey);
-          periodEntry.groups.push(group);
-          periodEntry.rowCount += 1;
-          fuenteEntry.rowCount += 1;
-        });
-
-        const orderedFuentes = Array.from(groupedByFuente.values()).sort((a, b) => (
+        const orderedFuentes = Array.from(tipoEntry.fuentes.values()).sort((a, b) => (
           String(a.fuente || "").localeCompare(String(b.fuente || ""), "es", { sensitivity: "base" })
         ));
 
@@ -738,18 +1049,33 @@
           const orderedPeriods = Array.from(fuenteEntry.periods.values()).sort((a, b) => (
             String(a.periodo || "").localeCompare(String(b.periodo || ""), "es", { sensitivity: "base" })
           ));
+          const periodGroups = orderedPeriods.map((periodEntry) => {
+            const extraAnexos = Array.from(periodEntry.anexos.keys())
+              .filter((anexo) => anexo && !requiredAnexos.includes(anexo))
+              .sort((a, b) => {
+                const orderA = anexoSortOrder[a] || 99;
+                const orderB = anexoSortOrder[b] || 99;
+                if (orderA !== orderB) {
+                  return orderA - orderB;
+                }
+                return String(a || "").localeCompare(String(b || ""), "es", { sensitivity: "base" });
+              });
+            const orderedAnexos = requiredAnexos.concat(extraAnexos);
+            const groups = orderedAnexos.map((anexo) => ({
+              anexo,
+              rows: Array.isArray(periodEntry.anexos.get(anexo)) ? periodEntry.anexos.get(anexo).slice() : [],
+            }));
+            return {
+              periodo: periodEntry.periodo,
+              rowCount: groups.length,
+              groups,
+            };
+          });
+
+          fuenteEntry.rowCount = periodGroups.reduce((acc, entry) => acc + entry.rowCount, 0);
           let renderedFuenteCell = false;
 
-          orderedPeriods.forEach((periodEntry) => {
-            periodEntry.groups.sort((a, b) => {
-              const anexoA = anexoSortOrder[a.anexo] || 99;
-              const anexoB = anexoSortOrder[b.anexo] || 99;
-              if (anexoA !== anexoB) {
-                return anexoA - anexoB;
-              }
-              return String(a.anexo || "").localeCompare(String(b.anexo || ""), "es", { sensitivity: "base" });
-            });
-
+          periodGroups.forEach((periodEntry) => {
             let renderedPeriodoCell = false;
             periodEntry.groups.forEach((group) => {
               const isFuenteStart = !renderedFuenteCell;
@@ -829,7 +1155,7 @@
 
         return (
           `<div class="obs-admin-summary-section">` +
-          `<h4>${escapeHtml(formatTipoSectionTitle(tipo, tipoIndex))}</h4>` +
+          `<h4>${escapeHtml(formatTipoSectionTitle(tipoEntry.tipo, tipoIndex))}</h4>` +
           `<div class="obs-admin-summary-table-wrap">` +
           `<table class="obs-admin-summary-table">` +
           `<thead>` +
@@ -1793,9 +2119,39 @@
 
     if (openPdpQuickBtn) {
       openPdpQuickBtn.addEventListener("click", async () => {
+        if (isGaboUser) {
+          openPdpQuickModalForGabo();
+          return;
+        }
         await applyPdpQuickByFilters();
       });
     }
+
+    if (pdpQuickCancelBtn) {
+      pdpQuickCancelBtn.addEventListener("click", () => {
+        closePdpQuickModal();
+      });
+    }
+
+    if (pdpQuickApplyBtn) {
+      pdpQuickApplyBtn.addEventListener("click", async () => {
+        await applyPdpQuickModalForGabo();
+      });
+    }
+
+    if (pdpQuickModal) {
+      pdpQuickModal.addEventListener("click", (event) => {
+        if (event.target === pdpQuickModal) {
+          closePdpQuickModal();
+        }
+      });
+    }
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && pdpQuickModal && !pdpQuickModal.hidden) {
+        closePdpQuickModal();
+      }
+    });
 
     if (tableBody) {
       tableBody.addEventListener("change", (event) => {
