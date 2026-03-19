@@ -3280,11 +3280,11 @@ tbody tr:hover td {
   border-bottom: none;
 }
 
-.manual-resumen-table-wrapper tbody tr:nth-child(even):not(.manual-resumen-total) td {
+.manual-resumen-table-wrapper tbody tr:nth-child(even):not(.manual-resumen-total):not(.manual-resumen-subtotal) td {
   background: #fcfefd;
 }
 
-.manual-resumen-table-wrapper tbody tr:hover:not(.manual-resumen-total) td {
+.manual-resumen-table-wrapper tbody tr:hover:not(.manual-resumen-total):not(.manual-resumen-subtotal) td {
   background: #f3f8f5;
 }
 
@@ -3320,6 +3320,13 @@ tbody tr:hover td {
   color: #1d5038;
   font-weight: 800;
   border-top: 2px solid #bdd4c5;
+}
+
+.manual-resumen-subtotal th {
+  background: #f0f7f3;
+  color: #1e5139;
+  font-weight: 800;
+  border-top: 1px solid #cfe0d5;
 }
 
 .manual-resumen-pdp-details summary {
@@ -4666,6 +4673,145 @@ tbody tr:hover td {
   gap: 0.55rem;
 }
 
+.obs-admin-confirm-backdrop {
+  z-index: 1300;
+}
+
+.obs-admin-confirm-card {
+  width: min(1080px, 100%);
+  max-height: min(92vh, 920px);
+}
+
+.obs-admin-confirm-highlights {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.45rem;
+}
+
+.obs-admin-confirm-highlight {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 12px;
+  border: 1px solid #d5e3db;
+  background: #f7fbf9;
+}
+
+.obs-admin-confirm-highlight span {
+  color: var(--color-muted);
+  font-size: 0.74rem;
+}
+
+.obs-admin-confirm-highlight strong {
+  color: var(--color-accent);
+  font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.obs-admin-confirm-highlight[data-tone="warning"] {
+  border-color: #e6c58a;
+  background: #fff7ea;
+}
+
+.obs-admin-confirm-highlight[data-tone="warning"] strong {
+  color: #8b5a11;
+}
+
+.obs-admin-confirm-section {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.obs-admin-confirm-section h4 {
+  margin: 0;
+  color: var(--color-accent);
+  font-size: 0.82rem;
+}
+
+.obs-admin-confirm-table-wrap {
+  max-height: min(34vh, 320px);
+}
+
+.obs-admin-confirm-table {
+  width: 100%;
+  min-width: 1540px;
+}
+
+.obs-admin-confirm-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #edf4f0;
+  color: #1f4b35;
+  font-weight: 800;
+}
+
+.obs-admin-confirm-table th,
+.obs-admin-confirm-table td {
+  font-size: 0.8rem;
+  white-space: normal;
+  vertical-align: top;
+  line-height: 1.3;
+}
+
+.obs-admin-confirm-table tbody th {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+.obs-admin-confirm-table tbody tr:nth-child(even) td,
+.obs-admin-confirm-table tbody tr:nth-child(even) th {
+  background: #f8fcfa;
+}
+
+.obs-admin-confirm-preview-section th {
+  text-align: left;
+  white-space: normal;
+  background: linear-gradient(180deg, #eef6f1 0%, #e5f0e9 100%);
+  color: #1e5139;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border-top: 2px solid #bed4c6;
+  border-bottom: 1px solid #cfe0d5;
+}
+
+.obs-admin-confirm-table .is-right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.obs-admin-confirm-table tbody tr.obs-admin-confirm-preview-total td,
+.obs-admin-confirm-table tbody tr.obs-admin-confirm-preview-total th {
+  background: #ecf4ee;
+  color: #1d4e37;
+  font-weight: 800;
+  border-top: 2px solid #bfd4c5;
+}
+
+.obs-admin-confirm-warning {
+  margin: 0;
+  padding: 0.58rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid #e3c78f;
+  background: #fff7ea;
+  color: #7b4e05;
+  font-size: 0.79rem;
+  font-weight: 600;
+}
+
+#obsAdminConfirmAcceptBtn[data-intent="warning"] {
+  border-color: #e0b763;
+  background: #fff4dc;
+  color: #724600;
+}
+
+#obsAdminConfirmAcceptBtn[data-intent="warning"]:hover {
+  background: #feeccc;
+}
+
 body.is-modal-open {
   overflow: hidden;
 }
@@ -4861,6 +5007,14 @@ body.is-modal-open {
     max-height: 210px;
   }
 
+  .obs-admin-confirm-card {
+    width: 100%;
+  }
+
+  .obs-admin-confirm-table {
+    min-width: 1320px;
+  }
+
   .loader-flow-grid {
     grid-template-columns: 1fr;
   }
@@ -5049,6 +5203,18 @@ body.is-modal-open {
 
   .filters-form .field > label {
     min-height: 0;
+  }
+
+  .obs-admin-confirm-card {
+    padding: 0.85rem 0.8rem;
+  }
+
+  .obs-admin-confirm-highlights {
+    grid-template-columns: 1fr;
+  }
+
+  .obs-admin-confirm-table {
+    min-width: 1120px;
   }
 
   .multi-select-panel {

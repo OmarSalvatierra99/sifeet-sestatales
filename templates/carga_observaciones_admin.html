@@ -191,6 +191,60 @@
     </div>
   </div>
 
+  <div class="obs-admin-modal-backdrop obs-admin-confirm-backdrop" id="obsAdminConfirmModal" hidden>
+    <div class="obs-admin-modal-card obs-admin-confirm-card" role="dialog" aria-modal="true" aria-labelledby="obsAdminConfirmTitle">
+      <div class="obs-admin-modal-head">
+        <h3 id="obsAdminConfirmTitle">Confirmar guardado</h3>
+        <p id="obsAdminConfirmSubtitle">Revisa el detalle antes de guardar.</p>
+      </div>
+      <div class="obs-admin-modal-meta" id="obsAdminConfirmMeta" hidden></div>
+      <div class="obs-admin-confirm-highlights" id="obsAdminConfirmHighlights" hidden></div>
+
+      <section class="obs-admin-confirm-section">
+        <h4 id="obsAdminConfirmSummaryTitle">Resumen general</h4>
+        <div class="obs-admin-summary-table-wrap obs-admin-confirm-table-wrap">
+          <table class="obs-admin-summary-table obs-admin-confirm-table">
+            <thead>
+              <tr>
+                <th>Concepto</th>
+                <th>Detalle</th>
+              </tr>
+            </thead>
+            <tbody id="obsAdminConfirmSummaryBody">
+              <tr>
+                <td colspan="2" class="muted">Sin datos para confirmar.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="obs-admin-confirm-section">
+        <h4 id="obsAdminConfirmPreviewTitle">Vista previa de cambios</h4>
+        <div class="obs-admin-summary-table-wrap obs-admin-confirm-table-wrap">
+          <table class="obs-admin-summary-table obs-admin-confirm-table">
+            <thead id="obsAdminConfirmPreviewHead">
+              <tr>
+                <th>Detalle</th>
+              </tr>
+            </thead>
+            <tbody id="obsAdminConfirmPreviewBody">
+              <tr>
+                <td class="muted">Sin registros para mostrar.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <p class="obs-admin-confirm-warning" id="obsAdminConfirmWarning" hidden></p>
+      <div class="obs-admin-modal-actions">
+        <button type="button" class="btn-secondary" id="obsAdminConfirmCancelBtn">Cancelar</button>
+        <button type="button" class="btn-secondary" id="obsAdminConfirmAcceptBtn">Confirmar y guardar</button>
+      </div>
+    </div>
+  </div>
+
   <footer class="site-footer">
     © Órgano de Fiscalización Superior del Estado de Tlaxcala · SIFEET Estatales
   </footer>
@@ -243,12 +297,33 @@
     const pdpQuickFeedback = document.getElementById("obsAdminPdpQuickFeedback");
     const pdpQuickCancelBtn = document.getElementById("obsAdminPdpQuickCancelBtn");
     const pdpQuickApplyBtn = document.getElementById("obsAdminPdpQuickApplyBtn");
+    const confirmModal = document.getElementById("obsAdminConfirmModal");
+    const confirmTitle = document.getElementById("obsAdminConfirmTitle");
+    const confirmSubtitle = document.getElementById("obsAdminConfirmSubtitle");
+    const confirmMeta = document.getElementById("obsAdminConfirmMeta");
+    const confirmHighlights = document.getElementById("obsAdminConfirmHighlights");
+    const confirmSummaryTitle = document.getElementById("obsAdminConfirmSummaryTitle");
+    const confirmSummaryBody = document.getElementById("obsAdminConfirmSummaryBody");
+    const confirmSummarySection = confirmSummaryTitle
+      ? confirmSummaryTitle.closest(".obs-admin-confirm-section")
+      : null;
+    const confirmPreviewTitle = document.getElementById("obsAdminConfirmPreviewTitle");
+    const confirmPreviewHead = document.getElementById("obsAdminConfirmPreviewHead");
+    const confirmPreviewBody = document.getElementById("obsAdminConfirmPreviewBody");
+    const confirmPreviewSection = confirmPreviewTitle
+      ? confirmPreviewTitle.closest(".obs-admin-confirm-section")
+      : null;
+    const confirmWarning = document.getElementById("obsAdminConfirmWarning");
+    const confirmCancelBtn = document.getElementById("obsAdminConfirmCancelBtn");
+    const confirmAcceptBtn = document.getElementById("obsAdminConfirmAcceptBtn");
     const isGaboUser = {{ (user.username == "gabo") | tojson }};
 
     const OBS_TABLE_COLSPAN = 4;
     let allRows = [];
     let filteredRows = [];
     let originalRowsSnapshot = new Map();
+    let confirmModalResolver = null;
+    let confirmModalFocusTarget = null;
 
     const escapeHtml = (value) => (
       String(value || "")
@@ -268,6 +343,10 @@
         maximumFractionDigits: 2,
       });
     };
+
+    const formatCount = (value) => (
+      (Number(value) || 0).toLocaleString("es-MX")
+    );
 
     const normalizeEstado = (value) => {
       const key = String(value || "").trim().toLowerCase();
@@ -695,6 +774,33 @@
       return values.join(",");
     };
 
+    const formatChangeText = (beforeValue, afterValue) => {
+      const before = String(beforeValue || "").trim();
+      const after = String(afterValue || "").trim();
+      if (before === after) {
+        return before || "0";
+      }
+      return `${before || "0"} -> ${after || "0"}`;
+    };
+
+    const formatCountChange = (beforeValue, afterValue) => {
+      const before = Number(beforeValue) || 0;
+      const after = Number(afterValue) || 0;
+      if (before === after) {
+        return formatCount(before);
+      }
+      return `${formatCount(before)} -> ${formatCount(after)}`;
+    };
+
+    const formatMoneyChange = (beforeValue, afterValue) => {
+      const before = Number(beforeValue) || 0;
+      const after = Number(afterValue) || 0;
+      if (Math.abs(before - after) < 0.00001) {
+        return formatMoney(before);
+      }
+      return `${formatMoney(before)} -> ${formatMoney(after)}`;
+    };
+
     const normalizeTipoAuditoria = (value) => {
       const clean = String(value || "").trim();
       if (!clean) return "Financiera";
@@ -757,6 +863,213 @@
       String(filterTipoAnexoInput ? filterTipoAnexoInput.value : "").trim().toUpperCase() === "PDP"
     );
 
+    const isModalVisible = (node) => !!(node && !node.hidden);
+
+    const syncModalBodyState = () => {
+      const hasModalOpen = isModalVisible(pdpQuickModal) || isModalVisible(confirmModal);
+      document.body.classList.toggle("is-modal-open", hasModalOpen);
+    };
+
+    const getSelectedOptionLabel = (selectNode, fallback = "") => {
+      if (!(selectNode instanceof HTMLSelectElement)) {
+        return String(fallback || "").trim() || "-";
+      }
+      const selected = selectNode.options[selectNode.selectedIndex];
+      const label = selected ? String(selected.textContent || "").trim() : "";
+      return label || String(fallback || "").trim() || "-";
+    };
+
+    const renderConfirmMeta = (items) => {
+      if (!confirmMeta) return;
+      const safeItems = Array.isArray(items) ? items.filter((item) => item && item.label) : [];
+      if (!safeItems.length) {
+        confirmMeta.hidden = true;
+        confirmMeta.innerHTML = "";
+        return;
+      }
+      confirmMeta.hidden = false;
+      confirmMeta.innerHTML = safeItems.map((item) => (
+        `<span><strong>${escapeHtml(item.label)}:</strong> ${escapeHtml(item.value || "-")}</span>`
+      )).join("");
+    };
+
+    const renderConfirmHighlights = (items) => {
+      if (!confirmHighlights) return;
+      const safeItems = Array.isArray(items) ? items.filter((item) => item && item.label) : [];
+      if (!safeItems.length) {
+        confirmHighlights.hidden = true;
+        confirmHighlights.innerHTML = "";
+        return;
+      }
+      confirmHighlights.hidden = false;
+      confirmHighlights.innerHTML = safeItems.map((item) => (
+        `<article class="obs-admin-confirm-highlight" data-tone="${escapeHtml(item.tone || "default")}">` +
+          `<span>${escapeHtml(item.label)}</span>` +
+          `<strong>${escapeHtml(item.value || "-")}</strong>` +
+        `</article>`
+      )).join("");
+    };
+
+    const renderConfirmSummaryRows = (rows) => {
+      if (!confirmSummaryBody) return;
+      const safeRows = Array.isArray(rows) ? rows.filter((row) => row && row.label) : [];
+      if (!safeRows.length) {
+        confirmSummaryBody.innerHTML = '<tr><td colspan="2" class="muted">Sin datos para confirmar.</td></tr>';
+        return;
+      }
+      confirmSummaryBody.innerHTML = safeRows.map((row) => (
+        "<tr>" +
+          `<th scope="row">${escapeHtml(row.label)}</th>` +
+          `<td class="${row.align === "right" ? "is-right" : ""}">${escapeHtml(row.value || "-")}</td>` +
+        "</tr>"
+      )).join("");
+    };
+
+    const renderConfirmPreview = (columns, rows) => {
+      if (!confirmPreviewHead || !confirmPreviewBody) return;
+      const safeColumns = Array.isArray(columns) ? columns.filter((col) => col && col.key && col.label) : [];
+      const safeRows = Array.isArray(rows) ? rows : [];
+
+      if (!safeColumns.length) {
+        confirmPreviewHead.innerHTML = "<tr><th>Detalle</th></tr>";
+        confirmPreviewBody.innerHTML = '<tr><td class="muted">Sin registros para mostrar.</td></tr>';
+        return;
+      }
+
+      confirmPreviewHead.innerHTML = (
+        "<tr>" +
+        safeColumns.map((col) => (
+          `<th class="${col.align === "right" ? "is-right" : ""}">${escapeHtml(col.label)}</th>`
+        )).join("") +
+        "</tr>"
+      );
+
+      if (!safeRows.length) {
+        confirmPreviewBody.innerHTML = `<tr><td colspan="${safeColumns.length}" class="muted">Sin registros para mostrar.</td></tr>`;
+        return;
+      }
+
+      confirmPreviewBody.innerHTML = safeRows.map((row) => {
+        if (row && row.__section) {
+          const title = row.label || "";
+          return (
+            `<tr class="obs-admin-confirm-preview-section">` +
+              `<th colspan="${safeColumns.length}">${escapeHtml(title)}</th>` +
+            "</tr>"
+          );
+        }
+        const rowClass = row && row.__rowClass ? String(row.__rowClass).trim() : "";
+        const classAttr = rowClass ? ` class="${escapeHtml(rowClass)}"` : "";
+        return (
+          `<tr${classAttr}>` +
+          safeColumns.map((col) => {
+            const raw = row[col.key];
+            let display = "—";
+            if (raw === "") {
+              display = "";
+            } else if (raw !== null && raw !== undefined) {
+              const text = String(raw);
+              display = text.trim() === "" ? "—" : text;
+            }
+            return `<td class="${col.align === "right" ? "is-right" : ""}">${escapeHtml(display)}</td>`;
+          }).join("") +
+          "</tr>"
+        );
+      }).join("");
+    };
+
+    const closeConfirmModal = (confirmed = false) => {
+      if (!confirmModal) {
+        return;
+      }
+      confirmModal.hidden = true;
+      syncModalBodyState();
+      if (confirmModalResolver) {
+        const resolve = confirmModalResolver;
+        confirmModalResolver = null;
+        resolve(Boolean(confirmed));
+      }
+      const focusTarget = confirmModalFocusTarget;
+      confirmModalFocusTarget = null;
+      if (focusTarget instanceof HTMLElement && !isModalVisible(pdpQuickModal)) {
+        window.setTimeout(() => {
+          if (document.contains(focusTarget) && !focusTarget.hasAttribute("disabled")) {
+            focusTarget.focus();
+          }
+        }, 0);
+      }
+    };
+
+    const showConfirmModal = ({
+      title = "Confirmar acción",
+      subtitle = "Revisa el resumen antes de continuar.",
+      metaItems = [],
+      highlightItems = [],
+      summaryTitle = "Resumen",
+      summaryRows = [],
+      previewTitle = "Vista previa",
+      previewColumns = [],
+      previewRows = [],
+      warningText = "",
+      confirmLabel = "Confirmar",
+      cancelLabel = "Cancelar",
+      showSummary = true,
+      showPreview = true,
+      triggerButton = null,
+      fallbackMessage = "¿Confirmas continuar?",
+    } = {}) => {
+      if (!confirmModal || !confirmAcceptBtn || !confirmCancelBtn) {
+        return Promise.resolve(window.confirm(fallbackMessage));
+      }
+
+      if (confirmModalResolver) {
+        const pendingResolve = confirmModalResolver;
+        confirmModalResolver = null;
+        pendingResolve(false);
+      }
+
+      if (confirmTitle) confirmTitle.textContent = String(title || "Confirmar acción");
+      if (confirmSubtitle) confirmSubtitle.textContent = String(subtitle || "");
+      if (confirmSummaryTitle) confirmSummaryTitle.textContent = String(summaryTitle || "Resumen");
+      if (confirmPreviewTitle) confirmPreviewTitle.textContent = String(previewTitle || "Vista previa");
+      if (confirmSummarySection) {
+        confirmSummarySection.hidden = !showSummary;
+      }
+      if (confirmPreviewSection) {
+        confirmPreviewSection.hidden = !showPreview;
+      }
+
+      renderConfirmMeta(metaItems);
+      renderConfirmHighlights(highlightItems);
+      if (showSummary) {
+        renderConfirmSummaryRows(summaryRows);
+      }
+      if (showPreview) {
+        renderConfirmPreview(previewColumns, previewRows);
+      }
+
+      if (confirmWarning) {
+        const text = String(warningText || "").trim();
+        confirmWarning.hidden = !text;
+        confirmWarning.textContent = text;
+      }
+
+      confirmCancelBtn.textContent = String(cancelLabel || "Cancelar");
+      confirmAcceptBtn.textContent = String(confirmLabel || "Confirmar");
+      confirmAcceptBtn.dataset.intent = warningText ? "warning" : "default";
+
+      confirmModal.hidden = false;
+      confirmModalFocusTarget = triggerButton instanceof HTMLElement ? triggerButton : null;
+      syncModalBodyState();
+      window.setTimeout(() => {
+        confirmAcceptBtn.focus();
+      }, 0);
+
+      return new Promise((resolve) => {
+        confirmModalResolver = resolve;
+      });
+    };
+
     const setPdpQuickFeedback = (message = "", level = "info") => {
       if (!pdpQuickFeedback) return;
       const text = String(message || "").trim();
@@ -774,7 +1087,7 @@
     const closePdpQuickModal = () => {
       if (!pdpQuickModal) return;
       pdpQuickModal.hidden = true;
-      document.body.classList.remove("is-modal-open");
+      syncModalBodyState();
       setPdpQuickFeedback("");
       if (openPdpQuickBtn instanceof HTMLButtonElement) {
         openPdpQuickBtn.focus();
@@ -816,7 +1129,7 @@
       setPdpQuickFeedback("");
       if (pdpQuickModal) {
         pdpQuickModal.hidden = false;
-        document.body.classList.add("is-modal-open");
+        syncModalBodyState();
       }
       if (pdpQuickTextarea) {
         window.setTimeout(() => {
@@ -919,9 +1232,12 @@
         const id = Number(row.dataset.observacionId || 0);
         if (!id) return;
         const estadoSelect = row.querySelector(".obs-admin-estado");
+        const solventadoInput = row.querySelector(".obs-admin-solventado");
+        const solventadoActualParsed = solventadoInput ? parseMoneyInput(solventadoInput.value) : null;
         rowStateById.set(id, {
           estado: normalizeEstado(estadoSelect ? estadoSelect.value : "Emitido"),
           emitido: Number.parseFloat(String(row.dataset.montoEmitido || "0")) || 0,
+          solventadoActual: solventadoActualParsed === null ? 0 : solventadoActualParsed,
         });
       });
 
@@ -943,12 +1259,17 @@
         }
         const estado = normalizeEstado(state.estado || sourceRow.estado || "Emitido");
         const effectiveSolventado = estado === "Solventado" ? emitido : item.amount;
+        const beforeSolventado = Number.isFinite(state.solventadoActual) ? state.solventadoActual : 0;
         updates.push({
           index: item.index,
           id: sourceRow.id,
+          fuente: sourceRow.fuente || "-",
+          periodo: sourceRow.periodo || "-",
           estado,
           emitido,
+          beforeSolventado,
           solventado: effectiveSolventado,
+          deltaMonto: effectiveSolventado - beforeSolventado,
         });
       }
 
@@ -959,29 +1280,75 @@
 
       const activeFuente = String(filterFuenteInput ? filterFuenteInput.value : "").trim() || "Todas";
       const activePeriodo = String(filterPeriodoInput ? filterPeriodoInput.value : "").trim() || "Todos";
-      const totalMonto = updates.reduce((acc, item) => acc + item.solventado, 0);
-      const preview = updates
-        .slice(0, 20)
-        .map((item) => `${item.index} -> ID ${item.id}: ${formatMoney(item.solventado)}`)
-        .join("\n");
+      const estadoSummary = { Emitido: 0, Pendiente: 0, Solventado: 0 };
+      updates.forEach((item) => {
+        if (Object.prototype.hasOwnProperty.call(estadoSummary, item.estado)) {
+          estadoSummary[item.estado] += 1;
+        }
+      });
+      const totalEmitido = updates.reduce((acc, item) => acc + (item.emitido || 0), 0);
+      const totalAntes = updates.reduce((acc, item) => acc + (item.beforeSolventado || 0), 0);
+      const totalAhora = updates.reduce((acc, item) => acc + (item.solventado || 0), 0);
+      const changedCount = updates.filter((item) => Math.abs(item.deltaMonto || 0) > 0.00001).length;
+      const previewLimit = 30;
+      const previewRows = updates.slice(0, previewLimit).map((item) => ({
+        index: String(item.index || ""),
+        id: String(item.id || ""),
+        fuente: item.fuente || "-",
+        periodo: item.periodo || "-",
+        estado: item.estado || "Emitido",
+        emitido: formatMoney(item.emitido || 0),
+        antes: formatMoney(item.beforeSolventado || 0),
+        ahora: formatMoney(item.solventado || 0),
+        delta: formatMoney(item.deltaMonto || 0),
+      }));
 
-      const confirmLines = [
-        "ATENCION: se guardarán montos solventados PDP en lote.",
-        "El estado actual de cada observación se conservará.",
-        `Fuente: ${activeFuente}`,
-        `Periodo: ${activePeriodo}`,
-        `Registros: ${updates.length}`,
-        `Monto total: ${formatMoney(totalMonto)}`,
-      ];
-      if (preview) {
-        confirmLines.push("");
-        confirmLines.push("Vista previa:");
-        confirmLines.push(preview + (updates.length > 20 ? "\n..." : ""));
-      }
-      confirmLines.push("");
-      confirmLines.push("¿Confirmas aplicar y guardar?");
-
-      if (!window.confirm(confirmLines.join("\n"))) {
+      const confirmed = await showConfirmModal({
+        title: "Confirmar carga rápida de montos PDP",
+        subtitle: "Se aplicará guardado en lote sobre las observaciones PDP visibles.",
+        metaItems: [
+          { label: "Fuente", value: activeFuente },
+          { label: "Periodo", value: activePeriodo },
+          { label: "Tipo de anexo", value: "PDP" },
+          { label: "Registros", value: formatCount(updates.length) },
+        ],
+        highlightItems: [
+          { label: "Montos modificados", value: formatCount(changedCount), tone: "warning" },
+          { label: "Monto total antes", value: formatMoney(totalAntes), tone: "default" },
+          { label: "Monto total ahora", value: formatMoney(totalAhora), tone: "default" },
+        ],
+        summaryTitle: "Resumen de montos y estatus",
+        summaryRows: [
+          { label: "Registros capturados", value: formatCount(updates.length), align: "right" },
+          { label: "Cambios efectivos de monto", value: formatCount(changedCount), align: "right" },
+          { label: "Estado Emitido (se conserva)", value: formatCount(estadoSummary.Emitido), align: "right" },
+          { label: "Estado Pendiente (se conserva)", value: formatCount(estadoSummary.Pendiente), align: "right" },
+          { label: "Estado Solventado (se conserva)", value: formatCount(estadoSummary.Solventado), align: "right" },
+          { label: "Monto emitido total", value: formatMoney(totalEmitido), align: "right" },
+          { label: "Monto solventado total antes", value: formatMoney(totalAntes), align: "right" },
+          { label: "Monto solventado total ahora", value: formatMoney(totalAhora), align: "right" },
+          { label: "Variación total", value: formatMoney(totalAhora - totalAntes), align: "right" },
+        ],
+        previewTitle: `Vista previa (${formatCount(previewRows.length)} de ${formatCount(updates.length)} registros)`,
+        previewColumns: [
+          { key: "index", label: "Índice", align: "right" },
+          { key: "id", label: "ID", align: "right" },
+          { key: "fuente", label: "Fuente" },
+          { key: "periodo", label: "Periodo" },
+          { key: "estado", label: "Estado" },
+          { key: "emitido", label: "Emitido", align: "right" },
+          { key: "antes", label: "Solventado antes", align: "right" },
+          { key: "ahora", label: "Solventado ahora", align: "right" },
+          { key: "delta", label: "Variación", align: "right" },
+        ],
+        previewRows,
+        warningText: "ATENCION: esta acción guardará los montos PDP en lote y no cambia automáticamente el estado.",
+        confirmLabel: "Aplicar y guardar",
+        cancelLabel: "Seguir editando",
+        triggerButton: pdpQuickApplyBtn,
+        fallbackMessage: `¿Confirmas aplicar y guardar ${updates.length} montos PDP?`,
+      });
+      if (!confirmed) {
         return;
       }
 
@@ -1518,7 +1885,7 @@
     const applyClientFilters = () => {
       const tableFilters = readTableFilters();
       filteredRows = (Array.isArray(allRows) ? allRows : []).filter((row) => {
-        const tipoAnexo = normalizeTipoAnexo(row && row.tipo_anexo);
+        const tipoAnexo = normalizeTipoAnexo(row && row.tipo_anexo) || "-";
         const fuente = String((row && row.fuente_financiamiento) || "").trim().toLowerCase();
         const periodo = String((row && row.periodo_cedula) || "").trim().toLowerCase();
         const tipoAuditoria = normalizeTipoAuditoriaForFilter(row && row.tipo_auditoria).toLowerCase();
@@ -1696,6 +2063,11 @@
         return;
       }
 
+      const rowsById = new Map(
+        (Array.isArray(filteredRows) ? filteredRows : [])
+          .map((item) => [Number((item && item.id) || 0), item])
+          .filter(([id]) => Number.isFinite(id) && id > 0)
+      );
       const pendingUpdates = [];
       for (const row of matchingRows) {
         const payloadResult = buildRowPayload(row);
@@ -1713,12 +2085,16 @@
         const afterMonto = Number.parseFloat(
           String((payloadResult.payload && payloadResult.payload.monto_pdp_solventado) || "0")
         ) || 0;
+        const sourceRow = rowsById.get(payloadResult.id) || {};
         pendingUpdates.push({
           ...payloadResult,
           beforeEstado,
           afterEstado,
           beforeMonto,
           afterMonto,
+          tipoAuditoria: normalizeTipoAuditoria(sourceRow && sourceRow.tipo_auditoria),
+          fuente: String((sourceRow && sourceRow.fuente_financiamiento) || "").trim() || "-",
+          periodo: String((sourceRow && sourceRow.periodo_cedula) || "").trim() || "-",
           isPdp: selectedAnexo === "PDP",
         });
       }
@@ -1737,35 +2113,85 @@
       const pdpMontoChanges = pendingUpdates.filter(
         (item) => item.isPdp && Math.abs((item.afterMonto || 0) - (item.beforeMonto || 0)) > 0.00001
       );
+      const estadoChanges = pendingUpdates.filter((item) => item.beforeEstado !== item.afterEstado).length;
       const pdpMontoAntes = pdpMontoChanges.reduce((acc, item) => acc + (item.beforeMonto || 0), 0);
       const pdpMontoAhora = pdpMontoChanges.reduce((acc, item) => acc + (item.afterMonto || 0), 0);
-      const idsPreview = pendingUpdates
-        .slice(0, 20)
-        .map((item) => String(item.id))
-        .join(", ");
-
-      const confirmLines = [
-        "ATENCION: se guardarán cambios en bloque.",
-        `Oficio: ${filters.oficio}`,
-        `Tipo de anexo: ${selectedAnexo}`,
-        `Observaciones cambiadas: ${pendingUpdates.length}`,
-        `- Emitido: ${estadoSummary.Emitido}`,
-        `- Pendiente: ${estadoSummary.Pendiente}`,
-        `- Solventado: ${estadoSummary.Solventado}`,
+      const previewLimit = 30;
+      const enteLabel = getSelectedOptionLabel(enteInput, filters.ente_id);
+      const summaryRows = [
+        { label: "Observaciones con cambios", value: formatCount(pendingUpdates.length), align: "right" },
+        { label: "Cambios de estado", value: formatCount(estadoChanges), align: "right" },
+        { label: "Sin cambio de estado", value: formatCount(pendingUpdates.length - estadoChanges), align: "right" },
+        { label: "Estado final Emitido", value: formatCount(estadoSummary.Emitido), align: "right" },
+        { label: "Estado final Pendiente", value: formatCount(estadoSummary.Pendiente), align: "right" },
+        { label: "Estado final Solventado", value: formatCount(estadoSummary.Solventado), align: "right" },
       ];
       if (selectedAnexo === "PDP") {
-        confirmLines.push(`- Cambios de monto PDP: ${pdpMontoChanges.length}`);
-        confirmLines.push(`- Monto PDP antes: ${formatMoney(pdpMontoAntes)}`);
-        confirmLines.push(`- Monto PDP ahora: ${formatMoney(pdpMontoAhora)}`);
-        confirmLines.push("Confirma con cuidado: los montos PDP también serán actualizados.");
+        summaryRows.push(
+          { label: "Montos PDP modificados", value: formatCount(pdpMontoChanges.length), align: "right" },
+          { label: "Monto PDP antes", value: formatMoney(pdpMontoAntes), align: "right" },
+          { label: "Monto PDP ahora", value: formatMoney(pdpMontoAhora), align: "right" },
+          { label: "Variación total PDP", value: formatMoney(pdpMontoAhora - pdpMontoAntes), align: "right" },
+        );
       }
-      if (idsPreview) {
-        confirmLines.push(`IDs (vista previa): ${idsPreview}${pendingUpdates.length > 20 ? "..." : ""}`);
-      }
-      confirmLines.push("");
-      confirmLines.push("¿Confirmas guardar los cambios?");
 
-      if (!window.confirm(confirmLines.join("\n"))) {
+      const previewColumns = [
+        { key: "id", label: "ID", align: "right" },
+        { key: "tipoAuditoria", label: "Tipo auditoría" },
+        { key: "fuente", label: "Fuente" },
+        { key: "periodo", label: "Periodo" },
+        { key: "estadoAntes", label: "Estado antes" },
+        { key: "estadoAhora", label: "Estado ahora" },
+      ];
+      if (selectedAnexo === "PDP") {
+        previewColumns.push(
+          { key: "montoAntes", label: "Monto PDP antes", align: "right" },
+          { key: "montoAhora", label: "Monto PDP ahora", align: "right" },
+          { key: "deltaMonto", label: "Variación", align: "right" },
+        );
+      }
+      const previewRows = pendingUpdates.slice(0, previewLimit).map((item) => ({
+        id: String(item.id || ""),
+        tipoAuditoria: item.tipoAuditoria || "Financiera",
+        fuente: item.fuente || "-",
+        periodo: item.periodo || "-",
+        estadoAntes: item.beforeEstado || "Emitido",
+        estadoAhora: item.afterEstado || "Emitido",
+        montoAntes: item.isPdp ? formatMoney(item.beforeMonto || 0) : "—",
+        montoAhora: item.isPdp ? formatMoney(item.afterMonto || 0) : "—",
+        deltaMonto: item.isPdp ? formatMoney((item.afterMonto || 0) - (item.beforeMonto || 0)) : "—",
+      }));
+
+      const confirmed = await showConfirmModal({
+        title: "Confirmar guardado por filtros",
+        subtitle: "Se guardarán cambios en bloque para las observaciones visibles del anexo seleccionado.",
+        metaItems: [
+          { label: "Ejercicio", value: filters.ejercicio || "-" },
+          { label: "Ente", value: enteLabel },
+          { label: "Oficio", value: filters.oficio || "-" },
+          { label: "Tipo de anexo", value: selectedAnexo || "-" },
+        ],
+        highlightItems: [
+          { label: "Registros a guardar", value: formatCount(pendingUpdates.length), tone: "default" },
+          { label: "Cambios de estado", value: formatCount(estadoChanges), tone: "default" },
+          selectedAnexo === "PDP"
+            ? { label: "Cambios de monto PDP", value: formatCount(pdpMontoChanges.length), tone: "warning" }
+            : null,
+        ],
+        summaryTitle: "Resumen de confirmación",
+        summaryRows,
+        previewTitle: `Vista previa (${formatCount(previewRows.length)} de ${formatCount(pendingUpdates.length)} registros)`,
+        previewColumns,
+        previewRows,
+        warningText: selectedAnexo === "PDP"
+          ? "Confirma con cuidado: además del estado se actualizarán montos PDP."
+          : "Confirma con cuidado: esta acción guardará cambios en lote para el bloque filtrado.",
+        confirmLabel: "Guardar cambios",
+        cancelLabel: "Revisar nuevamente",
+        triggerButton: saveFilteredBtn,
+        fallbackMessage: `¿Confirmas guardar ${pendingUpdates.length} cambios del anexo ${selectedAnexo}?`,
+      });
+      if (!confirmed) {
         return;
       }
 
@@ -1826,82 +2252,84 @@
       return Math.max(0, safeEmitido - safeSolventado);
     };
 
-    const buildSolventarTodoConfirmMessage = (rowsToSolve) => {
-      const groups = new Map();
-      rowsToSolve.forEach((row) => {
-        const tipo = normalizeTipoAuditoria(row && row.tipo_auditoria);
-        if (!groups.has(tipo)) {
-          groups.set(tipo, {
-            total: 0,
-            pdp: 0,
-            montoPdpPendiente: 0,
-            anexos: { SA: 0, PDP: 0, PRAS: 0, PEFCF: 0, R: 0 },
-          });
-        }
-        const item = groups.get(tipo);
-        item.total += 1;
-        const tipoAnexo = normalizeTipoAnexo(row && row.tipo_anexo);
-        if (Object.prototype.hasOwnProperty.call(item.anexos, tipoAnexo)) {
-          item.anexos[tipoAnexo] += 1;
-        }
-        if (tipoAnexo === "PDP") {
-          item.pdp += 1;
-          item.montoPdpPendiente += parsePdpPendingAmount(row);
-        }
-      });
-
-      const orderedTipos = Array.from(groups.keys()).sort((a, b) => {
-        const orderA = tipoSortOrder[a] || 99;
-        const orderB = tipoSortOrder[b] || 99;
-        if (orderA !== orderB) return orderA - orderB;
-        return a.localeCompare(b, "es", { sensitivity: "base" });
-      });
-
-      const lines = [
-        "ATENCION: Vas a solventar todas las observaciones visibles de este oficio.",
-        "Para PDP se cubrira el monto solventado hasta el monto emitido.",
-        "Revisa con cuidado antes de continuar.",
-        "",
-        `Total de observaciones a solventar: ${rowsToSolve.length}`,
-      ];
-
-      orderedTipos.forEach((tipo, index) => {
-        const entry = groups.get(tipo);
-        lines.push("");
-        lines.push(formatTipoSectionTitle(tipo, index));
-        lines.push(`- Observaciones: ${entry.total}`);
-        lines.push(
-          `- SA: ${entry.anexos.SA} | PDP: ${entry.anexos.PDP} | PRAS: ${entry.anexos.PRAS} | PEFCF: ${entry.anexos.PEFCF} | R: ${entry.anexos.R}`
-        );
-        lines.push(`- Monto PDP pendiente: ${formatMoney(entry.montoPdpPendiente)}`);
-      });
-
-      lines.push("");
-      lines.push("¿Confirmas solventar todo?");
-      return lines.join("\n");
+    const parsePdpEmitidoAmount = (row) => {
+      const emitido = Number.parseFloat(String((row && row.monto_pdp_emitido) || "0"));
+      return Number.isFinite(emitido) ? Math.max(0, emitido) : 0;
     };
 
-    const buildPendienteTodoConfirmMessage = (rowsToSetPending) => {
+    const parsePdpSolventadoAmount = (row) => {
+      const solventado = Number.parseFloat(String((row && row.monto_pdp_solventado) || "0"));
+      return Number.isFinite(solventado) ? Math.max(0, solventado) : 0;
+    };
+
+    const buildBulkActionConfirmData = (rows, action = "solventar", options = {}) => {
+      const mode = action === "pendiente" ? "pendiente" : "solventar";
+      const destinoEstado = mode === "solventar" ? "Solventado" : "Pendiente";
+      const selectedAnexo = String((options && options.selectedAnexo) || "").trim().toUpperCase();
+      const hasSelectedAnexo = !!selectedAnexo;
+      const requiredAnexos = ["SA", "PDP", "PRAS", "PEFCF", "R"];
+      const orderedRows = sortObservacionesForDetail(Array.isArray(rows) ? rows : []);
       const groups = new Map();
-      rowsToSetPending.forEach((row) => {
-        const tipo = normalizeTipoAuditoria(row && row.tipo_auditoria);
-        if (!groups.has(tipo)) {
-          groups.set(tipo, {
-            total: 0,
-            pdp: 0,
-            montoPdpSolventadoActual: 0,
-            anexos: { SA: 0, PDP: 0, PRAS: 0, PEFCF: 0, R: 0 },
+      const totals = {
+        total: 0,
+        pdp: 0,
+        anexos: { SA: 0, PDP: 0, PRAS: 0, PEFCF: 0, R: 0 },
+        montoEmitido: 0,
+        montoSolventadoAntes: 0,
+        montoSolventadoDestino: 0,
+        montoPendienteAntes: 0,
+        montoPendienteDestino: 0,
+      };
+
+      orderedRows.forEach((row) => {
+        const tipoAuditoria = normalizeTipoAuditoria(row && row.tipo_auditoria);
+        const tipoAnexo = normalizeTipoAnexo(row && row.tipo_anexo);
+        const fuente = String((row && row.fuente_financiamiento) || "").trim() || "-";
+        const periodo = String((row && row.periodo_cedula) || "").trim() || "-";
+
+        totals.total += 1;
+        if (Object.prototype.hasOwnProperty.call(totals.anexos, tipoAnexo)) {
+          totals.anexos[tipoAnexo] += 1;
+        }
+
+        if (!groups.has(tipoAuditoria)) {
+          groups.set(tipoAuditoria, new Map());
+        }
+        const fuenteMap = groups.get(tipoAuditoria);
+        const fuenteKey = fuente.toLowerCase();
+        if (!fuenteMap.has(fuenteKey)) {
+          fuenteMap.set(fuenteKey, {
+            fuente,
+            periods: new Map(),
           });
         }
-        const item = groups.get(tipo);
-        item.total += 1;
-        const tipoAnexo = normalizeTipoAnexo(row && row.tipo_anexo);
-        if (Object.prototype.hasOwnProperty.call(item.anexos, tipoAnexo)) {
-          item.anexos[tipoAnexo] += 1;
+        const fuenteEntry = fuenteMap.get(fuenteKey);
+        const periodoKey = periodo.toLowerCase();
+        if (!fuenteEntry.periods.has(periodoKey)) {
+          fuenteEntry.periods.set(periodoKey, {
+            periodo,
+            anexos: new Map(),
+          });
         }
+        const periodoEntry = fuenteEntry.periods.get(periodoKey);
+        if (!periodoEntry.anexos.has(tipoAnexo)) {
+          periodoEntry.anexos.set(tipoAnexo, []);
+        }
+        periodoEntry.anexos.get(tipoAnexo).push(row);
+
         if (tipoAnexo === "PDP") {
-          item.pdp += 1;
-          item.montoPdpSolventadoActual += Number.parseFloat(String((row && row.monto_pdp_solventado) || "0")) || 0;
+          totals.pdp += 1;
+          const emitido = parsePdpEmitidoAmount(row);
+          const solventadoAntes = parsePdpSolventadoAmount(row);
+          const pendienteAntes = parsePdpPendingAmount(row);
+          const solventadoDestino = mode === "solventar" ? emitido : 0;
+          const pendienteDestino = Math.max(0, emitido - solventadoDestino);
+
+          totals.montoEmitido += emitido;
+          totals.montoSolventadoAntes += solventadoAntes;
+          totals.montoSolventadoDestino += solventadoDestino;
+          totals.montoPendienteAntes += pendienteAntes;
+          totals.montoPendienteDestino += pendienteDestino;
         }
       });
 
@@ -1912,28 +2340,202 @@
         return a.localeCompare(b, "es", { sensitivity: "base" });
       });
 
-      const lines = [
-        "ATENCION: Vas a dejar en Pendiente todas las observaciones visibles de este oficio.",
-        "Para PDP se reiniciará el monto solventado a 0.",
-        "Revisa con cuidado antes de continuar.",
-        "",
-        `Total de observaciones a dejar en pendiente: ${rowsToSetPending.length}`,
-      ];
-
+      const groupedRows = [];
       orderedTipos.forEach((tipo, index) => {
-        const entry = groups.get(tipo);
-        lines.push("");
-        lines.push(formatTipoSectionTitle(tipo, index));
-        lines.push(`- Observaciones: ${entry.total}`);
-        lines.push(
-          `- SA: ${entry.anexos.SA} | PDP: ${entry.anexos.PDP} | PRAS: ${entry.anexos.PRAS} | PEFCF: ${entry.anexos.PEFCF} | R: ${entry.anexos.R}`
-        );
-        lines.push(`- Monto PDP solventado actual (se pondrá en 0): ${formatMoney(entry.montoPdpSolventadoActual)}`);
+        const sectionLabel = formatTipoSectionTitle(tipo, index);
+        groupedRows.push({ __section: true, label: sectionLabel });
+        const fuenteMap = groups.get(tipo) || new Map();
+        const orderedFuentes = Array.from(fuenteMap.values()).sort((a, b) => (
+          String(a.fuente || "").localeCompare(String(b.fuente || ""), "es", { sensitivity: "base" })
+        ));
+
+        const sectionTotals = {
+          emitidas: 0,
+          solventadasAntes: 0,
+          solventadasDestino: 0,
+          noSolventadasAntes: 0,
+          noSolventadasDestino: 0,
+          pdpEmitido: 0,
+          pdpSolventadoAntes: 0,
+          pdpSolventadoDestino: 0,
+          pdpPendienteAntes: 0,
+          pdpPendienteDestino: 0,
+        };
+
+        orderedFuentes.forEach((fuenteEntry) => {
+          const orderedPeriods = Array.from(fuenteEntry.periods.values()).sort((a, b) => (
+            String(a.periodo || "").localeCompare(String(b.periodo || ""), "es", { sensitivity: "base" })
+          ));
+          const rowsByFuente = [];
+          orderedPeriods.forEach((periodoEntry) => {
+            const extraAnexos = Array.from(periodoEntry.anexos.keys())
+              .filter((anexo) => anexo && !requiredAnexos.includes(anexo))
+              .sort((a, b) => {
+                const orderA = anexoSortOrder[a] || 99;
+                const orderB = anexoSortOrder[b] || 99;
+                if (orderA !== orderB) return orderA - orderB;
+                return String(a || "").localeCompare(String(b || ""), "es", { sensitivity: "base" });
+              });
+            const orderedAnexos = hasSelectedAnexo
+              ? [selectedAnexo]
+              : requiredAnexos.concat(extraAnexos);
+            const rowsByPeriodo = [];
+
+            orderedAnexos.forEach((anexo) => {
+              const items = Array.isArray(periodoEntry.anexos.get(anexo))
+                ? periodoEntry.anexos.get(anexo).slice()
+                : [];
+              items.sort((a, b) => {
+                const numA = parsePositiveInt(a && a.numero_observacion);
+                const numB = parsePositiveInt(b && b.numero_observacion);
+                if (numA !== numB) {
+                  if (!numA) return 1;
+                  if (!numB) return -1;
+                  return numA - numB;
+                }
+                return Number((a && a.id) || 0) - Number((b && b.id) || 0);
+              });
+
+              const emitidas = items.length;
+              const solventadasAntesIndices = [];
+              const noSolventadasAntesIndices = [];
+              items.forEach((item, itemIndex) => {
+                const progressive = itemIndex + 1;
+                if (normalizeEstado(item && item.estado) === "Solventado") {
+                  solventadasAntesIndices.push(progressive);
+                } else {
+                  noSolventadasAntesIndices.push(progressive);
+                }
+              });
+
+              const solventadasDestinoIndices = [];
+              const noSolventadasDestinoIndices = [];
+              if (mode === "solventar") {
+                for (let idx = 1; idx <= emitidas; idx += 1) {
+                  solventadasDestinoIndices.push(idx);
+                }
+              } else {
+                for (let idx = 1; idx <= emitidas; idx += 1) {
+                  noSolventadasDestinoIndices.push(idx);
+                }
+              }
+
+              const isPdp = anexo === "PDP";
+              let pdpEmitido = 0;
+              let pdpSolventadoAntes = 0;
+              let pdpPendienteAntes = 0;
+              if (isPdp) {
+                items.forEach((item) => {
+                  pdpEmitido += parsePdpEmitidoAmount(item);
+                  pdpSolventadoAntes += parsePdpSolventadoAmount(item);
+                  pdpPendienteAntes += parsePdpPendingAmount(item);
+                });
+              }
+              const pdpSolventadoDestino = isPdp
+                ? (mode === "solventar" ? pdpEmitido : 0)
+                : 0;
+              const pdpPendienteDestino = isPdp
+                ? Math.max(0, pdpEmitido - pdpSolventadoDestino)
+                : 0;
+
+              const solventadasAntesTotal = solventadasAntesIndices.length;
+              const noSolventadasAntesTotal = noSolventadasAntesIndices.length;
+              const solventadasDestinoTotal = solventadasDestinoIndices.length;
+              const noSolventadasDestinoTotal = noSolventadasDestinoIndices.length;
+
+              sectionTotals.emitidas += emitidas;
+              sectionTotals.solventadasAntes += solventadasAntesTotal;
+              sectionTotals.solventadasDestino += solventadasDestinoTotal;
+              sectionTotals.noSolventadasAntes += noSolventadasAntesTotal;
+              sectionTotals.noSolventadasDestino += noSolventadasDestinoTotal;
+              sectionTotals.pdpEmitido += pdpEmitido;
+              sectionTotals.pdpSolventadoAntes += pdpSolventadoAntes;
+              sectionTotals.pdpSolventadoDestino += pdpSolventadoDestino;
+              sectionTotals.pdpPendienteAntes += pdpPendienteAntes;
+              sectionTotals.pdpPendienteDestino += pdpPendienteDestino;
+
+              rowsByPeriodo.push({
+                fuente: "",
+                periodo: "",
+                anexo,
+                accionesEmitidas: formatCount(emitidas),
+                solventadasTotal: formatCountChange(solventadasAntesTotal, solventadasDestinoTotal),
+                solventadasProgresivo: formatChangeText(
+                  buildProgressiveText(solventadasAntesIndices),
+                  buildProgressiveText(solventadasDestinoIndices),
+                ),
+                noSolventadasTotal: formatCountChange(noSolventadasAntesTotal, noSolventadasDestinoTotal),
+                noSolventadasProgresivo: formatChangeText(
+                  buildProgressiveText(noSolventadasAntesIndices),
+                  buildProgressiveText(noSolventadasDestinoIndices),
+                ),
+                pdpEmitido: isPdp ? formatMoney(pdpEmitido) : "",
+                pdpSolventado: isPdp ? formatMoneyChange(pdpSolventadoAntes, pdpSolventadoDestino) : "",
+                pdpPendiente: isPdp ? formatMoneyChange(pdpPendienteAntes, pdpPendienteDestino) : "",
+              });
+            });
+
+            rowsByPeriodo.forEach((row, rowIndex) => {
+              if (rowIndex === 0) {
+                row.periodo = periodoEntry.periodo || "-";
+              }
+              rowsByFuente.push(row);
+            });
+          });
+
+          rowsByFuente.forEach((row, rowIndex) => {
+            if (rowIndex === 0) {
+              row.fuente = fuenteEntry.fuente || "-";
+            }
+            groupedRows.push(row);
+          });
+        });
+
+        groupedRows.push({
+          __rowClass: "obs-admin-confirm-preview-total",
+          fuente: "TOTAL",
+          periodo: "",
+          anexo: "",
+          accionesEmitidas: formatCount(sectionTotals.emitidas),
+          solventadasTotal: formatCountChange(sectionTotals.solventadasAntes, sectionTotals.solventadasDestino),
+          solventadasProgresivo: "",
+          noSolventadasTotal: formatCountChange(sectionTotals.noSolventadasAntes, sectionTotals.noSolventadasDestino),
+          noSolventadasProgresivo: "",
+          pdpEmitido: sectionTotals.pdpEmitido > 0 ? formatMoney(sectionTotals.pdpEmitido) : "",
+          pdpSolventado: sectionTotals.pdpEmitido > 0
+            ? formatMoneyChange(sectionTotals.pdpSolventadoAntes, sectionTotals.pdpSolventadoDestino)
+            : "",
+          pdpPendiente: sectionTotals.pdpEmitido > 0
+            ? formatMoneyChange(sectionTotals.pdpPendienteAntes, sectionTotals.pdpPendienteDestino)
+            : "",
+        });
       });
 
-      lines.push("");
-      lines.push("¿Confirmas dejar pendiente todo?");
-      return lines.join("\n");
+      const previewColumns = [
+        { key: "fuente", label: "Nombre de la Fuente de Financiamiento" },
+        { key: "periodo", label: "Periodo" },
+        { key: "anexo", label: "Anexo" },
+        { key: "accionesEmitidas", label: "Acciones Emitidas", align: "right" },
+        { key: "solventadasTotal", label: "Solventadas (Total)", align: "right" },
+        { key: "solventadasProgresivo", label: "Solventadas (Número progresivo)" },
+        { key: "noSolventadasTotal", label: "No Solventadas (Total)", align: "right" },
+        { key: "noSolventadasProgresivo", label: "No Solventadas (Número progresivo)" },
+      ];
+      if (totals.pdp > 0) {
+        previewColumns.push(
+          { key: "pdpEmitido", label: "PDP emitido", align: "right" },
+          { key: "pdpSolventado", label: "PDP solventado", align: "right" },
+          { key: "pdpPendiente", label: "PDP pendiente", align: "right" },
+        );
+      }
+
+      return {
+        mode,
+        destinoEstado,
+        totals,
+        previewColumns,
+        groupedRows,
+      };
     };
 
     const applyPdpQuickByFilters = async () => {
@@ -2086,8 +2688,35 @@
         return;
       }
 
-      const confirmMessage = buildSolventarTodoConfirmMessage(rowsToSolve);
-      const confirmed = window.confirm(confirmMessage);
+      const enteLabel = getSelectedOptionLabel(enteInput, filters.ente_id);
+      const selectedAnexo = String(filterTipoAnexoInput ? filterTipoAnexoInput.value : "").trim().toUpperCase();
+      const confirmData = buildBulkActionConfirmData(rowsToSolve, "solventar", { selectedAnexo });
+      const confirmed = await showConfirmModal({
+        title: "Confirmar solventación masiva",
+        subtitle: "Se marcarán como Solventado todas las observaciones visibles que no estén solventadas.",
+        metaItems: [
+          { label: "Ejercicio", value: filters.ejercicio || "-" },
+          { label: "Ente", value: enteLabel },
+          { label: "Oficio", value: filters.oficio || "-" },
+          { label: "Acción", value: "Solventar todo visible" },
+        ],
+        highlightItems: [
+          { label: "Observaciones a solventar", value: formatCount(confirmData.totals.total), tone: "warning" },
+          { label: "Observaciones PDP", value: formatCount(confirmData.totals.pdp), tone: "default" },
+          { label: "PDP pendiente actual", value: formatMoney(confirmData.totals.montoPendienteAntes), tone: "default" },
+        ],
+        showSummary: false,
+        previewTitle: "Tabla por bloque y tipo de anexo",
+        previewColumns: confirmData.previewColumns,
+        previewRows: confirmData.groupedRows,
+        warningText: confirmData.totals.pdp > 0
+          ? "ATENCION: para PDP, el monto solventado se llevará al monto emitido y el pendiente quedará en 0."
+          : "ATENCION: esta acción marcará como Solventado todo el bloque visible.",
+        confirmLabel: "Solventar todo",
+        cancelLabel: "Revisar nuevamente",
+        triggerButton: solveAllBtn,
+        fallbackMessage: `¿Confirmas solventar ${rowsToSolve.length} observaciones visibles?`,
+      });
       if (!confirmed) {
         return;
       }
@@ -2150,8 +2779,36 @@
         return;
       }
 
-      const confirmMessage = buildPendienteTodoConfirmMessage(safeRows);
-      if (!window.confirm(confirmMessage)) {
+      const enteLabel = getSelectedOptionLabel(enteInput, filters.ente_id);
+      const selectedAnexo = String(filterTipoAnexoInput ? filterTipoAnexoInput.value : "").trim().toUpperCase();
+      const confirmData = buildBulkActionConfirmData(safeRows, "pendiente", { selectedAnexo });
+      const confirmed = await showConfirmModal({
+        title: "Confirmar pendiente masivo",
+        subtitle: "Se marcarán como Pendiente todas las observaciones visibles del oficio.",
+        metaItems: [
+          { label: "Ejercicio", value: filters.ejercicio || "-" },
+          { label: "Ente", value: enteLabel },
+          { label: "Oficio", value: filters.oficio || "-" },
+          { label: "Acción", value: "Pendiente todo visible" },
+        ],
+        highlightItems: [
+          { label: "Observaciones a dejar pendientes", value: formatCount(confirmData.totals.total), tone: "warning" },
+          { label: "Observaciones PDP", value: formatCount(confirmData.totals.pdp), tone: "default" },
+          { label: "PDP solventado actual", value: formatMoney(confirmData.totals.montoSolventadoAntes), tone: "default" },
+        ],
+        showSummary: false,
+        previewTitle: "Tabla por bloque y tipo de anexo",
+        previewColumns: confirmData.previewColumns,
+        previewRows: confirmData.groupedRows,
+        warningText: confirmData.totals.pdp > 0
+          ? "ATENCION: para PDP, el monto solventado se reiniciará a 0 y el pendiente se recalculará."
+          : "ATENCION: esta acción marcará como Pendiente todo el bloque visible.",
+        confirmLabel: "Dejar todo en pendiente",
+        cancelLabel: "Revisar nuevamente",
+        triggerButton: pendingAllBtn,
+        fallbackMessage: `¿Confirmas dejar en pendiente ${safeRows.length} observaciones visibles?`,
+      });
+      if (!confirmed) {
         return;
       }
 
@@ -2355,8 +3012,35 @@
       });
     }
 
+    if (confirmCancelBtn) {
+      confirmCancelBtn.addEventListener("click", () => {
+        closeConfirmModal(false);
+      });
+    }
+
+    if (confirmAcceptBtn) {
+      confirmAcceptBtn.addEventListener("click", () => {
+        closeConfirmModal(true);
+      });
+    }
+
+    if (confirmModal) {
+      confirmModal.addEventListener("click", (event) => {
+        if (event.target === confirmModal) {
+          closeConfirmModal(false);
+        }
+      });
+    }
+
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && pdpQuickModal && !pdpQuickModal.hidden) {
+      if (event.key !== "Escape") {
+        return;
+      }
+      if (confirmModal && !confirmModal.hidden) {
+        closeConfirmModal(false);
+        return;
+      }
+      if (pdpQuickModal && !pdpQuickModal.hidden) {
         closePdpQuickModal();
       }
     });

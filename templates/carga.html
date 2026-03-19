@@ -1147,6 +1147,35 @@
           addFuente(option.value || "");
         });
       }
+      if (manualFuente) {
+        Array.from(manualFuente.options || []).forEach((option) => {
+          const value = String(option.value || "").trim();
+          if (!value || value === NEW_SOURCE_VALUE) {
+            return;
+          }
+          if (value.startsWith("__obs__:")) {
+            addFuente(value.replace("__obs__:", ""));
+            return;
+          }
+          addFuente(option.textContent || "");
+        });
+      }
+      if (principalFuente) {
+        Array.from(principalFuente.options || []).forEach((option) => {
+          const value = String(option.value || "").trim();
+          if (!value || value === NEW_SOURCE_VALUE) {
+            return;
+          }
+          if (value.startsWith("__obs__:")) {
+            addFuente(value.replace("__obs__:", ""));
+            return;
+          }
+          addFuente(option.textContent || "");
+        });
+      }
+      (Array.isArray(fuentesDetalleState) ? fuentesDetalleState : []).forEach((row) => {
+        addFuente(row && row.fuente_nombre ? row.fuente_nombre : "");
+      });
       return Array.from(fuenteMap.values()).sort((a, b) => (
         String(a || "").localeCompare(String(b || ""), "es", { sensitivity: "base" })
       ));
@@ -2910,33 +2939,18 @@
       const normalizedPdp = ensurePdpDetalleAlignedToFuentes();
       const fuenteCatalog = collectManualFuenteCatalog();
       const periodCatalog = collectManualPeriodoCatalog();
+      const fuenteOptionsHtml = fuenteCatalog
+        .map((fuenteNombre) => {
+          const source = normalizeInlineText(fuenteNombre);
+          if (!source) {
+            return "";
+          }
+          return `<option value="${escapeHtml(source)}"></option>`;
+        })
+        .join("");
       const periodOptionsHtml = periodCatalog
         .map((periodoLabel) => `<option value="${escapeHtml(periodoLabel)}"></option>`)
         .join("");
-      const buildFuenteSelectOptionsHtml = (selectedFuente) => {
-        const selected = normalizeInlineText(selectedFuente || "");
-        const hasSelectedInCatalog = fuenteCatalog.some((item) => (
-          String(item || "").trim().toLowerCase() === selected.toLowerCase()
-        ));
-        const options = [];
-        options.push(`<option value=""${selected ? "" : " selected"}>Selecciona fuente</option>`);
-        if (selected && !hasSelectedInCatalog) {
-          options.push(
-            `<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)}</option>`
-          );
-        }
-        fuenteCatalog.forEach((fuenteNombre) => {
-          const source = normalizeInlineText(fuenteNombre);
-          if (!source) {
-            return;
-          }
-          const isSelected = source.toLowerCase() === selected.toLowerCase();
-          options.push(
-            `<option value="${escapeHtml(source)}"${isSelected ? " selected" : ""}>${escapeHtml(source)}</option>`
-          );
-        });
-        return options.join("");
-      };
       const groupedByTipo = new Map();
       const allowedTipos = getAllowedSourceTipos();
       const resolveTipoWithinScope = (value) => {
@@ -2962,6 +2976,7 @@
       };
       const sectionsHtml = orderedTipos.map((tipoKey, index) => {
         const rowIndexes = groupedByTipo.get(tipoKey) || [];
+        const tipoLabel = formatResumenTipoLabel(tipoKey, index);
         const tipoTotals = { sa: 0, pdp: 0, pras: 0, pefcf: 0, r: 0, total: 0, monto_pdp_emitido: 0 };
         const rowsHtml = rowIndexes.map((rowIndex) => {
           const row = fuentesDetalleState[rowIndex] || {};
@@ -2999,7 +3014,8 @@
           return (
             `<tr data-row-index="${rowIndex}">` +
             `<td class="manual-resumen-cell-fuente">` +
-            `<select data-row-field="fuente_nombre" data-row-index="${rowIndex}">${buildFuenteSelectOptionsHtml(fuenteNombre)}</select>` +
+            `<input type="text" list="manual_resumen_fuentes_options" data-row-field="fuente_nombre" data-row-index="${rowIndex}" value="${escapeHtml(fuenteNombre)}" placeholder="Selecciona o escribe fuente">` +
+            `<small class="manual-resumen-inline-help">Selecciona fuente del catálogo o escribe una nueva.</small>` +
             `<select data-row-field="tipo_auditoria" data-row-index="${rowIndex}" class="manual-resumen-tipo-select">${tipoOptionsHtml(resolveTipoWithinScope(row.tipo_auditoria))}</select>` +
             `</td>` +
             `<td class="manual-resumen-cell-periodo">` +
@@ -3020,9 +3036,23 @@
             `</tr>`
           );
         }).join("");
+        const subtotalRowHtml = (
+          `<tr class="manual-resumen-subtotal">` +
+          `<th colspan="2">Subtotal ${escapeHtml(tipoLabel)}</th>` +
+          `<th>${tipoTotals.sa}</th>` +
+          `<th>${tipoTotals.pdp}</th>` +
+          `<th>${tipoTotals.pras}</th>` +
+          `<th>${tipoTotals.pefcf}</th>` +
+          `<th>${tipoTotals.r}</th>` +
+          `<th>${tipoTotals.total}</th>` +
+          `<th>${escapeHtml(formatMoney(tipoTotals.monto_pdp_emitido))}</th>` +
+          `<th></th>` +
+          `<th></th>` +
+          `</tr>`
+        );
         return (
           `<div class="manual-resumen-section">` +
-          `<h4>${escapeHtml(formatResumenTipoLabel(tipoKey, index))}</h4>` +
+          `<h4>${escapeHtml(tipoLabel)}</h4>` +
           `<div class="manual-resumen-table-wrapper">` +
           `<table>` +
           `<thead>` +
@@ -3040,7 +3070,7 @@
           `<th>Acciones</th>` +
           `</tr>` +
           `</thead>` +
-          `<tbody>${rowsHtml}</tbody>` +
+          `<tbody>${rowsHtml}${subtotalRowHtml}</tbody>` +
           `</table>` +
           `</div>` +
           `</div>`
@@ -3076,6 +3106,7 @@
         `<button type="button" class="btn-secondary btn-compact" data-summary-clear-all>Eliminar todas</button>` +
         `</div>` +
         `</div>` +
+        `<datalist id="manual_resumen_fuentes_options">${fuenteOptionsHtml}</datalist>` +
         `<datalist id="manual_resumen_periodos_options">${periodOptionsHtml}</datalist>` +
         sectionsHtml +
         grandTotalHtml;
