@@ -1500,16 +1500,18 @@
             }));
             return {
               periodo: periodEntry.periodo,
-              rowCount: groups.length,
               groups,
             };
           });
 
-          fuenteEntry.rowCount = periodGroups.reduce((acc, entry) => acc + entry.rowCount, 0);
+          fuenteEntry.rowCount = periodGroups.reduce((acc, entry) => acc + entry.groups.length + 1, 0);
           let renderedFuenteCell = false;
 
           periodGroups.forEach((periodEntry) => {
             let renderedPeriodoCell = false;
+            let periodEmitidas = 0;
+            let periodSolventadas = 0;
+            let periodNoSolventadas = 0;
             periodEntry.groups.forEach((group) => {
               const isFuenteStart = !renderedFuenteCell;
               const isPeriodoStart = !renderedPeriodoCell;
@@ -1539,6 +1541,9 @@
               const emitidas = items.length;
               const solventadasTotal = solventadasIndices.length;
               const noSolventadasTotal = noSolventadasIndices.length;
+              periodEmitidas += emitidas;
+              periodSolventadas += solventadasTotal;
+              periodNoSolventadas += noSolventadasTotal;
               totalEmitidas += emitidas;
               totalSolventadas += solventadasTotal;
               totalNoSolventadas += noSolventadasTotal;
@@ -1552,7 +1557,7 @@
               }
               if (!renderedPeriodoCell) {
                 rowCells.push(
-                  `<td rowspan="${periodEntry.rowCount}" class="obs-admin-summary-group-cell">${escapeHtml(periodEntry.periodo)}</td>`
+                  `<td rowspan="${periodEntry.groups.length + 1}" class="obs-admin-summary-group-cell">${escapeHtml(periodEntry.periodo)}</td>`
                 );
                 renderedPeriodoCell = true;
               }
@@ -1568,6 +1573,17 @@
               const classAttr = rowClasses.length ? ` class="${rowClasses.join(" ")}"` : "";
               rowsHtmlParts.push(`<tr${classAttr}>${rowCells.join("")}</tr>`);
             });
+
+            rowsHtmlParts.push(
+              `<tr class="obs-admin-summary-subtotal">` +
+              `<th class="obs-admin-summary-subtotal-label">SUBTOTAL PERIODO</th>` +
+              `<th>${periodEmitidas}</th>` +
+              `<th>${periodSolventadas}</th>` +
+              `<th></th>` +
+              `<th>${periodNoSolventadas}</th>` +
+              `<th></th>` +
+              `</tr>`
+            );
           });
         });
 

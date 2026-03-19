@@ -4396,6 +4396,19 @@ tbody tr:hover td {
   border-top: 2px solid #bad2c3;
 }
 
+.obs-admin-summary-subtotal th {
+  background: #f4faf6;
+  color: #1e5139;
+  font-weight: 700;
+  border-top: 1px dashed #c2d8ca;
+}
+
+.obs-admin-summary-subtotal-label {
+  text-align: right;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
 .obs-admin-amount-table th:nth-child(n+3),
 .obs-admin-amount-table td:nth-child(n+3),
 .obs-admin-money-cell {
