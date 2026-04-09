@@ -3,13 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SIFEET Estatales · Acceso</title>
+  <title>Registro Observaciones · Acceso</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
 </head>
 <body class="login-page">
   {% set selected_username = request.form.get('username', '') %}
-  {% set selected_display = 'Luis' if selected_username == 'luis' else ('Gabo' if selected_username == 'gabo' else 'usuario') %}
+  {% set user_display_names = {'luis': 'C.P Luis Felipe Camilo Fuentes', 'gabo': 'Ing. Omar Gabriel Salvatierra Garcia'} %}
+  {% set selected_display = user_display_names.get(selected_username, 'usuario') %}
   <main class="login-shell" aria-labelledby="login-title">
     <section class="login-auth-panel" aria-label="Formulario de acceso">
       <div class="login-logo-wrap" aria-hidden="true">
@@ -18,7 +19,7 @@
 
       <div class="panel-header login-header">
         <p class="eyebrow">Órgano de Fiscalización Superior del Estado de Tlaxcala</p>
-        <h1 id="login-title">SIFEET Estatales</h1>
+        <h1 id="login-title">Registro Observaciones</h1>
         <p>Seleccione su usuario para continuar.</p>
       </div>
 
@@ -29,16 +30,16 @@
       <aside class="login-access-card" aria-label="Usuarios autorizados">
         <h3>Usuarios autorizados</h3>
         <div class="login-access-list">
-          <button class="login-access-user{% if selected_username == 'luis' %} is-selected{% endif %}" type="button" data-username="luis" data-display="Luis">
+          <button class="login-access-user{% if selected_username == 'luis' %} is-selected{% endif %}" type="button" data-username="luis" data-display="C.P Luis Felipe Camilo Fuentes">
             <span class="login-access-initials" aria-hidden="true">LU</span>
             <span class="login-access-meta">
-              <strong>Luis</strong>
+              <strong>C.P Luis Felipe Camilo Fuentes</strong>
             </span>
           </button>
-          <button class="login-access-user{% if selected_username == 'gabo' %} is-selected{% endif %}" type="button" data-username="gabo" data-display="Gabo">
+          <button class="login-access-user{% if selected_username == 'gabo' %} is-selected{% endif %}" type="button" data-username="gabo" data-display="Ing. Omar Gabriel Salvatierra Garcia">
             <span class="login-access-initials" aria-hidden="true">GA</span>
             <span class="login-access-meta">
-              <strong>Gabo</strong>
+              <strong>Ing. Omar Gabriel Salvatierra Garcia</strong>
             </span>
           </button>
         </div>
@@ -61,7 +62,7 @@
   </main>
 
   <footer class="site-footer login-footer">
-    © Órgano de Fiscalización Superior del Estado de Tlaxcala · SIFEET Estatales
+    © Órgano de Fiscalización Superior del Estado de Tlaxcala · Registro Observaciones
   </footer>
 
   <script>

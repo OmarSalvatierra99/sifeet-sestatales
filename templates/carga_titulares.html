@@ -3,23 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SIFEET Estatales · Carga de Titulares</title>
+  <title>Registro Observaciones · Carga de Titulares</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
 </head>
 <body class="loader-page titulares-standalone-page">
+  {% set user_display_names = {'luis': 'C.P Luis Felipe Camilo Fuentes', 'gabo': 'Ing. Omar Gabriel Salvatierra Garcia'} %}
   <header class="site-header">
     <div class="header-inner">
       <img src="{{ url_for('static', filename='img/ofs_logo.png') }}" alt="Logo institucional" class="ofs-logo">
       <div class="header-text">
         <p class="eyebrow">Órgano de Fiscalización Superior del Estado de Tlaxcala</p>
-        <h1>SIFEET Estatales</h1>
+        <h1>Registro Observaciones</h1>
         <p class="subtitle">Flujo de titulares</p>
       </div>
       <div class="header-badge user-badge">
         <div class="user-meta">
           <span>Usuario</span>
-          <strong>{{ "Gabo" if user.username == "gabo" else user.username }}</strong>
+          <strong>{{ user_display_names.get(user.username, user.username) }}</strong>
         </div>
         <div class="user-actions">
           <span class="user-role">Carga</span>
@@ -215,7 +216,7 @@
   </main>
 
   <footer class="site-footer">
-    © Órgano de Fiscalización Superior del Estado de Tlaxcala · SIFEET Estatales
+    © Órgano de Fiscalización Superior del Estado de Tlaxcala · Registro Observaciones
   </footer>
   <a class="floating-clear-btn obs-admin-fab-back" href="{{ url_for('carga') }}" aria-label="Regresar a carga">
     <span class="floating-clear-icon" aria-hidden="true">

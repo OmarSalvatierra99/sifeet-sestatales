@@ -1,11 +1,15 @@
+import csv
 from datetime import datetime
+from io import StringIO
 import json
 from pathlib import Path
 import re
 import sqlite3
 import sys
+import unicodedata
 
 from flask import jsonify, render_template, request
+from backup_utils import prune_backup_dir
 
 
 def split_periodo_tokens(raw_value: str) -> list[str]:
@@ -60,6 +64,50 @@ def register_gabo_routes(app, deps):
     TITULAR_EJERCICIO_FIJO = "2025"
     OBSERVACION_ESTADOS_VALIDOS = {"Emitido", "Pendiente", "Solventado"}
     GABO_READONLY_EJERCICIOS = {"2023", "2024"}
+    DB_SNAPSHOT_KEEP_COUNT = 30
+    MASS_UPLOAD_EJERCICIO_FIJO = "2025"
+    MASS_UPLOAD_PREVIEW_LIMIT = 80
+    MASS_UPLOAD_REQUIRED_HEADERS = {
+        "ente_nombre_csv": "NOMBRE DEL ENTE",
+        "asf": "ASF",
+        "periodo": "PERIODO",
+        "tipo_auditoria": "TIPO DE AUDITORÍA",
+        "fuente_financiamiento": "FUENTE DE FINANCIAMIENTO",
+        "tipo_anexo": "ANEXO",
+        "numero_observacion": "NO. OBSERVACIÓN",
+        "concepto_irregularidad": "CONCEPTO DE IRREGULARIDAD",
+        "monto_observado": "MONTO OBSERVADO",
+        "monto_solventado": "MONTO SOLVENTADO",
+        "monto_pendiente": "MONTO PENDIENTE",
+        "estatus": "ESTATUS",
+    }
+    MASS_UPLOAD_HEADER_ALIASES = {
+        "nombre_del_ente": "ente_nombre_csv",
+        "nombre_de_ente": "ente_nombre_csv",
+        "nombre_ente": "ente_nombre_csv",
+        "ente": "ente_nombre_csv",
+        "asf": "asf",
+        "periodo": "periodo",
+        "tipo_de_auditoria": "tipo_auditoria",
+        "tipo_auditoria": "tipo_auditoria",
+        "fuente_de_financiamiento": "fuente_financiamiento",
+        "fuente_financiamiento": "fuente_financiamiento",
+        "fuente": "fuente_financiamiento",
+        "anexo": "tipo_anexo",
+        "no_observacion": "numero_observacion",
+        "no_de_observacion": "numero_observacion",
+        "numero_observacion": "numero_observacion",
+        "numero_de_observacion": "numero_observacion",
+        "concepto_de_irregularidad": "concepto_irregularidad",
+        "concepto_irregularidad": "concepto_irregularidad",
+        "irregularidad": "concepto_irregularidad",
+        "monto_observado": "monto_observado",
+        "monto_emitido": "monto_observado",
+        "monto_solventado": "monto_solventado",
+        "monto_pendiente": "monto_pendiente",
+        "estatus": "estatus",
+        "estado": "estatus",
+    }
     TITULAR_MONTHS_ES = {
         "01": "enero",
         "02": "febrero",
@@ -218,6 +266,15 @@ def register_gabo_routes(app, deps):
                 source_conn.backup(backup_conn)
         finally:
             source_conn.close()
+        try:
+            prune_backup_dir(
+                snapshots_dir,
+                keep=DB_SNAPSHOT_KEEP_COUNT,
+                patterns=("*.sqlite",),
+                dry_run=False,
+            )
+        except OSError as exc:
+            print(f"No se pudieron depurar snapshots antiguos: {exc}", file=sys.stderr)
         try:
             return str(backup_path.relative_to(BASE_DIR))
         except ValueError:
@@ -1701,6 +1758,553 @@ def register_gabo_routes(app, deps):
             extra_filters,
         )
 
+    def _normalize_mass_upload_header(value: str) -> str:
+        key = _normalize_mass_upload_text_key(value)
+        return re.sub(r"[^a-z0-9]+", "_", key).strip("_")
+
+    def _normalize_mass_upload_text_key(value: str) -> str:
+        clean = " ".join(str(value or "").strip().lower().split())
+        if not clean:
+            return ""
+        clean = unicodedata.normalize("NFKD", clean)
+        clean = "".join(char for char in clean if not unicodedata.combining(char))
+        return re.sub(r"\s+", " ", clean).strip()
+
+    def _resolve_mass_upload_header_map(fieldnames) -> dict[str, str]:
+        resolved: dict[str, str] = {}
+        duplicates: list[str] = []
+        for original in fieldnames or []:
+            target = MASS_UPLOAD_HEADER_ALIASES.get(_normalize_mass_upload_header(original or ""))
+            if not target:
+                continue
+            if target in resolved:
+                duplicates.append(MASS_UPLOAD_REQUIRED_HEADERS.get(target, target))
+                continue
+            resolved[target] = original
+        if duplicates:
+            repeated = ", ".join(sorted(set(duplicates)))
+            raise ValueError(f"El archivo repite columnas requeridas: {repeated}.")
+        missing = [
+            label
+            for key, label in MASS_UPLOAD_REQUIRED_HEADERS.items()
+            if key not in resolved
+        ]
+        if missing:
+            raise ValueError(
+                "Faltan columnas requeridas en el archivo: " + ", ".join(missing) + "."
+            )
+        return resolved
+
+    def _detect_mass_upload_delimiter(raw_text: str) -> str:
+        sample = (raw_text or "").strip()
+        if not sample:
+            return ","
+        first_line = sample.splitlines()[0] if sample.splitlines() else sample
+        tab_count = first_line.count("\t")
+        comma_count = first_line.count(",")
+        if tab_count > comma_count:
+            return "\t"
+        try:
+            dialect = csv.Sniffer().sniff(sample[:4096], delimiters=",;\t|")
+            return dialect.delimiter or ","
+        except csv.Error:
+            return ","
+
+    def _parse_optional_mass_upload_money(raw_value: str, *, line_number: int, label: str) -> float | None:
+        clean = str(raw_value or "").strip()
+        if not clean or clean in {"-", "—"}:
+            return None
+        clean = clean.replace("$", "").replace(",", "").strip()
+        try:
+            amount = float(clean)
+        except ValueError as exc:
+            raise ValueError(f"Línea {line_number}: {label} inválido.") from exc
+        if amount < 0:
+            raise ValueError(f"Línea {line_number}: {label} no puede ser negativo.")
+        return amount
+
+    def _parse_mass_upload_numero_observacion(raw_value: str, *, line_number: int) -> int:
+        clean = str(raw_value or "").strip()
+        if not clean:
+            raise ValueError(f"Línea {line_number}: NO. OBSERVACIÓN requerido.")
+        try:
+            number = int(clean)
+        except ValueError as exc:
+            raise ValueError(f"Línea {line_number}: NO. OBSERVACIÓN inválido.") from exc
+        if number <= 0:
+            raise ValueError(f"Línea {line_number}: NO. OBSERVACIÓN debe ser mayor a 0.")
+        return number
+
+    def _normalize_mass_upload_tipo_anexo(value: str, *, line_number: int | None = None) -> str:
+        clean = " ".join((value or "").split()).upper()
+        if clean == "PEFCT":
+            clean = "PEFCF"
+        if clean not in {"SA", "PDP", "PRAS", "PEFCF", "R"}:
+            if line_number is None:
+                raise ValueError("Tipo de anexo inválido.")
+            raise ValueError(f"Línea {line_number}: ANEXO inválido.")
+        return clean
+
+    def _normalize_mass_upload_estado(value: str, *, line_number: int | None = None) -> str:
+        key = _normalize_mass_upload_text_key(value)
+        if key in {"e", "emitido", "emitida"}:
+            return "Emitido"
+        if key in {"p", "pendiente"}:
+            return "Pendiente"
+        if key in {"s", "solventado", "solventada"}:
+            return "Solventado"
+        if key.startswith("solventad"):
+            return "Solventado"
+        if key.startswith("pendient"):
+            return "Pendiente"
+        if key.startswith("emitid"):
+            return "Emitido"
+        if line_number is None:
+            raise ValueError("Estado inválido.")
+        raise ValueError(f"Línea {line_number}: ESTATUS inválido.")
+
+    def _normalize_mass_upload_ramo_33(value: str) -> str:
+        key = _normalize_mass_upload_text_key(value)
+        if not key or key in {"no", "n", "0", "false"}:
+            return "No"
+        return "Si"
+
+    def _normalize_mass_upload_periodo_text(value: str) -> str:
+        clean = " ".join((value or "").replace("—", "-").replace("–", "-").split())
+        clean = re.sub(r"\s*-\s*", " al ", clean)
+        clean = re.sub(r"\bde\b", "de", clean, flags=re.IGNORECASE)
+        clean = re.sub(r"\bal\b", "al", clean, flags=re.IGNORECASE)
+        clean = re.sub(r"\s+", " ", clean).strip()
+        return clean
+
+    def _mass_upload_periodo_key(ejercicio: str, value: str) -> str:
+        clean = _normalize_mass_upload_periodo_text(value)
+        if not clean:
+            return ""
+        fecha_inicio, fecha_fin = parse_periodo_cedula(ejercicio, clean)
+        if fecha_inicio and fecha_fin:
+            return f"{fecha_inicio}|{fecha_fin}"
+        return _normalize_mass_upload_text_key(clean)
+
+    def _normalize_mass_upload_concept(value: str) -> str:
+        clean = " ".join((value or "").split())
+        clean = re.sub(r"^\s*\d+\s*[-.)]?\s*", "", clean).strip()
+        return clean
+
+    def _read_mass_upload_file_rows(upload_file) -> tuple[list[dict], str]:
+        if upload_file is None:
+            raise ValueError("Selecciona un archivo CSV para analizar.")
+        file_name = " ".join((getattr(upload_file, "filename", "") or "").split())
+        if not file_name:
+            raise ValueError("Selecciona un archivo CSV para analizar.")
+        raw_bytes = upload_file.read()
+        if not raw_bytes:
+            raise ValueError("El archivo está vacío.")
+        try:
+            raw_text = raw_bytes.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            raw_text = raw_bytes.decode("latin-1")
+        delimiter = _detect_mass_upload_delimiter(raw_text)
+        reader = csv.DictReader(StringIO(raw_text), delimiter=delimiter)
+        header_map = _resolve_mass_upload_header_map(reader.fieldnames or [])
+
+        rows: list[dict] = []
+        errors: list[str] = []
+        for line_number, raw_row in enumerate(reader, start=2):
+            row_data = raw_row if isinstance(raw_row, dict) else {}
+            if not any(str(value or "").strip() for value in row_data.values()):
+                continue
+            try:
+                tipo_auditoria = normalize_tipo_auditoria(
+                    row_data.get(header_map["tipo_auditoria"], "")
+                )
+                if tipo_auditoria not in {"Financiera", "Obra Pública"}:
+                    raise ValueError(f"Línea {line_number}: TIPO DE AUDITORÍA inválido.")
+
+                periodo = _normalize_mass_upload_periodo_text(
+                    row_data.get(header_map["periodo"], "")
+                )
+                if not periodo:
+                    raise ValueError(f"Línea {line_number}: PERIODO requerido.")
+
+                fuente_financiamiento = " ".join(
+                    str(row_data.get(header_map["fuente_financiamiento"], "") or "").split()
+                )
+                if not fuente_financiamiento:
+                    raise ValueError(
+                        f"Línea {line_number}: FUENTE DE FINANCIAMIENTO requerida."
+                    )
+
+                tipo_anexo = _normalize_mass_upload_tipo_anexo(
+                    row_data.get(header_map["tipo_anexo"], ""),
+                    line_number=line_number,
+                )
+                numero_observacion = _parse_mass_upload_numero_observacion(
+                    row_data.get(header_map["numero_observacion"], ""),
+                    line_number=line_number,
+                )
+                estado = _normalize_mass_upload_estado(
+                    row_data.get(header_map["estatus"], ""),
+                    line_number=line_number,
+                )
+                concepto_irregularidad = _normalize_mass_upload_concept(
+                    row_data.get(header_map["concepto_irregularidad"], "")
+                )
+                rows.append(
+                    {
+                        "line_number": line_number,
+                        "ente_nombre_csv": " ".join(
+                            str(row_data.get(header_map["ente_nombre_csv"], "") or "").split()
+                        ),
+                        "ente_nombre_key": _normalize_mass_upload_text_key(
+                            row_data.get(header_map["ente_nombre_csv"], "")
+                        ),
+                        "ramo_33": _normalize_mass_upload_ramo_33(
+                            row_data.get(header_map["asf"], "")
+                        ),
+                        "periodo": periodo,
+                        "periodo_key": _mass_upload_periodo_key(
+                            MASS_UPLOAD_EJERCICIO_FIJO,
+                            periodo,
+                        ),
+                        "tipo_auditoria": tipo_auditoria,
+                        "fuente_financiamiento": fuente_financiamiento,
+                        "fuente_key": _normalize_mass_upload_text_key(fuente_financiamiento),
+                        "tipo_anexo": tipo_anexo,
+                        "numero_observacion": numero_observacion,
+                        "concepto_irregularidad": concepto_irregularidad,
+                        "concepto_key": _normalize_mass_upload_text_key(concepto_irregularidad),
+                        "monto_observado": _parse_optional_mass_upload_money(
+                            row_data.get(header_map["monto_observado"], ""),
+                            line_number=line_number,
+                            label="MONTO OBSERVADO",
+                        ),
+                        "monto_solventado": _parse_optional_mass_upload_money(
+                            row_data.get(header_map["monto_solventado"], ""),
+                            line_number=line_number,
+                            label="MONTO SOLVENTADO",
+                        ),
+                        "monto_pendiente": _parse_optional_mass_upload_money(
+                            row_data.get(header_map["monto_pendiente"], ""),
+                            line_number=line_number,
+                            label="MONTO PENDIENTE",
+                        ),
+                        "estado": estado,
+                    }
+                )
+            except ValueError as exc:
+                errors.append(str(exc))
+                if len(errors) >= 25:
+                    break
+
+        if errors:
+            raise ValueError(" ".join(errors))
+        if not rows:
+            raise ValueError("El archivo no contiene registros válidos.")
+        return rows, file_name
+
+    def _mass_upload_observacion_key(
+        *,
+        ejercicio: str,
+        tipo_auditoria: str,
+        fuente_financiamiento: str,
+        periodo: str,
+        tipo_anexo: str,
+        numero_observacion: int,
+    ) -> tuple[str, str, str, str, int]:
+        return (
+            normalize_tipo_auditoria(tipo_auditoria) or "Financiera",
+            _normalize_mass_upload_text_key(fuente_financiamiento),
+            _mass_upload_periodo_key(ejercicio, periodo),
+            _normalize_mass_upload_tipo_anexo(tipo_anexo),
+            int(numero_observacion or 0),
+        )
+
+    def _current_ramo_33_label(value: str) -> str:
+        key = _normalize_mass_upload_text_key(value)
+        if not key or key in {"no", "n", "0", "false"}:
+            return "No"
+        return "Si"
+
+    def _build_mass_upload_preview(db, *, ejercicio: str, ente_id: str, csv_rows: list[dict]) -> dict[str, object]:
+        ente_row = _get_ente_row_by_ejercicio_id(db, ejercicio, ente_id)
+        if not ente_row:
+            raise ValueError("El ente seleccionado no existe para el ejercicio 2025.")
+
+        alias_keys = {
+            _normalize_mass_upload_text_key(alias)
+            for alias in get_ente_aliases_by_uid(
+                db,
+                ejercicio,
+                ente_id,
+                fallback_names=[ente_row["ente_nombre"] or ""],
+            )
+            if _normalize_mass_upload_text_key(alias)
+        }
+
+        existing_rows = db.execute(
+            f"""
+            SELECT
+                id,
+                TRIM(COALESCE(ejercicio, '')) AS ejercicio,
+                TRIM(COALESCE(ente_id, '')) AS ente_id,
+                TRIM(COALESCE(ente_numero, '')) AS ente_numero,
+                TRIM(COALESCE(ente_nombre, '')) AS ente_nombre,
+                TRIM(COALESCE(tipo_auditoria, '')) AS tipo_auditoria,
+                TRIM(COALESCE(fuente_financiamiento, '')) AS fuente_financiamiento,
+                TRIM(COALESCE(ramo_33, '')) AS ramo_33,
+                TRIM(COALESCE(periodo_cedula, '')) AS periodo_cedula,
+                TRIM(COALESCE(oficio, '')) AS oficio,
+                TRIM(COALESCE(tipo_anexo, '')) AS tipo_anexo,
+                COALESCE(numero_observacion, 0) AS numero_observacion,
+                TRIM(COALESCE(estado, '')) AS estado,
+                COALESCE(monto_pdp_emitido, 0) AS monto_pdp_emitido,
+                COALESCE(monto_pdp_solventado, 0) AS monto_pdp_solventado,
+                COALESCE(monto_pdp_pendiente, 0) AS monto_pdp_pendiente,
+                TRIM(COALESCE(pdp_concepto_irregularidad, '')) AS pdp_concepto_irregularidad
+            FROM observaciones
+            WHERE TRIM(COALESCE(ejercicio, '')) = ?
+              AND {normalize_ente_id_sql('ente_id')} = ?
+            ORDER BY id ASC
+            """,
+            (ejercicio, ente_id),
+        ).fetchall()
+
+        existing_by_key: dict[tuple[str, str, str, str, int], dict] = {}
+        duplicate_db: list[str] = []
+        for row in existing_rows:
+            item = dict(row)
+            key = _mass_upload_observacion_key(
+                ejercicio=ejercicio,
+                tipo_auditoria=item["tipo_auditoria"],
+                fuente_financiamiento=item["fuente_financiamiento"],
+                periodo=item["periodo_cedula"],
+                tipo_anexo=item["tipo_anexo"],
+                numero_observacion=int(item["numero_observacion"] or 0),
+            )
+            if key in existing_by_key:
+                duplicate_db.append(
+                    f"{item['tipo_auditoria']} / {item['fuente_financiamiento']} / "
+                    f"{item['periodo_cedula']} / {item['tipo_anexo']} #{item['numero_observacion']}"
+                )
+                continue
+            item["estado"] = _normalize_observacion_estado(item.get("estado", ""))
+            existing_by_key[key] = item
+        if duplicate_db:
+            raise ValueError(
+                "Ya existen observaciones duplicadas en el sistema para este ente. "
+                "Revisa primero: " + "; ".join(duplicate_db[:10]) + "."
+            )
+
+        seen_csv_keys: dict[tuple[str, str, str, str, int], int] = {}
+        duplicate_csv: list[str] = []
+        changes: list[dict] = []
+        unchanged: list[dict] = []
+        projection_rows: list[dict] = []
+        unmatched: list[dict] = []
+        skipped_other_ente: list[dict] = []
+        warning_rows: list[str] = []
+
+        summary = {
+            "total_rows": len(csv_rows),
+            "matched_rows": 0,
+            "changed_rows": 0,
+            "unchanged_rows": 0,
+            "unmatched_rows": 0,
+            "skipped_other_ente_rows": 0,
+            "estado_changes": 0,
+            "ramo_33_changes": 0,
+            "pdp_amount_changes": 0,
+            "warning_rows": 0,
+        }
+
+        for csv_row in csv_rows:
+            csv_ente_key = csv_row.get("ente_nombre_key", "")
+            if csv_ente_key and alias_keys and csv_ente_key not in alias_keys:
+                skipped_other_ente.append(
+                    {
+                        "line_number": csv_row["line_number"],
+                        "ente_nombre_csv": csv_row["ente_nombre_csv"] or "-",
+                        "tipo_auditoria": csv_row["tipo_auditoria"],
+                        "fuente_financiamiento": csv_row["fuente_financiamiento"],
+                        "periodo": csv_row["periodo"],
+                        "tipo_anexo": csv_row["tipo_anexo"],
+                        "numero_observacion": csv_row["numero_observacion"],
+                        "reason": "El nombre del ente no coincide con el ente seleccionado.",
+                    }
+                )
+                continue
+
+            key = _mass_upload_observacion_key(
+                ejercicio=ejercicio,
+                tipo_auditoria=csv_row["tipo_auditoria"],
+                fuente_financiamiento=csv_row["fuente_financiamiento"],
+                periodo=csv_row["periodo"],
+                tipo_anexo=csv_row["tipo_anexo"],
+                numero_observacion=csv_row["numero_observacion"],
+            )
+            if key in seen_csv_keys:
+                duplicate_csv.append(
+                    f"Líneas {seen_csv_keys[key]} y {csv_row['line_number']}: "
+                    f"{csv_row['tipo_auditoria']} / {csv_row['fuente_financiamiento']} / "
+                    f"{csv_row['periodo']} / {csv_row['tipo_anexo']} #{csv_row['numero_observacion']}"
+                )
+                continue
+            seen_csv_keys[key] = csv_row["line_number"]
+
+            current = existing_by_key.get(key)
+            if not current:
+                unmatched.append(
+                    {
+                        "line_number": csv_row["line_number"],
+                        "tipo_auditoria": csv_row["tipo_auditoria"],
+                        "fuente_financiamiento": csv_row["fuente_financiamiento"],
+                        "periodo": csv_row["periodo"],
+                        "tipo_anexo": csv_row["tipo_anexo"],
+                        "numero_observacion": csv_row["numero_observacion"],
+                        "estado": csv_row["estado"],
+                        "reason": "No se encontró coincidencia en observaciones 2025 para el ente seleccionado.",
+                    }
+                )
+                continue
+
+            summary["matched_rows"] += 1
+            is_pdp = (current["tipo_anexo"] or "").strip().upper() == "PDP"
+            current_estado = _normalize_observacion_estado(current.get("estado", ""))
+            current_ramo_33 = _current_ramo_33_label(current.get("ramo_33", ""))
+            target_estado = csv_row["estado"]
+            target_ramo_33 = csv_row["ramo_33"]
+            current_emitido = float(current.get("monto_pdp_emitido") or 0.0)
+            current_solventado = float(current.get("monto_pdp_solventado") or 0.0)
+            current_pendiente = float(current.get("monto_pdp_pendiente") or 0.0)
+            target_emitido = current_emitido
+            target_solventado = current_solventado
+            target_pendiente = current_pendiente
+            warnings: list[str] = []
+
+            if is_pdp:
+                if csv_row["monto_observado"] is not None:
+                    target_emitido = float(csv_row["monto_observado"])
+                if target_estado == "Solventado":
+                    if (
+                        csv_row["monto_solventado"] is not None
+                        and abs(float(csv_row["monto_solventado"]) - target_emitido) > 0.009
+                    ):
+                        raise ValueError(
+                            f"Línea {csv_row['line_number']}: una observación PDP en Solventado "
+                            "debe tener MONTO SOLVENTADO igual al MONTO OBSERVADO."
+                        )
+                    target_solventado = target_emitido
+                elif csv_row["monto_solventado"] is not None:
+                    target_solventado = float(csv_row["monto_solventado"])
+                if target_solventado > target_emitido + 0.009:
+                    raise ValueError(
+                        f"Línea {csv_row['line_number']}: MONTO SOLVENTADO no puede ser mayor al MONTO OBSERVADO."
+                    )
+                target_pendiente = max(0.0, target_emitido - target_solventado)
+                if (
+                    csv_row["monto_pendiente"] is not None
+                    and abs(float(csv_row["monto_pendiente"]) - target_pendiente) > 0.009
+                ):
+                    warnings.append("MONTO PENDIENTE del archivo no coincide con el cálculo emitido-solventado.")
+                current_concept_key = _normalize_mass_upload_text_key(
+                    current.get("pdp_concepto_irregularidad", "")
+                )
+                csv_concept_key = csv_row.get("concepto_key", "")
+                if csv_concept_key and current_concept_key and csv_concept_key != current_concept_key:
+                    warnings.append("El concepto PDP del archivo no coincide con el concepto actual.")
+            elif any(
+                value is not None
+                for value in (
+                    csv_row.get("monto_observado"),
+                    csv_row.get("monto_solventado"),
+                    csv_row.get("monto_pendiente"),
+                )
+            ):
+                warnings.append("Los montos del archivo se ignoraron porque el anexo no es PDP.")
+
+            changed_fields: list[str] = []
+            if target_estado != current_estado:
+                changed_fields.append("estado")
+                summary["estado_changes"] += 1
+            if target_ramo_33 != current_ramo_33:
+                changed_fields.append("ramo_33")
+                summary["ramo_33_changes"] += 1
+            if is_pdp and (
+                abs(target_emitido - current_emitido) > 0.009
+                or abs(target_solventado - current_solventado) > 0.009
+                or abs(target_pendiente - current_pendiente) > 0.009
+            ):
+                changed_fields.append("pdp_montos")
+                summary["pdp_amount_changes"] += 1
+
+            item = {
+                "line_number": csv_row["line_number"],
+                "id": int(current["id"]),
+                "ente_numero": (current["ente_numero"] or "").strip(),
+                "ente_nombre": (current["ente_nombre"] or "").strip(),
+                "tipo_auditoria": current["tipo_auditoria"],
+                "fuente_financiamiento": current["fuente_financiamiento"],
+                "periodo_cedula": current["periodo_cedula"],
+                "oficio": (current["oficio"] or "").strip(),
+                "tipo_anexo": (current["tipo_anexo"] or "").strip().upper(),
+                "numero_observacion": int(current["numero_observacion"] or 0),
+                "estado_before": current_estado,
+                "estado_after": target_estado,
+                "ramo_33_before": current_ramo_33,
+                "ramo_33_after": target_ramo_33,
+                "monto_emitido_before": current_emitido,
+                "monto_emitido_after": target_emitido,
+                "monto_solventado_before": current_solventado,
+                "monto_solventado_after": target_solventado,
+                "monto_pendiente_before": current_pendiente,
+                "monto_pendiente_after": target_pendiente,
+                "warnings": warnings,
+                "changed_fields": changed_fields,
+            }
+            projection_rows.append(item)
+            if warnings:
+                summary["warning_rows"] += 1
+                if len(warning_rows) < 25:
+                    warning_rows.append(
+                        f"Línea {csv_row['line_number']} / ID {current['id']}: " + " ".join(warnings)
+                    )
+            if changed_fields:
+                changes.append(item)
+            else:
+                unchanged.append(item)
+
+        if duplicate_csv:
+            raise ValueError(
+                "El archivo contiene observaciones duplicadas. "
+                + " ".join(duplicate_csv[:20])
+            )
+
+        summary["changed_rows"] = len(changes)
+        summary["unchanged_rows"] = len(unchanged)
+        summary["unmatched_rows"] = len(unmatched)
+        summary["skipped_other_ente_rows"] = len(skipped_other_ente)
+
+        return {
+            "ente": {
+                "ente_id": (ente_row["ente_id"] or "").strip(),
+                "ente_numero": (ente_row["ente_numero"] or "").strip(),
+                "ente_nombre": (ente_row["ente_nombre"] or "").strip(),
+            },
+            "summary": summary,
+            "changes": changes,
+            "projection_rows": projection_rows,
+            "changes_preview": changes[:MASS_UPLOAD_PREVIEW_LIMIT],
+            "changes_truncated": max(0, len(changes) - MASS_UPLOAD_PREVIEW_LIMIT),
+            "unchanged_preview": unchanged[:MASS_UPLOAD_PREVIEW_LIMIT],
+            "unchanged_truncated": max(0, len(unchanged) - MASS_UPLOAD_PREVIEW_LIMIT),
+            "unmatched_preview": unmatched[:MASS_UPLOAD_PREVIEW_LIMIT],
+            "unmatched_truncated": max(0, len(unmatched) - MASS_UPLOAD_PREVIEW_LIMIT),
+            "skipped_preview": skipped_other_ente[:MASS_UPLOAD_PREVIEW_LIMIT],
+            "skipped_truncated": max(0, len(skipped_other_ente) - MASS_UPLOAD_PREVIEW_LIMIT),
+            "warnings_preview": warning_rows,
+        }
+
     @app.get("/carga/entes")
     @gabo_required
     def carga_entes_por_ejercicio():
@@ -2160,6 +2764,229 @@ def register_gabo_routes(app, deps):
             return_vista=return_vista,
             initial_scope=initial_scope,
             read_only_ejercicios=sorted(_readonly_ejercicios_for_user(user)),
+        )
+
+    @app.get("/carga/observaciones-admin/carga-masiva")
+    @gabo_required
+    def carga_observaciones_admin_carga_masiva():
+        user = get_current_user()
+        db = get_db()
+        return_vista = (request.args.get("return_vista") or "").strip().lower()
+        if return_vista not in {"manual", "titulares"}:
+            return_vista = "manual"
+        entes = _load_titular_entes(db, MASS_UPLOAD_EJERCICIO_FIJO)
+        ente_default = normalize_ente_id(request.args.get("ente_id", ""))
+        if ente_default and not any(
+            normalize_ente_id(item.get("ente_id", "")) == ente_default for item in entes
+        ):
+            ente_default = ""
+        return render_template(
+            "carga_observaciones_masiva.html",
+            user=user,
+            entes=entes,
+            ejercicio_fijo=MASS_UPLOAD_EJERCICIO_FIJO,
+            ente_default=ente_default,
+            return_vista=return_vista,
+        )
+
+    @app.post("/carga/observaciones-admin/carga-masiva/preview")
+    @gabo_required
+    def carga_observaciones_admin_carga_masiva_preview():
+        ejercicio = MASS_UPLOAD_EJERCICIO_FIJO
+        ente_id = normalize_ente_id(request.form.get("ente_id", ""))
+        upload_file = request.files.get("csv_file")
+
+        if not ente_id:
+            return jsonify({"ok": False, "error": "Selecciona un ente antes de analizar el archivo."}), 400
+        try:
+            _ensure_editable_ejercicio(ejercicio)
+            csv_rows, file_name = _read_mass_upload_file_rows(upload_file)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+        db = get_db()
+        try:
+            preview = _build_mass_upload_preview(
+                db,
+                ejercicio=ejercicio,
+                ente_id=ente_id,
+                csv_rows=csv_rows,
+            )
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+        return jsonify(
+            {
+                "ok": True,
+                "file_name": file_name,
+                "ejercicio": ejercicio,
+                "can_apply": bool(preview["changes"]),
+                **preview,
+            }
+        )
+
+    @app.post("/carga/observaciones-admin/carga-masiva/aplicar")
+    @gabo_required
+    def carga_observaciones_admin_carga_masiva_aplicar():
+        payload = request.get_json(silent=True) or {}
+        ejercicio = MASS_UPLOAD_EJERCICIO_FIJO
+        ente_id = normalize_ente_id(payload.get("ente_id", ""))
+        raw_updates = payload.get("updates")
+
+        if not ente_id:
+            return jsonify({"ok": False, "error": "Selecciona un ente antes de aplicar cambios."}), 400
+        if not isinstance(raw_updates, list) or not raw_updates:
+            return jsonify({"ok": False, "error": "No se recibieron cambios para aplicar."}), 400
+        try:
+            _ensure_editable_ejercicio(ejercicio)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 403
+
+        sanitized_updates: list[dict] = []
+        seen_ids: set[int] = set()
+        for raw in raw_updates:
+            if not isinstance(raw, dict):
+                continue
+            try:
+                obs_id = int(raw.get("id"))
+            except (TypeError, ValueError):
+                continue
+            if obs_id <= 0 or obs_id in seen_ids:
+                continue
+            seen_ids.add(obs_id)
+            sanitized_updates.append(
+                {
+                    "id": obs_id,
+                    "estado": _normalize_mass_upload_estado(
+                        raw.get("estado_after") or raw.get("estado") or ""
+                    ),
+                    "ramo_33": _normalize_mass_upload_ramo_33(
+                        raw.get("ramo_33_after") or raw.get("ramo_33") or ""
+                    ),
+                    "monto_emitido": float(raw.get("monto_emitido_after", raw.get("monto_emitido", 0)) or 0),
+                    "monto_solventado": float(
+                        raw.get("monto_solventado_after", raw.get("monto_solventado", 0)) or 0
+                    ),
+                    "monto_pendiente": float(
+                        raw.get("monto_pendiente_after", raw.get("monto_pendiente", 0)) or 0
+                    ),
+                }
+            )
+        if not sanitized_updates:
+            return jsonify({"ok": False, "error": "La lista de cambios es inválida."}), 400
+
+        db = get_db()
+        ente_row = _get_ente_row_by_ejercicio_id(db, ejercicio, ente_id)
+        if not ente_row:
+            return jsonify({"ok": False, "error": "El ente seleccionado no existe para el ejercicio 2025."}), 400
+
+        ids = [item["id"] for item in sanitized_updates]
+        placeholders = ", ".join(["?"] * len(ids))
+        found_rows = db.execute(
+            f"""
+            SELECT
+                id,
+                TRIM(COALESCE(ejercicio, '')) AS ejercicio,
+                TRIM(COALESCE(ente_id, '')) AS ente_id,
+                TRIM(COALESCE(tipo_anexo, '')) AS tipo_anexo
+            FROM observaciones
+            WHERE id IN ({placeholders})
+              AND TRIM(COALESCE(ejercicio, '')) = ?
+              AND {normalize_ente_id_sql('ente_id')} = ?
+            """,
+            [*ids, ejercicio, ente_id],
+        ).fetchall()
+        if len(found_rows) != len(ids):
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": "Refresca el análisis: una o más observaciones ya no coinciden con el ente seleccionado.",
+                }
+            ), 400
+
+        rows_by_id = {int(row["id"]): dict(row) for row in found_rows}
+        for item in sanitized_updates:
+            if item["monto_emitido"] < 0 or item["monto_solventado"] < 0 or item["monto_pendiente"] < 0:
+                return jsonify({"ok": False, "error": "Los montos no pueden ser negativos."}), 400
+            current = rows_by_id[item["id"]]
+            tipo_anexo = (current["tipo_anexo"] or "").strip().upper()
+            if tipo_anexo == "PDP":
+                emitido = float(item["monto_emitido"])
+                solventado = float(item["monto_solventado"])
+                if item["estado"] == "Solventado" and abs(solventado - emitido) > 0.009:
+                    return jsonify(
+                        {
+                            "ok": False,
+                            "error": f"ID {item['id']}: una observación PDP en Solventado debe quedar totalmente solventada.",
+                        }
+                    ), 400
+                if solventado > emitido + 0.009:
+                    return jsonify(
+                        {
+                            "ok": False,
+                            "error": f"ID {item['id']}: monto solventado no puede ser mayor al observado.",
+                        }
+                    ), 400
+                item["monto_pendiente"] = max(0.0, emitido - solventado)
+
+        backup_path = _create_db_snapshot(f"observaciones-carga-masiva-{ejercicio}-ente-{ente_id}")
+        updated = 0
+        pdp_updated = 0
+        for item in sanitized_updates:
+            current = rows_by_id[item["id"]]
+            tipo_anexo = (current["tipo_anexo"] or "").strip().upper()
+            if tipo_anexo == "PDP":
+                db.execute(
+                    """
+                    UPDATE observaciones
+                    SET estado = ?,
+                        ramo_33 = ?,
+                        monto_pdp_emitido = ?,
+                        monto_pdp_solventado = ?,
+                        monto_pdp_pendiente = ?,
+                        monto = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        item["estado"],
+                        item["ramo_33"],
+                        item["monto_emitido"],
+                        item["monto_solventado"],
+                        item["monto_pendiente"],
+                        item["monto_emitido"],
+                        item["id"],
+                    ),
+                )
+                pdp_updated += 1
+            else:
+                db.execute(
+                    """
+                    UPDATE observaciones
+                    SET estado = ?,
+                        ramo_33 = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        item["estado"],
+                        item["ramo_33"],
+                        item["id"],
+                    ),
+                )
+            updated += 1
+        db.commit()
+
+        return jsonify(
+            {
+                "ok": True,
+                "updated": updated,
+                "pdp_updated": pdp_updated,
+                "backup_path": backup_path,
+                "ente": {
+                    "ente_id": (ente_row["ente_id"] or "").strip(),
+                    "ente_numero": (ente_row["ente_numero"] or "").strip(),
+                    "ente_nombre": (ente_row["ente_nombre"] or "").strip(),
+                },
+            }
         )
 
     @app.route("/carga/titulares", methods=["GET", "POST"])

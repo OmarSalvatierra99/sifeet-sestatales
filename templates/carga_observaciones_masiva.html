@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Registro Observaciones · Carga masiva 2025</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
+</head>
+<body class="loader-page obs-admin-page obs-bulk-page">
+  {% set user_display_names = {'luis': 'C.P Luis Felipe Camilo Fuentes', 'gabo': 'Ing. Omar Gabriel Salvatierra Garcia'} %}
+  <header class="site-header">
+    <div class="header-inner">
+      <img src="{{ url_for('static', filename='img/ofs_logo.png') }}" alt="Logo institucional" class="ofs-logo">
+      <div class="header-text">
+        <p class="eyebrow">Órgano de Fiscalización Superior del Estado de Tlaxcala</p>
+        <h1>Registro Observaciones</h1>
+        <p class="subtitle">Carga masiva 2025</p>
+      </div>
+      <div class="header-badge user-badge">
+        <div class="user-meta">
+          <span>Usuario</span>
+          <strong>{{ user_display_names.get(user.username, user.username) }}</strong>
+        </div>
+        <div class="user-actions">
+          <span class="user-role">Carga</span>
+          <a class="btn-secondary btn-compact" href="{{ url_for('logout') }}">Cerrar sesión</a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="page-content loader-content obs-admin-content">
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Carga masiva</h2>
+        <p>Actualiza observaciones existentes del ejercicio 2025 sin tocar el flujo normal de captura.</p>
+      </div>
+
+      <form id="bulkUploadForm" class="record-form filters-form" autocomplete="off">
+        <div class="form-grid">
+          <div class="field">
+            <label for="bulk_ejercicio">Ejercicio</label>
+            <input id="bulk_ejercicio" type="text" value="{{ ejercicio_fijo }}" readonly>
+          </div>
+          <div class="field">
+            <label for="bulk_ente_id">Ente</label>
+            <select id="bulk_ente_id" name="ente_id" required>
+              <option value="">Selecciona un ente</option>
+              {% for ente in entes %}
+                <option value="{{ ente.ente_id }}" {% if ente_default == ente.ente_id %}selected{% endif %}>
+                  {{ ente.ente_numero }} - {{ ente.ente_nombre }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="bulk_csv_file">Archivo CSV</label>
+            <input id="bulk_csv_file" name="csv_file" type="file" accept=".csv,.txt,.tsv" required class="obs-bulk-file-input">
+            <label for="bulk_csv_file" class="obs-bulk-file-picker" id="bulkFilePicker">
+              <span class="obs-bulk-file-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="M8 4.75H14.75L19 9V18.5C19 19.3284 18.3284 20 17.5 20H8C7.17157 20 6.5 19.3284 6.5 18.5V6.25C6.5 5.42157 7.17157 4.75 8 4.75Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                  <path d="M14.5 4.75V9.25H19" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                  <path d="M12 11.25V16.25" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                  <path d="M9.75 14L12 16.25L14.25 14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </span>
+              <span class="obs-bulk-file-copy">
+                <strong id="bulkFilePickerTitle">Seleccionar archivo</strong>
+                <span id="bulkFilePickerSubtitle">CSV o TSV con la estructura acordada para observaciones 2025.</span>
+              </span>
+              <span class="loader-obs-chip obs-bulk-file-chip" id="bulkFilePickerChip">Sin archivo</span>
+            </label>
+          </div>
+        </div>
+        <p class="helper">
+          Se comparan solo observaciones ya cargadas en 2025 para el ente seleccionado.
+          La columna <strong>ASF</strong> se interpreta como <strong>Ramo 33</strong>.
+          La comparación de fuente ignora mayúsculas y acentos.
+        </p>
+      </form>
+
+      <div class="obs-admin-safety-card obs-bulk-safety-card">
+        <div class="obs-admin-safety-copy">
+          <strong id="bulkSelectedFile">Sin archivo cargado</strong>
+          <p id="bulkScopeHint">Selecciona un ente y un archivo para generar la vista previa.</p>
+        </div>
+        <div class="obs-admin-safety-meta">
+          <span class="loader-obs-chip">Modo <strong>Comparativo</strong></span>
+          <span class="loader-obs-chip">Inserciones <strong>No</strong></span>
+        </div>
+      </div>
+
+      <div id="bulkStatus" class="status status-info" hidden></div>
+
+      <div class="table-meta">
+        <span id="bulkSummaryCaption">Aún no hay análisis cargado.</span>
+        <div class="obs-admin-actions-inline">
+          <button type="button" class="btn-secondary" id="bulkAnalyzeBtn">Analizar archivo</button>
+          <button type="button" class="btn-secondary" id="bulkApplyBtn" disabled>Aplicar cambios</button>
+          <button type="button" class="btn-secondary" id="bulkResetBtn">Limpiar análisis</button>
+        </div>
+      </div>
+
+      <div class="loader-preview-metrics" id="bulkSummaryMetrics">
+        <span class="loader-obs-chip">Archivo: <strong id="bulkMetricTotal">0</strong></span>
+        <span class="loader-obs-chip">Cambios: <strong id="bulkMetricChanged">0</strong></span>
+        <span class="loader-obs-chip">Sin cambio: <strong id="bulkMetricUnchanged">0</strong></span>
+        <span class="loader-obs-chip">Sin match: <strong id="bulkMetricUnmatched">0</strong></span>
+        <span class="loader-obs-chip">Otro ente: <strong id="bulkMetricSkipped">0</strong></span>
+      </div>
+
+      <section class="obs-admin-summary-card" id="bulkSummaryCard">
+        <div class="panel-header panel-header-compact">
+          <h3>Resumen del análisis</h3>
+          <p>Se aplican solo coincidencias efectivas.</p>
+        </div>
+        <div class="obs-admin-summary-table-wrap">
+          <table class="obs-admin-summary-table">
+            <tbody id="bulkSummaryBody">
+              <tr>
+                <td colspan="2" class="muted">Sin información para mostrar.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="obs-admin-summary-card" id="bulkWarningsCard">
+        <div class="panel-header panel-header-compact">
+          <h3>Advertencias</h3>
+          <p>Coincidencias con diferencias que conviene revisar antes de aplicar.</p>
+        </div>
+        <div id="bulkWarningsBody" class="obs-bulk-note-list">
+          <p class="muted">Sin advertencias.</p>
+        </div>
+      </section>
+
+      <section class="obs-admin-summary-card" id="bulkResultsSummaryCard">
+        <div class="panel-header panel-header-compact">
+          <h3>Resumen proyectado tipo solventación</h3>
+          <p>Cómo quedará el bloque comparado, agrupado por fuente, periodo y anexo.</p>
+        </div>
+        <div class="obs-admin-summary-table-wrap">
+          <table class="obs-admin-summary-table obs-bulk-preview-table">
+            <thead>
+              <tr>
+                <th>Fuente</th>
+                <th>Periodo</th>
+                <th>Anexo</th>
+                <th>Emitidas</th>
+                <th>Solventadas</th>
+                <th>Solventadas (progresivo)</th>
+                <th>No solventadas</th>
+                <th>No solventadas (progresivo)</th>
+                <th>PDP emitido</th>
+                <th>PDP solventado</th>
+                <th>PDP pendiente</th>
+              </tr>
+            </thead>
+            <tbody id="bulkResultsSummaryBody">
+              <tr>
+                <td colspan="11" class="muted">Sin datos para mostrar.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="obs-admin-summary-card" id="bulkPdpSummaryCard">
+        <div class="panel-header panel-header-compact">
+          <h3>Montos PDP proyectados</h3>
+          <p>Comparativo antes y después por fuente y periodo.</p>
+        </div>
+        <div class="obs-admin-summary-table-wrap">
+          <table class="obs-admin-summary-table obs-bulk-preview-table">
+            <thead>
+              <tr>
+                <th>Fuente</th>
+                <th>Periodo</th>
+                <th>PDP emitido</th>
+                <th>PDP solventado</th>
+                <th>PDP pendiente</th>
+              </tr>
+            </thead>
+            <tbody id="bulkPdpSummaryBody">
+              <tr>
+                <td colspan="5" class="muted">Sin datos para mostrar.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="obs-admin-summary-card" id="bulkChangesCard">
+        <div class="panel-header panel-header-compact">
+          <h3>Cambios detectados</h3>
+          <p id="bulkChangesHelp">Sin cambios detectados.</p>
+        </div>
+        <div class="obs-admin-summary-table-wrap">
+          <table class="obs-admin-summary-table obs-bulk-preview-table">
+            <thead>
+              <tr>
+                <th>Línea</th>
+                <th>ID</th>
+                <th>Contexto</th>
+                <th>Estado</th>
+                <th>Ramo 33</th>
+                <th>PDP</th>
+              </tr>
+            </thead>
+            <tbody id="bulkChangesBody">
+              <tr>
+                <td colspan="6" class="muted">Sin cambios para mostrar.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="obs-admin-summary-card" id="bulkUnmatchedCard">
+        <div class="panel-header panel-header-compact">
+          <h3>Sin coincidencia</h3>
+          <p id="bulkUnmatchedHelp">Registros del archivo que no encontraron observación equivalente.</p>
+        </div>
+        <div class="obs-admin-summary-table-wrap">
+          <table class="obs-admin-summary-table obs-bulk-preview-table">
+            <thead>
+              <tr>
+                <th>Línea</th>
+                <th>Contexto del archivo</th>
+                <th>Detalle</th>
+              </tr>
+            </thead>
+            <tbody id="bulkUnmatchedBody">
+              <tr>
+                <td colspan="3" class="muted">Sin registros para mostrar.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="obs-admin-summary-card" id="bulkSkippedCard">
+        <div class="panel-header panel-header-compact">
+          <h3>Filas descartadas por ente</h3>
+          <p id="bulkSkippedHelp">El nombre del ente del archivo no coincide con el ente seleccionado.</p>
+        </div>
+        <div class="obs-admin-summary-table-wrap">
+          <table class="obs-admin-summary-table obs-bulk-preview-table">
+            <thead>
+              <tr>
+                <th>Línea</th>
+                <th>Ente del archivo</th>
+                <th>Detalle</th>
+              </tr>
+            </thead>
+            <tbody id="bulkSkippedBody">
+              <tr>
+                <td colspan="3" class="muted">Sin registros para mostrar.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div class="obs-admin-modal-backdrop obs-admin-confirm-backdrop" id="bulkConfirmModal" hidden>
+    <div class="obs-admin-modal-card obs-admin-confirm-card" role="dialog" aria-modal="true" aria-labelledby="bulkConfirmTitle">
+      <div class="obs-admin-modal-head">
+        <h3 id="bulkConfirmTitle">Confirmar carga masiva</h3>
+        <p id="bulkConfirmSubtitle">Revisa el detalle antes de aplicar los cambios.</p>
+      </div>
+      <div class="obs-admin-modal-meta" id="bulkConfirmMeta" hidden></div>
+      <section class="obs-admin-confirm-section">
+        <h4 id="bulkConfirmSummaryTitle">Resumen general</h4>
+        <div class="obs-admin-summary-table-wrap obs-admin-confirm-table-wrap">
+          <table class="obs-admin-summary-table obs-admin-confirm-table">
+            <thead>
+              <tr>
+                <th>Concepto</th>
+                <th>Detalle</th>
+              </tr>
+            </thead>
+            <tbody id="bulkConfirmSummaryBody">
+              <tr>
+                <td colspan="2" class="muted">Sin datos para confirmar.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section class="obs-admin-confirm-section">
+        <h4 id="bulkConfirmPreviewTitle">Vista previa de cambios</h4>
+        <div class="obs-admin-summary-table-wrap obs-admin-confirm-table-wrap">
+          <table class="obs-admin-summary-table obs-admin-confirm-table">
+            <thead id="bulkConfirmPreviewHead">
+              <tr>
+                <th>Detalle</th>
+              </tr>
+            </thead>
+            <tbody id="bulkConfirmPreviewBody">
+              <tr>
+                <td class="muted">Sin registros para mostrar.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <p class="obs-admin-confirm-warning" id="bulkConfirmWarning" hidden></p>
+      <div class="obs-admin-modal-actions">
+        <button type="button" class="btn-secondary" id="bulkConfirmCancelBtn">Cancelar</button>
+        <button type="button" class="btn-secondary" id="bulkConfirmAcceptBtn">Aplicar cambios</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    © Órgano de Fiscalización Superior del Estado de Tlaxcala · Registro Observaciones
+  </footer>
+
+  <a
+    class="floating-clear-btn obs-admin-fab-back"
+    href="{% if return_vista == 'titulares' %}{{ url_for('carga', vista='titulares') }}{% else %}{{ url_for('carga') }}{% endif %}"
+    aria-label="Regresar a carga"
+  >
+    <span class="floating-clear-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M14.5 5L7.5 12L14.5 19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M8 12H20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <span>Regresar a carga</span>
+  </a>
+
+  <script>
+    const enteInput = document.getElementById("bulk_ente_id");
+    const fileInput = document.getElementById("bulk_csv_file");
+    const filePicker = document.getElementById("bulkFilePicker");
+    const filePickerTitle = document.getElementById("bulkFilePickerTitle");
+    const filePickerSubtitle = document.getElementById("bulkFilePickerSubtitle");
+    const filePickerChip = document.getElementById("bulkFilePickerChip");
+    const analyzeBtn = document.getElementById("bulkAnalyzeBtn");
+    const applyBtn = document.getElementById("bulkApplyBtn");
+    const resetBtn = document.getElementById("bulkResetBtn");
+    const statusBox = document.getElementById("bulkStatus");
+    const selectedFileLabel = document.getElementById("bulkSelectedFile");
+    const scopeHint = document.getElementById("bulkScopeHint");
+    const summaryCaption = document.getElementById("bulkSummaryCaption");
+    const summaryBody = document.getElementById("bulkSummaryBody");
+    const warningsBody = document.getElementById("bulkWarningsBody");
+    const resultsSummaryBody = document.getElementById("bulkResultsSummaryBody");
+    const pdpSummaryBody = document.getElementById("bulkPdpSummaryBody");
+    const changesBody = document.getElementById("bulkChangesBody");
+    const unmatchedBody = document.getElementById("bulkUnmatchedBody");
+    const skippedBody = document.getElementById("bulkSkippedBody");
+    const changesHelp = document.getElementById("bulkChangesHelp");
+    const unmatchedHelp = document.getElementById("bulkUnmatchedHelp");
+    const skippedHelp = document.getElementById("bulkSkippedHelp");
+    const metricTotal = document.getElementById("bulkMetricTotal");
+    const metricChanged = document.getElementById("bulkMetricChanged");
+    const metricUnchanged = document.getElementById("bulkMetricUnchanged");
+    const metricUnmatched = document.getElementById("bulkMetricUnmatched");
+    const metricSkipped = document.getElementById("bulkMetricSkipped");
+    const confirmModal = document.getElementById("bulkConfirmModal");
+    const confirmMeta = document.getElementById("bulkConfirmMeta");
+    const confirmSummaryBody = document.getElementById("bulkConfirmSummaryBody");
+    const confirmPreviewHead = document.getElementById("bulkConfirmPreviewHead");
+    const confirmPreviewBody = document.getElementById("bulkConfirmPreviewBody");
+    const confirmWarning = document.getElementById("bulkConfirmWarning");
+    const confirmCancelBtn = document.getElementById("bulkConfirmCancelBtn");
+    const confirmAcceptBtn = document.getElementById("bulkConfirmAcceptBtn");
+
+    let currentPreview = null;
+    let confirmResolver = null;
+
+    const escapeHtml = (value) => (
+      String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;")
+    );
+
+    const formatCount = (value) => (
+      (Number(value) || 0).toLocaleString("es-MX")
+    );
+
+    const formatMoney = (value) => {
+      const amount = Number(value) || 0;
+      return amount.toLocaleString("es-MX", {
+        style: "currency",
+        currency: "MXN",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+    };
+
+    const tipoSortOrder = {
+      Financiera: 1,
+      "Obra Pública": 2,
+    };
+
+    const anexoSortOrder = {
+      SA: 1,
+      PDP: 2,
+      PRAS: 3,
+      PEFCF: 4,
+      R: 5,
+    };
+
+    const normalizeTipoAuditoria = (value) => {
+      const clean = String(value || "").trim();
+      if (!clean) return "Financiera";
+      if (clean.toLowerCase() === "obra publica") return "Obra Pública";
+      return clean;
+    };
+
+    const normalizeTipoAnexo = (value) => {
+      const clean = String(value || "").trim().toUpperCase();
+      return clean === "PEFCT" ? "PEFCF" : clean;
+    };
+
+    const normalizeEstado = (value) => {
+      const key = String(value || "").trim().toLowerCase();
+      if (key === "s" || key === "solventado" || key === "solventada") return "Solventado";
+      if (key === "p" || key === "pendiente") return "Pendiente";
+      return "Emitido";
+    };
+
+    const buildProgressiveText = (values) => (
+      Array.isArray(values) && values.length ? values.join(",") : "0"
+    );
+
+    const formatCountChange = (beforeValue, afterValue) => {
+      const before = Number(beforeValue) || 0;
+      const after = Number(afterValue) || 0;
+      return before === after
+        ? formatCount(before)
+        : `${formatCount(before)} -> ${formatCount(after)}`;
+    };
+
+    const formatMoneyChange = (beforeValue, afterValue) => {
+      const before = Number(beforeValue) || 0;
+      const after = Number(afterValue) || 0;
+      return Math.abs(before - after) < 0.009
+        ? formatMoney(before)
+        : `${formatMoney(before)} -> ${formatMoney(after)}`;
+    };
+
+    const formatTipoSectionTitle = (tipo, index) => {
+      const letter = String.fromCharCode(65 + index);
+      return tipo === "Obra Pública"
+        ? `${letter}) Auditoría de Obra Pública`
+        : `${letter}) Auditoría Financiera`;
+    };
+
+    const sortProjectionRows = (rows) => {
+      const safeRows = Array.isArray(rows) ? rows.slice() : [];
+      safeRows.sort((a, b) => {
+        const tipoA = normalizeTipoAuditoria(a && a.tipo_auditoria);
+        const tipoB = normalizeTipoAuditoria(b && b.tipo_auditoria);
+        const tipoOrderA = tipoSortOrder[tipoA] || 99;
+        const tipoOrderB = tipoSortOrder[tipoB] || 99;
+        if (tipoOrderA !== tipoOrderB) return tipoOrderA - tipoOrderB;
+
+        const fuenteA = String((a && a.fuente_financiamiento) || "").trim();
+        const fuenteB = String((b && b.fuente_financiamiento) || "").trim();
+        const fuenteCmp = fuenteA.localeCompare(fuenteB, "es", { sensitivity: "base" });
+        if (fuenteCmp !== 0) return fuenteCmp;
+
+        const periodoA = String((a && a.periodo_cedula) || "").trim();
+        const periodoB = String((b && b.periodo_cedula) || "").trim();
+        const periodoCmp = periodoA.localeCompare(periodoB, "es", { sensitivity: "base" });
+        if (periodoCmp !== 0) return periodoCmp;
+
+        const anexoA = normalizeTipoAnexo(a && a.tipo_anexo);
+        const anexoB = normalizeTipoAnexo(b && b.tipo_anexo);
+        const anexoOrderA = anexoSortOrder[anexoA] || 99;
+        const anexoOrderB = anexoSortOrder[anexoB] || 99;
+        if (anexoOrderA !== anexoOrderB) return anexoOrderA - anexoOrderB;
+
+        const numA = Number((a && a.numero_observacion) || 0);
+        const numB = Number((b && b.numero_observacion) || 0);
+        if (numA !== numB) return numA - numB;
+
+        return Number((a && a.id) || 0) - Number((b && b.id) || 0);
+      });
+      return safeRows;
+    };
+
+    const showStatus = (message, level = "info") => {
+      if (!statusBox) return;
+      statusBox.hidden = false;
+      statusBox.classList.remove("status-info", "status-success", "status-error");
+      statusBox.classList.add(level === "success" ? "status-success" : (level === "error" ? "status-error" : "status-info"));
+      statusBox.textContent = message;
+    };
+
+    const clearStatus = () => {
+      if (!statusBox) return;
+      statusBox.hidden = true;
+      statusBox.textContent = "";
+    };
+
+    const renderEmptyTable = (tbody, colspan, message) => {
+      if (!tbody) return;
+      tbody.innerHTML = `<tr><td colspan="${colspan}" class="muted">${escapeHtml(message)}</td></tr>`;
+    };
+
+    const getSelectedEnteLabel = () => {
+      if (!(enteInput instanceof HTMLSelectElement)) return "-";
+      const option = enteInput.options[enteInput.selectedIndex];
+      return option ? String(option.textContent || "").trim() || "-" : "-";
+    };
+
+    const setBusyState = (busy) => {
+      if (analyzeBtn) analyzeBtn.disabled = !!busy;
+      if (resetBtn) resetBtn.disabled = !!busy;
+      if (applyBtn) {
+        applyBtn.disabled = !!busy || !(currentPreview && Array.isArray(currentPreview.changes) && currentPreview.changes.length);
+      }
+    };
+
+    const resetPreview = ({ preserveStatus = false } = {}) => {
+      currentPreview = null;
+      metricTotal.textContent = "0";
+      metricChanged.textContent = "0";
+      metricUnchanged.textContent = "0";
+      metricUnmatched.textContent = "0";
+      metricSkipped.textContent = "0";
+      summaryCaption.textContent = "Aún no hay análisis cargado.";
+      summaryBody.innerHTML = '<tr><td colspan="2" class="muted">Sin información para mostrar.</td></tr>';
+      warningsBody.innerHTML = '<p class="muted">Sin advertencias.</p>';
+      renderEmptyTable(resultsSummaryBody, 11, "Sin datos para mostrar.");
+      renderEmptyTable(pdpSummaryBody, 5, "Sin datos para mostrar.");
+      renderEmptyTable(changesBody, 6, "Sin cambios para mostrar.");
+      renderEmptyTable(unmatchedBody, 3, "Sin registros para mostrar.");
+      renderEmptyTable(skippedBody, 3, "Sin registros para mostrar.");
+      changesHelp.textContent = "Sin cambios detectados.";
+      unmatchedHelp.textContent = "Registros del archivo que no encontraron observación equivalente.";
+      skippedHelp.textContent = "El nombre del ente del archivo no coincide con el ente seleccionado.";
+      if (applyBtn) applyBtn.disabled = true;
+      if (!preserveStatus) {
+        clearStatus();
+      }
+    };
+
+    const renderSummary = (preview) => {
+      const summary = preview && preview.summary ? preview.summary : {};
+      metricTotal.textContent = formatCount(summary.total_rows);
+      metricChanged.textContent = formatCount(summary.changed_rows);
+      metricUnchanged.textContent = formatCount(summary.unchanged_rows);
+      metricUnmatched.textContent = formatCount(summary.unmatched_rows);
+      metricSkipped.textContent = formatCount(summary.skipped_other_ente_rows);
+      summaryCaption.textContent = (
+        `${formatCount(summary.changed_rows)} cambio(s) detectado(s) para ${preview.ente.ente_numero || preview.ente.ente_id} - ${preview.ente.ente_nombre}.`
+      );
+      summaryBody.innerHTML = [
+        ["Archivo analizado", preview.file_name || "—"],
+        ["Ente seleccionado", `${preview.ente.ente_numero || ""} - ${preview.ente.ente_nombre || ""}`.trim() || "—"],
+        ["Filas del archivo", formatCount(summary.total_rows)],
+        ["Coincidencias encontradas", formatCount(summary.matched_rows)],
+        ["Cambios efectivos", formatCount(summary.changed_rows)],
+        ["Coincidencias sin cambio", formatCount(summary.unchanged_rows)],
+        ["Sin coincidencia en sistema", formatCount(summary.unmatched_rows)],
+        ["Filas de otro ente", formatCount(summary.skipped_other_ente_rows)],
+        ["Cambios de estado", formatCount(summary.estado_changes)],
+        ["Cambios de Ramo 33", formatCount(summary.ramo_33_changes)],
+        ["Cambios de montos PDP", formatCount(summary.pdp_amount_changes)],
+      ].map(([label, value]) => (
+        `<tr><th scope="row">${escapeHtml(label)}</th><td>${escapeHtml(value)}</td></tr>`
+      )).join("");
+    };
+
+    const renderProjectedResultsSummary = (preview) => {
+      const rows = sortProjectionRows(preview && preview.projection_rows);
+      if (!rows.length) {
+        renderEmptyTable(resultsSummaryBody, 11, "Sin datos para mostrar.");
+        return;
+      }
+
+      const groupedByTipo = new Map();
+      rows.forEach((row) => {
+        const tipo = normalizeTipoAuditoria(row && row.tipo_auditoria);
+        const fuente = String((row && row.fuente_financiamiento) || "").trim() || "-";
+        const periodo = String((row && row.periodo_cedula) || "").trim() || "-";
+        const anexo = normalizeTipoAnexo(row && row.tipo_anexo) || "-";
+        const tipoKey = tipo.toLowerCase();
+        const fuenteKey = fuente.toLowerCase();
+        const periodoKey = periodo.toLowerCase();
+        if (!groupedByTipo.has(tipoKey)) {
+          groupedByTipo.set(tipoKey, { tipo, fuentes: new Map() });
+        }
+        const tipoEntry = groupedByTipo.get(tipoKey);
+        if (!tipoEntry.fuentes.has(fuenteKey)) {
+          tipoEntry.fuentes.set(fuenteKey, { fuente, periodos: new Map() });
+        }
+        const fuenteEntry = tipoEntry.fuentes.get(fuenteKey);
+        if (!fuenteEntry.periodos.has(periodoKey)) {
+          fuenteEntry.periodos.set(periodoKey, { periodo, anexos: new Map() });
+        }
+        const periodoEntry = fuenteEntry.periodos.get(periodoKey);
+        if (!periodoEntry.anexos.has(anexo)) {
+          periodoEntry.anexos.set(anexo, []);
+        }
+        periodoEntry.anexos.get(anexo).push(row);
+      });
+
+      const orderedTipos = Array.from(groupedByTipo.values()).sort((a, b) => {
+        const orderA = tipoSortOrder[a.tipo] || 99;
+        const orderB = tipoSortOrder[b.tipo] || 99;
+        if (orderA !== orderB) return orderA - orderB;
+        return a.tipo.localeCompare(b.tipo, "es", { sensitivity: "base" });
+      });
+
+      const htmlParts = [];
+      orderedTipos.forEach((tipoEntry, tipoIndex) => {
+        let totalEmitidas = 0;
+        let totalSolventadasAntes = 0;
+        let totalSolventadasDespues = 0;
+        let totalNoSolventadasAntes = 0;
+        let totalNoSolventadasDespues = 0;
+        let totalPdpEmitidoAntes = 0;
+        let totalPdpEmitidoDespues = 0;
+        let totalPdpSolventadoAntes = 0;
+        let totalPdpSolventadoDespues = 0;
+        let totalPdpPendienteAntes = 0;
+        let totalPdpPendienteDespues = 0;
+
+        htmlParts.push(
+          `<tr class="obs-admin-confirm-preview-section"><th colspan="11">${escapeHtml(formatTipoSectionTitle(tipoEntry.tipo, tipoIndex))}</th></tr>`
+        );
+
+        const orderedFuentes = Array.from(tipoEntry.fuentes.values()).sort((a, b) => (
+          String(a.fuente || "").localeCompare(String(b.fuente || ""), "es", { sensitivity: "base" })
+        ));
+
+        orderedFuentes.forEach((fuenteEntry) => {
+          const orderedPeriodos = Array.from(fuenteEntry.periodos.values()).sort((a, b) => (
+            String(a.periodo || "").localeCompare(String(b.periodo || ""), "es", { sensitivity: "base" })
+          ));
+
+          orderedPeriodos.forEach((periodoEntry) => {
+            const orderedAnexos = Array.from(periodoEntry.anexos.keys()).sort((a, b) => {
+              const orderA = anexoSortOrder[a] || 99;
+              const orderB = anexoSortOrder[b] || 99;
+              if (orderA !== orderB) return orderA - orderB;
+              return String(a || "").localeCompare(String(b || ""), "es", { sensitivity: "base" });
+            });
+
+            orderedAnexos.forEach((anexo) => {
+              const items = periodoEntry.anexos.get(anexo) || [];
+              const emitidas = items.length;
+              const solventadasAntes = [];
+              const solventadasDespues = [];
+              const noSolventadasAntes = [];
+              const noSolventadasDespues = [];
+              let pdpEmitidoAntes = 0;
+              let pdpEmitidoDespues = 0;
+              let pdpSolventadoAntes = 0;
+              let pdpSolventadoDespues = 0;
+              let pdpPendienteAntes = 0;
+              let pdpPendienteDespues = 0;
+
+              items.forEach((item, idx) => {
+                const progressive = idx + 1;
+                if (normalizeEstado(item.estado_before) === "Solventado") {
+                  solventadasAntes.push(progressive);
+                } else {
+                  noSolventadasAntes.push(progressive);
+                }
+                if (normalizeEstado(item.estado_after) === "Solventado") {
+                  solventadasDespues.push(progressive);
+                } else {
+                  noSolventadasDespues.push(progressive);
+                }
+                if (anexo === "PDP") {
+                  pdpEmitidoAntes += Number(item.monto_emitido_before || 0);
+                  pdpEmitidoDespues += Number(item.monto_emitido_after || 0);
+                  pdpSolventadoAntes += Number(item.monto_solventado_before || 0);
+                  pdpSolventadoDespues += Number(item.monto_solventado_after || 0);
+                  pdpPendienteAntes += Number(item.monto_pendiente_before || 0);
+                  pdpPendienteDespues += Number(item.monto_pendiente_after || 0);
+                }
+              });
+
+              totalEmitidas += emitidas;
+              totalSolventadasAntes += solventadasAntes.length;
+              totalSolventadasDespues += solventadasDespues.length;
+              totalNoSolventadasAntes += noSolventadasAntes.length;
+              totalNoSolventadasDespues += noSolventadasDespues.length;
+              totalPdpEmitidoAntes += pdpEmitidoAntes;
+              totalPdpEmitidoDespues += pdpEmitidoDespues;
+              totalPdpSolventadoAntes += pdpSolventadoAntes;
+              totalPdpSolventadoDespues += pdpSolventadoDespues;
+              totalPdpPendienteAntes += pdpPendienteAntes;
+              totalPdpPendienteDespues += pdpPendienteDespues;
+
+              htmlParts.push(
+                "<tr>" +
+                  `<td>${escapeHtml(fuenteEntry.fuente || "-")}</td>` +
+                  `<td>${escapeHtml(periodoEntry.periodo || "-")}</td>` +
+                  `<td>${escapeHtml(anexo || "-")}</td>` +
+                  `<td class="is-right">${escapeHtml(formatCount(emitidas))}</td>` +
+                  `<td class="is-right">${escapeHtml(formatCountChange(solventadasAntes.length, solventadasDespues.length))}</td>` +
+                  `<td>${escapeHtml(`${buildProgressiveText(solventadasAntes)} -> ${buildProgressiveText(solventadasDespues)}`)}</td>` +
+                  `<td class="is-right">${escapeHtml(formatCountChange(noSolventadasAntes.length, noSolventadasDespues.length))}</td>` +
+                  `<td>${escapeHtml(`${buildProgressiveText(noSolventadasAntes)} -> ${buildProgressiveText(noSolventadasDespues)}`)}</td>` +
+                  `<td class="is-right">${escapeHtml(anexo === "PDP" ? formatMoneyChange(pdpEmitidoAntes, pdpEmitidoDespues) : "—")}</td>` +
+                  `<td class="is-right">${escapeHtml(anexo === "PDP" ? formatMoneyChange(pdpSolventadoAntes, pdpSolventadoDespues) : "—")}</td>` +
+                  `<td class="is-right">${escapeHtml(anexo === "PDP" ? formatMoneyChange(pdpPendienteAntes, pdpPendienteDespues) : "—")}</td>` +
+                "</tr>"
+              );
+            });
+          });
+        });
+
+        htmlParts.push(
+          "<tr class=\"obs-admin-confirm-preview-total\">" +
+            "<th>TOTAL</th>" +
+            "<th></th>" +
+            "<th></th>" +
+            `<th class="is-right">${escapeHtml(formatCount(totalEmitidas))}</th>` +
+            `<th class="is-right">${escapeHtml(formatCountChange(totalSolventadasAntes, totalSolventadasDespues))}</th>` +
+            "<th></th>" +
+            `<th class="is-right">${escapeHtml(formatCountChange(totalNoSolventadasAntes, totalNoSolventadasDespues))}</th>` +
+            "<th></th>" +
+            `<th class="is-right">${escapeHtml(totalPdpEmitidoAntes || totalPdpEmitidoDespues ? formatMoneyChange(totalPdpEmitidoAntes, totalPdpEmitidoDespues) : "—")}</th>` +
+            `<th class="is-right">${escapeHtml(totalPdpSolventadoAntes || totalPdpSolventadoDespues ? formatMoneyChange(totalPdpSolventadoAntes, totalPdpSolventadoDespues) : "—")}</th>` +
+            `<th class="is-right">${escapeHtml(totalPdpPendienteAntes || totalPdpPendienteDespues ? formatMoneyChange(totalPdpPendienteAntes, totalPdpPendienteDespues) : "—")}</th>` +
+          "</tr>"
+        );
+      });
+
+      resultsSummaryBody.innerHTML = htmlParts.join("");
+    };
+
+    const renderProjectedPdpSummary = (preview) => {
+      const rows = Array.isArray(preview && preview.projection_rows) ? preview.projection_rows : [];
+      const grouped = new Map();
+      rows.forEach((row) => {
+        if (normalizeTipoAnexo(row && row.tipo_anexo) !== "PDP") return;
+        const fuente = String((row && row.fuente_financiamiento) || "").trim() || "-";
+        const periodo = String((row && row.periodo_cedula) || "").trim() || "-";
+        const key = `${fuente.toLowerCase()}||${periodo.toLowerCase()}`;
+        if (!grouped.has(key)) {
+          grouped.set(key, {
+            fuente,
+            periodo,
+            emitidoAntes: 0,
+            emitidoDespues: 0,
+            solventadoAntes: 0,
+            solventadoDespues: 0,
+            pendienteAntes: 0,
+            pendienteDespues: 0,
+          });
+        }
+        const item = grouped.get(key);
+        item.emitidoAntes += Number(row.monto_emitido_before || 0);
+        item.emitidoDespues += Number(row.monto_emitido_after || 0);
+        item.solventadoAntes += Number(row.monto_solventado_before || 0);
+        item.solventadoDespues += Number(row.monto_solventado_after || 0);
+        item.pendienteAntes += Number(row.monto_pendiente_before || 0);
+        item.pendienteDespues += Number(row.monto_pendiente_after || 0);
+      });
+
+      const data = Array.from(grouped.values()).sort((a, b) => {
+        const fuenteCmp = a.fuente.localeCompare(b.fuente, "es", { sensitivity: "base" });
+        if (fuenteCmp !== 0) return fuenteCmp;
+        return a.periodo.localeCompare(b.periodo, "es", { sensitivity: "base" });
+      });
+      if (!data.length) {
+        renderEmptyTable(pdpSummaryBody, 5, "No hay observaciones PDP en las coincidencias del archivo.");
+        return;
+      }
+
+      const totals = data.reduce((acc, item) => {
+        acc.emitidoAntes += item.emitidoAntes;
+        acc.emitidoDespues += item.emitidoDespues;
+        acc.solventadoAntes += item.solventadoAntes;
+        acc.solventadoDespues += item.solventadoDespues;
+        acc.pendienteAntes += item.pendienteAntes;
+        acc.pendienteDespues += item.pendienteDespues;
+        return acc;
+      }, {
+        emitidoAntes: 0,
+        emitidoDespues: 0,
+        solventadoAntes: 0,
+        solventadoDespues: 0,
+        pendienteAntes: 0,
+        pendienteDespues: 0,
+      });
+
+      pdpSummaryBody.innerHTML = data.map((item) => (
+        "<tr>" +
+          `<td>${escapeHtml(item.fuente)}</td>` +
+          `<td>${escapeHtml(item.periodo)}</td>` +
+          `<td class="is-right">${escapeHtml(formatMoneyChange(item.emitidoAntes, item.emitidoDespues))}</td>` +
+          `<td class="is-right">${escapeHtml(formatMoneyChange(item.solventadoAntes, item.solventadoDespues))}</td>` +
+          `<td class="is-right">${escapeHtml(formatMoneyChange(item.pendienteAntes, item.pendienteDespues))}</td>` +
+        "</tr>"
+      )).join("") + (
+        "<tr class=\"obs-admin-confirm-preview-total\">" +
+          "<th>TOTAL</th>" +
+          "<th></th>" +
+          `<th class="is-right">${escapeHtml(formatMoneyChange(totals.emitidoAntes, totals.emitidoDespues))}</th>` +
+          `<th class="is-right">${escapeHtml(formatMoneyChange(totals.solventadoAntes, totals.solventadoDespues))}</th>` +
+          `<th class="is-right">${escapeHtml(formatMoneyChange(totals.pendienteAntes, totals.pendienteDespues))}</th>` +
+        "</tr>"
+      );
+    };
+
+    const renderWarnings = (preview) => {
+      const warnings = Array.isArray(preview && preview.warnings_preview) ? preview.warnings_preview : [];
+      if (!warnings.length) {
+        warningsBody.innerHTML = '<p class="muted">Sin advertencias.</p>';
+        return;
+      }
+      warningsBody.innerHTML = (
+        `<ul class="obs-bulk-note-items">` +
+        warnings.map((item) => `<li>${escapeHtml(item)}</li>`).join("") +
+        `</ul>`
+      );
+    };
+
+    const buildContextHtml = (item) => (
+      `<div class="obs-bulk-context-cell">` +
+        `<strong>${escapeHtml(`${item.tipo_auditoria || "-"} · ${item.tipo_anexo || "-"} #${item.numero_observacion || "-"}`)}</strong>` +
+        `<span>${escapeHtml(item.fuente_financiamiento || "-")}</span>` +
+        `<span>${escapeHtml(item.periodo_cedula || item.periodo || "-")}</span>` +
+        `<span>Oficio: ${escapeHtml(item.oficio || "-")}</span>` +
+      `</div>`
+    );
+
+    const renderChanges = (preview) => {
+      const rows = Array.isArray(preview && preview.changes_preview) ? preview.changes_preview : [];
+      if (!rows.length) {
+        renderEmptyTable(changesBody, 6, "Sin cambios para mostrar.");
+        changesHelp.textContent = "Sin cambios detectados.";
+        return;
+      }
+      changesHelp.textContent = preview.changes_truncated
+        ? `Mostrando ${formatCount(rows.length)} de ${formatCount(preview.changes.length)} cambios detectados.`
+        : `${formatCount(preview.changes.length)} cambio(s) listo(s) para aplicar.`;
+      changesBody.innerHTML = rows.map((item) => {
+        const estadoText = item.estado_before === item.estado_after
+          ? item.estado_after
+          : `${item.estado_before} -> ${item.estado_after}`;
+        const ramoText = item.ramo_33_before === item.ramo_33_after
+          ? item.ramo_33_after
+          : `${item.ramo_33_before} -> ${item.ramo_33_after}`;
+        const pdpText = item.tipo_anexo === "PDP"
+          ? (
+            `Obs ${formatMoney(item.monto_emitido_before)} -> ${formatMoney(item.monto_emitido_after)} | ` +
+            `Solv ${formatMoney(item.monto_solventado_before)} -> ${formatMoney(item.monto_solventado_after)} | ` +
+            `Pend ${formatMoney(item.monto_pendiente_before)} -> ${formatMoney(item.monto_pendiente_after)}`
+          )
+          : "No aplica";
+        return (
+          `<tr>` +
+            `<td>${escapeHtml(item.line_number)}</td>` +
+            `<td>${escapeHtml(item.id)}</td>` +
+            `<td>${buildContextHtml(item)}</td>` +
+            `<td>${escapeHtml(estadoText)}</td>` +
+            `<td>${escapeHtml(ramoText)}</td>` +
+            `<td>${escapeHtml(pdpText)}</td>` +
+          `</tr>`
+        );
+      }).join("");
+    };
+
+    const renderUnmatched = (preview) => {
+      const rows = Array.isArray(preview && preview.unmatched_preview) ? preview.unmatched_preview : [];
+      if (!rows.length) {
+        renderEmptyTable(unmatchedBody, 3, "Sin registros para mostrar.");
+        unmatchedHelp.textContent = "No hubo filas sin coincidencia.";
+        return;
+      }
+      unmatchedHelp.textContent = preview.unmatched_truncated
+        ? `Mostrando ${formatCount(rows.length)} de ${formatCount(preview.summary.unmatched_rows)} filas sin coincidencia.`
+        : `${formatCount(preview.summary.unmatched_rows)} fila(s) del archivo no encontraron observación equivalente.`;
+      unmatchedBody.innerHTML = rows.map((item) => (
+        `<tr>` +
+          `<td>${escapeHtml(item.line_number)}</td>` +
+          `<td>${buildContextHtml(item)}</td>` +
+          `<td>${escapeHtml(item.reason || "-")}</td>` +
+        `</tr>`
+      )).join("");
+    };
+
+    const renderSkipped = (preview) => {
+      const rows = Array.isArray(preview && preview.skipped_preview) ? preview.skipped_preview : [];
+      if (!rows.length) {
+        renderEmptyTable(skippedBody, 3, "Sin registros para mostrar.");
+        skippedHelp.textContent = "No hubo filas descartadas por ente.";
+        return;
+      }
+      skippedHelp.textContent = preview.skipped_truncated
+        ? `Mostrando ${formatCount(rows.length)} de ${formatCount(preview.summary.skipped_other_ente_rows)} filas descartadas por ente.`
+        : `${formatCount(preview.summary.skipped_other_ente_rows)} fila(s) descartada(s) por nombre de ente.`;
+      skippedBody.innerHTML = rows.map((item) => (
+        `<tr>` +
+          `<td>${escapeHtml(item.line_number)}</td>` +
+          `<td>${escapeHtml(item.ente_nombre_csv || "-")}</td>` +
+          `<td>${escapeHtml(item.reason || "-")}</td>` +
+        `</tr>`
+      )).join("");
+    };
+
+    const renderPreview = (preview) => {
+      currentPreview = preview;
+      renderSummary(preview);
+      renderWarnings(preview);
+      renderProjectedResultsSummary(preview);
+      renderProjectedPdpSummary(preview);
+      renderChanges(preview);
+      renderUnmatched(preview);
+      renderSkipped(preview);
+      if (applyBtn) {
+        applyBtn.disabled = !Array.isArray(preview.changes) || !preview.changes.length;
+      }
+    };
+
+    const syncScopeHint = () => {
+      const fileName = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0].name : "";
+      const enteLabel = getSelectedEnteLabel();
+      selectedFileLabel.textContent = fileName || "Sin archivo cargado";
+      if (filePicker) {
+        filePicker.classList.toggle("has-file", !!fileName);
+      }
+      if (filePickerTitle) {
+        filePickerTitle.textContent = fileName || "Seleccionar archivo";
+      }
+      if (filePickerSubtitle) {
+        filePickerSubtitle.textContent = fileName
+          ? "Archivo listo para comparar contra las observaciones 2025 del ente seleccionado."
+          : "CSV o TSV con la estructura acordada para observaciones 2025.";
+      }
+      if (filePickerChip) {
+        filePickerChip.textContent = fileName ? "Archivo listo" : "Sin archivo";
+      }
+      scopeHint.textContent = enteInput && enteInput.value
+        ? `Ente activo: ${enteLabel}. ${fileName ? "Listo para analizar." : "Selecciona un archivo CSV."}`
+        : "Selecciona un ente y un archivo para generar la vista previa.";
+    };
+
+    const renderConfirmMeta = (items) => {
+      const safeItems = Array.isArray(items) ? items.filter((item) => item && item.label) : [];
+      if (!safeItems.length) {
+        confirmMeta.hidden = true;
+        confirmMeta.innerHTML = "";
+        return;
+      }
+      confirmMeta.hidden = false;
+      confirmMeta.innerHTML = safeItems.map((item) => (
+        `<span><strong>${escapeHtml(item.label)}:</strong> ${escapeHtml(item.value || "-")}</span>`
+      )).join("");
+    };
+
+    const renderConfirmSummaryRows = (rows) => {
+      const safeRows = Array.isArray(rows) ? rows.filter((row) => row && row.label) : [];
+      if (!safeRows.length) {
+        confirmSummaryBody.innerHTML = '<tr><td colspan="2" class="muted">Sin datos para confirmar.</td></tr>';
+        return;
+      }
+      confirmSummaryBody.innerHTML = safeRows.map((row) => (
+        `<tr><th scope="row">${escapeHtml(row.label)}</th><td>${escapeHtml(row.value || "-")}</td></tr>`
+      )).join("");
+    };
+
+    const renderConfirmPreview = (columns, rows) => {
+      const safeColumns = Array.isArray(columns) ? columns.filter((col) => col && col.key && col.label) : [];
+      const safeRows = Array.isArray(rows) ? rows : [];
+      if (!safeColumns.length) {
+        confirmPreviewHead.innerHTML = "<tr><th>Detalle</th></tr>";
+        confirmPreviewBody.innerHTML = '<tr><td class="muted">Sin registros para mostrar.</td></tr>';
+        return;
+      }
+      confirmPreviewHead.innerHTML = (
+        "<tr>" +
+        safeColumns.map((col) => `<th>${escapeHtml(col.label)}</th>`).join("") +
+        "</tr>"
+      );
+      if (!safeRows.length) {
+        confirmPreviewBody.innerHTML = `<tr><td colspan="${safeColumns.length}" class="muted">Sin registros para mostrar.</td></tr>`;
+        return;
+      }
+      confirmPreviewBody.innerHTML = safeRows.map((row) => (
+        "<tr>" +
+        safeColumns.map((col) => `<td>${escapeHtml(row[col.key] || "—")}</td>`).join("") +
+        "</tr>"
+      )).join("");
+    };
+
+    const closeConfirmModal = (confirmed = false) => {
+      if (!confirmModal) return;
+      confirmModal.hidden = true;
+      document.body.classList.remove("is-modal-open");
+      if (confirmResolver) {
+        const resolve = confirmResolver;
+        confirmResolver = null;
+        resolve(Boolean(confirmed));
+      }
+    };
+
+    const showConfirmModal = ({ metaItems = [], summaryRows = [], previewColumns = [], previewRows = [], warningText = "" } = {}) => {
+      if (!confirmModal) {
+        return Promise.resolve(window.confirm("¿Confirmas aplicar los cambios detectados?"));
+      }
+      renderConfirmMeta(metaItems);
+      renderConfirmSummaryRows(summaryRows);
+      renderConfirmPreview(previewColumns, previewRows);
+      confirmWarning.hidden = !warningText;
+      confirmWarning.textContent = warningText;
+      confirmModal.hidden = false;
+      document.body.classList.add("is-modal-open");
+      window.setTimeout(() => {
+        if (confirmAcceptBtn) confirmAcceptBtn.focus();
+      }, 0);
+      return new Promise((resolve) => {
+        confirmResolver = resolve;
+      });
+    };
+
+    const analyzeFile = async () => {
+      const enteId = enteInput ? String(enteInput.value || "").trim() : "";
+      const file = fileInput && fileInput.files ? fileInput.files[0] : null;
+      if (!enteId) {
+        showStatus("Selecciona un ente antes de analizar.", "error");
+        return;
+      }
+      if (!file) {
+        showStatus("Selecciona un archivo CSV antes de analizar.", "error");
+        return;
+      }
+      setBusyState(true);
+      clearStatus();
+      resetPreview({ preserveStatus: true });
+      try {
+        const formData = new FormData();
+        formData.set("ente_id", enteId);
+        formData.set("csv_file", file);
+        const response = await fetch("/carga/observaciones-admin/carga-masiva/preview", {
+          method: "POST",
+          body: formData,
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "No se pudo analizar el archivo.");
+        }
+        renderPreview(data);
+        showStatus(
+          `Análisis completado: ${formatCount(data.summary.changed_rows)} cambio(s) detectado(s).`,
+          "success",
+        );
+      } catch (error) {
+        resetPreview({ preserveStatus: true });
+        showStatus(error && error.message ? error.message : "Error al analizar el archivo.", "error");
+      } finally {
+        syncScopeHint();
+        setBusyState(false);
+      }
+    };
+
+    const applyChanges = async () => {
+      if (!currentPreview || !Array.isArray(currentPreview.changes) || !currentPreview.changes.length) {
+        showStatus("No hay cambios listos para aplicar.", "info");
+        return;
+      }
+      const summary = currentPreview.summary || {};
+      const previewRows = currentPreview.changes.slice(0, 30).map((item) => ({
+        linea: String(item.line_number || ""),
+        id: String(item.id || ""),
+        contexto: `${item.tipo_auditoria || "-"} · ${item.tipo_anexo || "-"} #${item.numero_observacion || "-"}`,
+        estado: item.estado_before === item.estado_after
+          ? item.estado_after
+          : `${item.estado_before} -> ${item.estado_after}`,
+        ramo: item.ramo_33_before === item.ramo_33_after
+          ? item.ramo_33_after
+          : `${item.ramo_33_before} -> ${item.ramo_33_after}`,
+        pdp: item.tipo_anexo === "PDP"
+          ? `${formatMoney(item.monto_solventado_before)} -> ${formatMoney(item.monto_solventado_after)}`
+          : "No aplica",
+      }));
+      const confirmed = await showConfirmModal({
+        metaItems: [
+          { label: "Ejercicio", value: currentPreview.ejercicio || "2025" },
+          { label: "Ente", value: getSelectedEnteLabel() },
+          { label: "Archivo", value: currentPreview.file_name || "-" },
+        ],
+        summaryRows: [
+          { label: "Cambios a aplicar", value: formatCount(summary.changed_rows) },
+          { label: "Sin coincidencia", value: formatCount(summary.unmatched_rows) },
+          { label: "Filas de otro ente", value: formatCount(summary.skipped_other_ente_rows) },
+          { label: "Cambios de estado", value: formatCount(summary.estado_changes) },
+          { label: "Cambios de Ramo 33", value: formatCount(summary.ramo_33_changes) },
+          { label: "Cambios de montos PDP", value: formatCount(summary.pdp_amount_changes) },
+        ],
+        previewColumns: [
+          { key: "linea", label: "Línea" },
+          { key: "id", label: "ID" },
+          { key: "contexto", label: "Contexto" },
+          { key: "estado", label: "Estado" },
+          { key: "ramo", label: "Ramo 33" },
+          { key: "pdp", label: "PDP solventado" },
+        ],
+        previewRows,
+        warningText: summary.unmatched_rows || summary.skipped_other_ente_rows
+          ? "ATENCIÓN: solo se aplicarán coincidencias válidas; las filas sin match o de otro ente no se insertan."
+          : "ATENCIÓN: esta acción actualizará observaciones existentes en lote y generará un respaldo previo.",
+      });
+      if (!confirmed) {
+        return;
+      }
+
+      setBusyState(true);
+      try {
+        const response = await fetch("/carga/observaciones-admin/carga-masiva/aplicar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ente_id: enteInput ? enteInput.value : "",
+            updates: currentPreview.changes,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "No se pudieron aplicar los cambios.");
+        }
+        const message = `Cambios aplicados: ${formatCount(data.updated)}.`
+          + (data.backup_path ? ` Respaldo: ${data.backup_path}.` : "");
+        showStatus(message, "success");
+        if (fileInput) {
+          fileInput.value = "";
+        }
+        syncScopeHint();
+        resetPreview({ preserveStatus: true });
+      } catch (error) {
+        showStatus(error && error.message ? error.message : "Error al aplicar cambios.", "error");
+      } finally {
+        setBusyState(false);
+      }
+    };
+
+    if (enteInput) {
+      enteInput.addEventListener("change", () => {
+        syncScopeHint();
+        resetPreview({ preserveStatus: false });
+      });
+    }
+
+    if (fileInput) {
+      fileInput.addEventListener("change", () => {
+        syncScopeHint();
+        resetPreview({ preserveStatus: false });
+      });
+    }
+
+    if (analyzeBtn) {
+      analyzeBtn.addEventListener("click", async () => {
+        await analyzeFile();
+      });
+    }
+
+    if (applyBtn) {
+      applyBtn.addEventListener("click", async () => {
+        await applyChanges();
+      });
+    }
+
+    if (resetBtn) {
+      resetBtn.addEventListener("click", () => {
+        if (fileInput) fileInput.value = "";
+        syncScopeHint();
+        resetPreview({ preserveStatus: false });
+      });
+    }
+
+    if (confirmCancelBtn) {
+      confirmCancelBtn.addEventListener("click", () => closeConfirmModal(false));
+    }
+
+    if (confirmAcceptBtn) {
+      confirmAcceptBtn.addEventListener("click", () => closeConfirmModal(true));
+    }
+
+    if (confirmModal) {
+      confirmModal.addEventListener("click", (event) => {
+        if (event.target === confirmModal) {
+          closeConfirmModal(false);
+        }
+      });
+    }
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && confirmModal && !confirmModal.hidden) {
+        closeConfirmModal(false);
+      }
+    });
+
+    syncScopeHint();
+    resetPreview({ preserveStatus: true });
+  </script>
+</body>
+</html>

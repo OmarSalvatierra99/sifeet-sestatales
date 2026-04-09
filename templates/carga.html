@@ -3,23 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SIFEET Estatales · Carga de Datos</title>
+  <title>Registro Observaciones · Carga de Datos</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
 </head>
 <body class="loader-page" data-loader-mode="{{ initial_loader_mode }}" data-current-user="{{ user.username }}">
+  {% set user_display_names = {'luis': 'C.P Luis Felipe Camilo Fuentes', 'gabo': 'Ing. Omar Gabriel Salvatierra Garcia'} %}
   <header class="site-header">
     <div class="header-inner">
       <img src="{{ url_for('static', filename='img/ofs_logo.png') }}" alt="Logo institucional" class="ofs-logo">
       <div class="header-text">
         <p class="eyebrow">Órgano de Fiscalización Superior del Estado de Tlaxcala</p>
-        <h1>SIFEET Estatales</h1>
+        <h1>Registro Observaciones</h1>
         <p class="subtitle">Centro de carga de información</p>
       </div>
       <div class="header-badge user-badge">
         <div class="user-meta">
           <span>Usuario</span>
-          <strong>{{ "Gabo" if user.username == "gabo" else ("Luis" if user.username == "luis" else user.username) }}</strong>
+          <strong>{{ user_display_names.get(user.username, user.username) }}</strong>
         </div>
         <div class="user-actions">
           <span class="user-role">Carga</span>
@@ -206,6 +207,41 @@
                 </div>
                 <div class="loader-source-card-actions" id="manualResumenToolbar" style="display:none;"></div>
               </div>
+              <details class="manual-resumen-json-import" id="manualResumenJsonImport">
+                <summary>Carga rápida por JSON</summary>
+                <p class="helper">
+                  Pega un JSON con <code>auditoria</code>, <code>fuentes</code> y <code>registros</code>.
+                  La importación reemplaza la tabla actual.
+                </p>
+                <textarea
+                  id="manualResumenJsonInput"
+                  rows="9"
+                  spellcheck="false"
+                  placeholder='{
+  "auditoria": "Financiera",
+  "fuentes": [
+    {
+      "nombre": "Fuente de ejemplo",
+      "registros": [
+        {
+          "periodo": "01 ene - 31 ene",
+          "SA": [1, 2],
+          "PDP": [1],
+          "PRAS": [],
+          "PEFCF": [],
+          "R": []
+        }
+      ]
+    }
+  ]
+}'
+                ></textarea>
+                <div class="manual-resumen-json-actions">
+                  <button type="button" class="btn-secondary btn-compact" id="manualResumenJsonApplyBtn">Cargar JSON</button>
+                  <button type="button" class="btn-secondary btn-compact" id="manualResumenJsonClearBtn">Limpiar texto</button>
+                </div>
+                <p class="helper manual-resumen-json-feedback" id="manualResumenJsonFeedback"></p>
+              </details>
               <div id="manualResumenFuentesBody" class="manual-resumen-table">
                 <p class="helper">Agrega fuentes para generar el resumen.</p>
               </div>
@@ -487,7 +523,7 @@
   </main>
 
   <footer class="site-footer">
-    © Órgano de Fiscalización Superior del Estado de Tlaxcala · SIFEET Estatales
+    © Órgano de Fiscalización Superior del Estado de Tlaxcala · Registro Observaciones
   </footer>
   <a
     id="loaderOpenTitularesBtn"
@@ -526,6 +562,22 @@
       </svg>
     </span>
     <span data-loader-obs-admin-label>Resultados de Solventación</span>
+  </a>
+  <a
+    id="loaderOpenBulkUploadBtn"
+    class="floating-clear-btn loader-bulk-upload-btn"
+    href="{{ url_for('carga_observaciones_admin_carga_masiva') }}"
+    data-base-href="{{ url_for('carga_observaciones_admin_carga_masiva') }}"
+    aria-label="Abrir carga masiva"
+  >
+    <span class="floating-clear-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M12 4V15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M8.5 11.5L12 15L15.5 11.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M5 18.5H19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <span>Carga masiva</span>
   </a>
   <script>
     const loaderModeButtons = Array.from(document.querySelectorAll("[data-loader-mode-target]"));
@@ -605,6 +657,7 @@
     const titularEnte = document.getElementById("titular_ente_id");
     const loaderOpenTitularesBtn = document.getElementById("loaderOpenTitularesBtn");
     const loaderOpenObsAdminBtn = document.getElementById("loaderOpenObsAdminBtn");
+    const loaderOpenBulkUploadBtn = document.getElementById("loaderOpenBulkUploadBtn");
 
     const principalEjercicio = document.getElementById("principal_ejercicio");
     const principalEnte = document.getElementById("principal_ente_id");
@@ -744,6 +797,11 @@
     const manualContextSummaryOficio = document.getElementById("manualContextSummaryOficio");
     const manualContextSummaryFecha = document.getElementById("manualContextSummaryFecha");
     const manualResumenToolbar = document.getElementById("manualResumenToolbar");
+    const manualResumenJsonImport = document.getElementById("manualResumenJsonImport");
+    const manualResumenJsonInput = document.getElementById("manualResumenJsonInput");
+    const manualResumenJsonApplyBtn = document.getElementById("manualResumenJsonApplyBtn");
+    const manualResumenJsonClearBtn = document.getElementById("manualResumenJsonClearBtn");
+    const manualResumenJsonFeedback = document.getElementById("manualResumenJsonFeedback");
     const manualResumenContainer = document.getElementById("manualResumenFuentesBody");
     let isSyncingContextFields = false;
     const MIXED_TIPO_AUDITORIA = "Financiera y Obra Pública";
@@ -1677,6 +1735,29 @@
         : "Abrir resultados de solventación.";
     };
 
+    const updateBulkUploadOpenLink = () => {
+      if (!loaderOpenBulkUploadBtn || !loaderOpenBulkUploadBtn.dataset.baseHref) {
+        return;
+      }
+      const url = new URL(loaderOpenBulkUploadBtn.dataset.baseHref, window.location.origin);
+      const returnVista = (document.body.dataset.loaderMode || "manual") === "titulares" ? "titulares" : "manual";
+      url.searchParams.set("return_vista", returnVista);
+
+      const ejercicio = principalEjercicio ? String(principalEjercicio.value || "").trim() : "";
+      const enteId = principalEnte ? String(principalEnte.value || "").trim() : "";
+      if (ejercicio === "2025") {
+        url.searchParams.set("ejercicio", ejercicio);
+      }
+      if (enteId && ejercicio === "2025") {
+        url.searchParams.set("ente_id", enteId);
+      }
+
+      loaderOpenBulkUploadBtn.href = `${url.pathname}?${url.searchParams.toString()}`;
+      loaderOpenBulkUploadBtn.title = enteId && ejercicio === "2025"
+        ? "Abrir carga masiva con el ente actual."
+        : "Abrir carga masiva para comparar un archivo contra observaciones 2025.";
+    };
+
     const updateContextSummary = () => {
       const enteLabel = getSelectedOptionLabel(principalEnte);
       const fuenteLabel = resolveManualFuenteNombre() || resolvePrincipalFuenteNombre() || "-";
@@ -1706,6 +1787,7 @@
       }
       updateTitularesOpenLink();
       updateObsAdminOpenLink();
+      updateBulkUploadOpenLink();
       renderManualReviewSummary();
     };
 
@@ -2464,7 +2546,7 @@
         } else {
           const activeTipo = manualTipoAuditoria ? String(manualTipoAuditoria.value || "").trim().toLowerCase() : "";
           const activeFuente = resolveManualFuenteNombre().toLowerCase();
-          const activePeriodo = normalizePeriodoValue(manualPeriodo ? String(manualPeriodo.value || "") : "").toLowerCase();
+          const activePeriodo = normalizePeriodoMatchValue(manualPeriodo ? String(manualPeriodo.value || "") : "");
           manualFuentesDetalleList.innerHTML = fuentesDetalleState.map((item, idx) => {
             const sa = Math.max(0, Number.parseInt(String(item.cantidad_sa || 0), 10) || 0);
             const pdp = Math.max(0, Number.parseInt(String(item.cantidad_pdp || 0), 10) || 0);
@@ -2472,13 +2554,14 @@
             const r = Math.max(0, Number.parseInt(String(item.cantidad_r || 0), 10) || 0);
             const pefcf = Math.max(0, Number.parseInt(String(item.cantidad_pefcf || 0), 10) || 0);
             const totalItem = sa + pdp + pras + r + pefcf;
-            const periodoItem = normalizePeriodoValue(String(item.periodo || ""));
+            const periodoItem = String(item.periodo || "").trim();
+            const periodoMatch = normalizePeriodoMatchValue(periodoItem);
             const isActive = Number.isInteger(editingFuenteIndex) && editingFuenteIndex >= 0
               ? idx === editingFuenteIndex
               : (
                   activeTipo === String(item.tipo_auditoria || "").trim().toLowerCase()
                   && activeFuente === String(item.fuente_nombre || "").trim().toLowerCase()
-                  && activePeriodo === periodoItem.toLowerCase()
+                  && activePeriodo === periodoMatch
                 );
             return (
               `<article class="loader-source-card${isActive ? " is-active" : ""}">` +
@@ -2597,7 +2680,7 @@
     const addFuenteRowInline = () => {
       const allowedTipos = getAllowedSourceTipos();
       const tipoDefault = allowedTipos[0] || "Financiera";
-      const periodoDefault = normalizePeriodoForStore(String(manualPeriodo ? (manualPeriodo.value || "") : ""));
+      const periodoDefault = normalizeResumenPeriodoForStore(String(manualPeriodo ? (manualPeriodo.value || "") : ""));
       fuentesDetalleState.push({
         tipo_auditoria: tipoDefault,
         fuente_nombre: "",
@@ -2667,7 +2750,7 @@
       }
       const clones = periodos.map((periodoItem) => ({
         ...row,
-        periodo: periodoItem,
+        periodo: normalizeResumenPeriodoForStore(periodoItem),
       }));
       fuentesDetalleState.splice(idx, 1, ...clones);
       ensurePdpDetalleAlignedToFuentes();
@@ -2692,7 +2775,7 @@
       } else if (field === "fuente_nombre") {
         row.fuente_nombre = normalizeInlineText(rawValue);
       } else if (field === "periodo") {
-        row.periodo = normalizePeriodoForStore(rawValue);
+        row.periodo = normalizeResumenPeriodoForStore(rawValue);
       } else if (field === "cantidad_sa" || field === "cantidad_pdp" || field === "cantidad_pras" || field === "cantidad_pefcf" || field === "cantidad_r") {
         row[field] = parseResumenCountValue(rawValue);
       }
@@ -3188,11 +3271,13 @@
       const cantidadPefcf = readCantidadValue("manual_cantidad_pefcf");
       const cantidadR = readCantidadValue("manual_cantidad_r");
       const manualPeriodoRaw = manualPeriodo ? String(manualPeriodo.value || "") : "";
-      const periodoValue = normalizePeriodoForStore(manualPeriodoRaw);
+      const periodoValue = normalizeResumenPeriodoForStore(manualPeriodoRaw);
       const partitionEnabled = isManualPeriodoPartitionEnabled();
-      const periodTargets = partitionEnabled
-        ? getManualPeriodoPartitionTargets()
-        : (periodoValue ? [periodoValue] : []);
+      const periodTargets = Array.from(new Set((
+        partitionEnabled
+          ? getManualPeriodoPartitionTargets()
+          : (periodoValue ? [periodoValue] : [])
+      ).map((periodo) => normalizeResumenPeriodoForStore(periodo)).filter(Boolean)));
       const total = cantidadSa + cantidadPdp + cantidadPras + cantidadPefcf + cantidadR;
 
       if (!tipo) {
@@ -3284,11 +3369,11 @@
     const findFuenteDetalleIndex = (tipo, fuenteNombre, periodo = "") => {
       const normalizedTipo = String(tipo || "").trim().toLowerCase();
       const normalizedFuente = String(fuenteNombre || "").trim().toLowerCase();
-      const normalizedPeriodo = normalizePeriodoValue(periodo || "").toLowerCase();
+      const normalizedPeriodo = normalizePeriodoMatchValue(periodo || "");
       return fuentesDetalleState.findIndex((row) => {
         const rowTipo = String((row && row.tipo_auditoria) || "").trim().toLowerCase();
         const rowFuente = String((row && row.fuente_nombre) || "").trim().toLowerCase();
-        const rowPeriodo = normalizePeriodoValue((row && row.periodo) || "").toLowerCase();
+        const rowPeriodo = normalizePeriodoMatchValue((row && row.periodo) || "");
         return rowTipo === normalizedTipo && rowFuente === normalizedFuente && rowPeriodo === normalizedPeriodo;
       });
     };
@@ -3338,11 +3423,13 @@
       const cantidadPefcf = readCantidadValue("manual_cantidad_pefcf");
       const cantidadR = readCantidadValue("manual_cantidad_r");
       const manualPeriodoRaw = manualPeriodo ? String(manualPeriodo.value || "") : "";
-      const periodoValue = normalizePeriodoForStore(manualPeriodoRaw);
+      const periodoValue = normalizeResumenPeriodoForStore(manualPeriodoRaw);
       const partitionEnabled = isManualPeriodoPartitionEnabled();
-      const periodTargets = partitionEnabled
-        ? getManualPeriodoPartitionTargets()
-        : (periodoValue ? [periodoValue] : []);
+      const periodTargets = Array.from(new Set((
+        partitionEnabled
+          ? getManualPeriodoPartitionTargets()
+          : (periodoValue ? [periodoValue] : [])
+      ).map((periodo) => normalizeResumenPeriodoForStore(periodo)).filter(Boolean)));
       const total = cantidadSa + cantidadPdp + cantidadPras + cantidadPefcf + cantidadR;
       if (!tipo || !fuenteNombre) {
         if (showFeedback && manualFuentesDetalleFeedback) {
@@ -3509,6 +3596,417 @@
     const normalizeInlineText = (value) => (
       String(value || "").split(/\s+/).filter(Boolean).join(" ")
     );
+
+    const resumenPeriodoMonthLabels = {
+      ene: "Enero",
+      enero: "Enero",
+      feb: "Febrero",
+      febrero: "Febrero",
+      mar: "Marzo",
+      marzo: "Marzo",
+      abr: "Abril",
+      abril: "Abril",
+      may: "Mayo",
+      mayo: "Mayo",
+      jun: "Junio",
+      junio: "Junio",
+      jul: "Julio",
+      julio: "Julio",
+      ago: "Agosto",
+      agosto: "Agosto",
+      sep: "Septiembre",
+      sept: "Septiembre",
+      septiembre: "Septiembre",
+      oct: "Octubre",
+      octubre: "Octubre",
+      nov: "Noviembre",
+      noviembre: "Noviembre",
+      dic: "Diciembre",
+      diciembre: "Diciembre",
+    };
+
+    const resolveResumenPeriodoMonthLabel = (value) => {
+      const key = String(value || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\./g, "")
+        .toLowerCase()
+        .trim();
+      return resumenPeriodoMonthLabels[key] || "";
+    };
+
+    const normalizeResumenPeriodoLabel = (value) => {
+      const raw = normalizeInlineText(String(value || "").replace(/[–—]/g, "-"));
+      if (!raw) {
+        return "";
+      }
+      const match = raw.match(
+        /^(\d{1,2})\s*(?:de\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ.]+)\s*(?:-|al)\s*(\d{1,2})\s*(?:de\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ.]+)$/i
+      );
+      if (!match) {
+        return raw;
+      }
+      const startMonth = resolveResumenPeriodoMonthLabel(match[2]);
+      const endMonth = resolveResumenPeriodoMonthLabel(match[4]);
+      if (!startMonth || !endMonth) {
+        return raw;
+      }
+      const startDay = String(Number.parseInt(match[1] || "", 10)).padStart(2, "0");
+      const endDay = String(Number.parseInt(match[3] || "", 10)).padStart(2, "0");
+      return `${startDay} de ${startMonth} al ${endDay} de ${endMonth}`;
+    };
+
+    const normalizeResumenPeriodoForStore = (value) => {
+      const raw = normalizePeriodoForStore(value);
+      if (!raw) {
+        return "";
+      }
+      return normalizeResumenPeriodoLabel(raw);
+    };
+
+    const normalizePeriodoMatchValue = (value) => (
+      normalizeInlineText(normalizeResumenPeriodoLabel(value)).toLowerCase()
+    );
+
+    const setManualResumenJsonFeedback = (message, level = "info") => {
+      if (!manualResumenJsonFeedback) {
+        return;
+      }
+      manualResumenJsonFeedback.textContent = String(message || "");
+      manualResumenJsonFeedback.dataset.level = level;
+    };
+
+    const normalizeTipoAuditoriaImportValue = (value) => {
+      const normalized = String(value || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .trim();
+      if (!normalized) {
+        return "";
+      }
+      if (normalized === "financiera") {
+        return "Financiera";
+      }
+      if (normalized === "obra publica") {
+        return "Obra Pública";
+      }
+      return "";
+    };
+
+    const resolveCurrentOrDefaultTipoAuditoria = () => {
+      const manualTipo = normalizeTipoAuditoriaImportValue(manualTipoAuditoria ? manualTipoAuditoria.value || "" : "");
+      if (manualTipo) {
+        return manualTipo;
+      }
+      const principalTipo = normalizeTipoAuditoriaImportValue(principalTipoAuditoria ? principalTipoAuditoria.value || "" : "");
+      if (principalTipo) {
+        return principalTipo;
+      }
+      return "Financiera";
+    };
+
+    const getResumenJsonField = (source, key) => {
+      if (!source || typeof source !== "object") {
+        return { found: false, value: undefined };
+      }
+      const variants = [key, key.toLowerCase(), key.toUpperCase()];
+      for (const variant of variants) {
+        if (Object.prototype.hasOwnProperty.call(source, variant)) {
+          return { found: true, value: source[variant] };
+        }
+      }
+      return { found: false, value: undefined };
+    };
+
+    const parseResumenJsonCount = (source, key) => {
+      const field = getResumenJsonField(source, key);
+      if (!field.found) {
+        return 0;
+      }
+      if (Array.isArray(field.value)) {
+        return field.value.length;
+      }
+      const parsed = Number.parseInt(String(field.value ?? "").trim(), 10);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    };
+
+    const buildResumenJsonImportResult = (payload) => {
+      const fallbackTipo = resolveCurrentOrDefaultTipoAuditoria();
+      const rows = [];
+      const importWarnings = [];
+      const computedTotals = {
+        SA: 0,
+        PDP: 0,
+        PRAS: 0,
+        PEFCF: 0,
+        R: 0,
+        total_emitidas: 0,
+      };
+
+      const pushRow = (row) => {
+        const safeRow = {
+          tipo_auditoria: normalizeTipoAuditoriaImportValue(row.tipo_auditoria) || fallbackTipo,
+          fuente_nombre: normalizeInlineText(row.fuente_nombre),
+          periodo: normalizeResumenPeriodoForStore(row.periodo),
+          cantidad_sa: Math.max(0, Number.parseInt(String(row.cantidad_sa || 0), 10) || 0),
+          cantidad_pdp: Math.max(0, Number.parseInt(String(row.cantidad_pdp || 0), 10) || 0),
+          cantidad_pras: Math.max(0, Number.parseInt(String(row.cantidad_pras || 0), 10) || 0),
+          cantidad_pefcf: Math.max(0, Number.parseInt(String(row.cantidad_pefcf || 0), 10) || 0),
+          cantidad_r: Math.max(0, Number.parseInt(String(row.cantidad_r || 0), 10) || 0),
+        };
+        const totalRow = safeRow.cantidad_sa
+          + safeRow.cantidad_pdp
+          + safeRow.cantidad_pras
+          + safeRow.cantidad_pefcf
+          + safeRow.cantidad_r;
+        if (!safeRow.fuente_nombre || !safeRow.periodo || totalRow <= 0) {
+          return;
+        }
+        rows.push(safeRow);
+        computedTotals.SA += safeRow.cantidad_sa;
+        computedTotals.PDP += safeRow.cantidad_pdp;
+        computedTotals.PRAS += safeRow.cantidad_pras;
+        computedTotals.PEFCF += safeRow.cantidad_pefcf;
+        computedTotals.R += safeRow.cantidad_r;
+        computedTotals.total_emitidas += totalRow;
+      };
+
+      if (Array.isArray(payload)) {
+        payload.forEach((item) => {
+          const row = item && typeof item === "object" ? item : {};
+          pushRow({
+            tipo_auditoria: row.tipo_auditoria || row.tipoAuditoria || fallbackTipo,
+            fuente_nombre: row.fuente_nombre || row.fuenteNombre || row.nombre || "",
+            periodo: row.periodo || "",
+            cantidad_sa: row.cantidad_sa ?? row.cantidadSa ?? row.SA ?? 0,
+            cantidad_pdp: row.cantidad_pdp ?? row.cantidadPdp ?? row.PDP ?? 0,
+            cantidad_pras: row.cantidad_pras ?? row.cantidadPras ?? row.PRAS ?? 0,
+            cantidad_pefcf: row.cantidad_pefcf ?? row.cantidadPefcf ?? row.PEFCF ?? 0,
+            cantidad_r: row.cantidad_r ?? row.cantidadR ?? row.R ?? 0,
+          });
+        });
+      } else {
+        const data = payload && typeof payload === "object" ? payload : {};
+        const globalTipo = normalizeTipoAuditoriaImportValue(
+          data.auditoria || data.tipo_auditoria || data.tipoAuditoria || ""
+        ) || fallbackTipo;
+        /* Support "auditorias" wrapper: [{tipo, fuentes}, ...] */
+        let fuentes = [];
+        if (Array.isArray(data.auditorias)) {
+          data.auditorias.forEach((aud) => {
+            if (!aud || typeof aud !== "object") return;
+            const audTipo = normalizeTipoAuditoriaImportValue(
+              aud.tipo || aud.tipo_auditoria || aud.tipoAuditoria || ""
+            ) || globalTipo;
+            const audFuentes = Array.isArray(aud.fuentes) ? aud.fuentes : [];
+            audFuentes.forEach((f) => {
+              if (f && typeof f === "object") {
+                fuentes.push(Object.assign({}, f, { _audTipo: audTipo }));
+              }
+            });
+          });
+        } else {
+          fuentes = Array.isArray(data.fuentes) ? data.fuentes : [];
+        }
+        if (!fuentes.length) {
+          throw new Error("El JSON no contiene fuentes para importar.");
+        }
+        fuentes.forEach((fuenteItem, sourceIndex) => {
+          if (!fuenteItem || typeof fuenteItem !== "object") {
+            throw new Error(`La fuente ${sourceIndex + 1} no tiene un formato válido.`);
+          }
+          const fuenteNombre = normalizeInlineText(
+            fuenteItem.nombre || fuenteItem.fuente_nombre || fuenteItem.fuenteNombre || ""
+          );
+          if (!fuenteNombre) {
+            throw new Error(`La fuente ${sourceIndex + 1} no incluye nombre.`);
+          }
+          const registros = Array.isArray(fuenteItem.registros) ? fuenteItem.registros : [];
+          if (!registros.length) {
+            throw new Error(`La fuente "${fuenteNombre}" no incluye registros.`);
+          }
+          registros.forEach((registroItem, recordIndex) => {
+            if (!registroItem || typeof registroItem !== "object") {
+              throw new Error(`La fuente "${fuenteNombre}" tiene un registro inválido.`);
+            }
+            const periodo = normalizePeriodoForStore(registroItem.periodo || "");
+            if (!periodo) {
+              throw new Error(`La fuente "${fuenteNombre}" en el registro ${recordIndex + 1} no incluye periodo.`);
+            }
+            const rowTipo = normalizeTipoAuditoriaImportValue(
+              registroItem.auditoria
+              || registroItem.tipo_auditoria
+              || registroItem.tipoAuditoria
+              || fuenteItem.auditoria
+              || fuenteItem.tipo_auditoria
+              || fuenteItem.tipoAuditoria
+              || fuenteItem._audTipo
+              || globalTipo
+            ) || globalTipo;
+            const cantidadSa = parseResumenJsonCount(registroItem, "SA");
+            const cantidadPdp = parseResumenJsonCount(registroItem, "PDP");
+            const cantidadPras = parseResumenJsonCount(registroItem, "PRAS");
+            const cantidadPefcf = parseResumenJsonCount(registroItem, "PEFCF");
+            const cantidadR = parseResumenJsonCount(registroItem, "R");
+            const rowTotal = cantidadSa + cantidadPdp + cantidadPras + cantidadPefcf + cantidadR;
+            const totalEmitidasField = getResumenJsonField(registroItem, "total_emitidas");
+            const totalEmitidas = totalEmitidasField.found
+              ? parseResumenJsonCount(registroItem, "total_emitidas")
+              : null;
+            if (rowTotal <= 0) {
+              throw new Error(`La fuente "${fuenteNombre}" en el periodo "${periodo}" no contiene observaciones.`);
+            }
+            if (totalEmitidas !== null && totalEmitidas !== rowTotal) {
+              importWarnings.push(
+                `La fuente "${fuenteNombre}" en el periodo "${periodo}" declara total_emitidas ${totalEmitidas}, pero la tabla se llenó con ${rowTotal}.`
+              );
+            }
+            pushRow({
+              tipo_auditoria: rowTipo,
+              fuente_nombre: fuenteNombre,
+              periodo,
+              cantidad_sa: cantidadSa,
+              cantidad_pdp: cantidadPdp,
+              cantidad_pras: cantidadPras,
+              cantidad_pefcf: cantidadPefcf,
+              cantidad_r: cantidadR,
+            });
+          });
+        });
+
+        const declaredTotals = data.totales && typeof data.totales === "object" ? data.totales : null;
+        if (declaredTotals) {
+          const mismatchLabels = [];
+          [
+            ["SA", computedTotals.SA],
+            ["PDP", computedTotals.PDP],
+            ["PRAS", computedTotals.PRAS],
+            ["PEFCF", computedTotals.PEFCF],
+            ["R", computedTotals.R],
+            ["total_emitidas", computedTotals.total_emitidas],
+          ].forEach(([key, computedValue]) => {
+            const field = getResumenJsonField(declaredTotals, key);
+            if (!field.found) {
+              return;
+            }
+            const declaredValue = parseResumenJsonCount(declaredTotals, key);
+            if (declaredValue !== computedValue) {
+              mismatchLabels.push(`${key}: JSON ${declaredValue}, tabla ${computedValue}`);
+            }
+          });
+          if (mismatchLabels.length) {
+            importWarnings.push(`Revisa los totales declarados en el JSON. ${mismatchLabels.join(" · ")}.`);
+          }
+        }
+
+        const tiposImportados = getOrderedResumenTipos(rows.map((row) => row.tipo_auditoria));
+        return {
+          rows,
+          tipoAuditoria: tiposImportados.length === 1 ? tiposImportados[0] : "",
+          totalPdp: computedTotals.PDP,
+          totalObservaciones: computedTotals.total_emitidas,
+          totalsWarning: importWarnings.join(" "),
+        };
+      }
+
+      if (!rows.length) {
+        throw new Error("No se encontraron registros válidos para importar.");
+      }
+
+      const tiposImportados = getOrderedResumenTipos(rows.map((row) => row.tipo_auditoria));
+      return {
+        rows,
+        tipoAuditoria: tiposImportados.length === 1 ? tiposImportados[0] : "",
+        totalPdp: computedTotals.PDP,
+        totalObservaciones: computedTotals.total_emitidas,
+        totalsWarning: importWarnings.join(" "),
+      };
+    };
+
+    const applyResumenJsonImport = () => {
+      const rawText = String(manualResumenJsonInput ? manualResumenJsonInput.value || "" : "").trim();
+      if (!rawText) {
+        const message = "Pega un JSON antes de intentar cargarlo.";
+        setManualResumenJsonFeedback(message, "error");
+        showWizardToast(message, "error");
+        return;
+      }
+
+      let payload = null;
+      try {
+        payload = JSON.parse(rawText);
+      } catch (_error) {
+        const message = "El contenido pegado no es un JSON válido.";
+        setManualResumenJsonFeedback(message, "error");
+        showWizardToast(message, "error");
+        return;
+      }
+
+      let importResult = null;
+      try {
+        importResult = buildResumenJsonImportResult(payload);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "No se pudo interpretar el JSON.";
+        setManualResumenJsonFeedback(message, "error");
+        showWizardToast(message, "error");
+        return;
+      }
+
+      const currentScopeTipo = principalTipoAuditoria ? String(principalTipoAuditoria.value || "").trim() : "";
+      if (currentScopeTipo && !isMixedScopeTipo(currentScopeTipo)) {
+        const invalidRow = (Array.isArray(importResult.rows) ? importResult.rows : []).find((row) => (
+          String(row && row.tipo_auditoria || "").trim() !== currentScopeTipo
+        ));
+        if (invalidRow) {
+          const message = `El JSON contiene ${invalidRow.tipo_auditoria}, pero el contexto activo está en ${currentScopeTipo}.`;
+          setManualResumenJsonFeedback(message, "error");
+          showWizardToast(message, "error");
+          return;
+        }
+      }
+
+      if (Array.isArray(fuentesDetalleState) && fuentesDetalleState.length) {
+        const confirmed = window.confirm("La tabla actual se reemplazará con la carga del JSON. ¿Deseas continuar?");
+        if (!confirmed) {
+          return;
+        }
+      }
+
+      const shouldApplyScopeTipo = !!(
+        importResult.tipoAuditoria
+        && principalTipoAuditoria
+        && !currentScopeTipo
+      );
+      fuentesDetalleState = Array.isArray(importResult.rows) ? importResult.rows : [];
+      editingFuenteIndex = null;
+      if (shouldApplyScopeTipo && principalTipoAuditoria) {
+        principalTipoAuditoria.value = importResult.tipoAuditoria;
+        syncPrincipalFiltersToForms({ syncTitular: true });
+      }
+      pdpDetalleState = normalizePdpDetalleState(importResult.totalPdp || 0, []);
+      syncFuentesDetalleState();
+      syncPdpDetalleJson();
+      renderFuentesDetalleRows();
+      renderPdpDetalleMenu();
+      renderPdpBreakdown();
+      updateFuenteEditorMode();
+
+      const baseMessage = importResult.totalPdp > 0
+        ? `JSON cargado: ${importResult.rows.length} fila(s) y ${importResult.totalObservaciones} observación(es). Completa ${importResult.totalPdp} detalle(s) PDP para guardar.`
+        : `JSON cargado: ${importResult.rows.length} fila(s) y ${importResult.totalObservaciones} observación(es).`;
+      const feedbackMessage = importResult.totalsWarning
+        ? `${baseMessage} ${importResult.totalsWarning}`
+        : baseMessage;
+      setManualResumenJsonFeedback(
+        feedbackMessage,
+        importResult.totalsWarning ? "warning" : "success",
+      );
+      showWizardToast(baseMessage, importResult.totalsWarning ? "info" : "success");
+      if (manualResumenJsonImport && "open" in manualResumenJsonImport) {
+        manualResumenJsonImport.open = false;
+      }
+    };
 
     const isPdpDetalleItemComplete = (item) => {
       const concepto = String(item && item.concepto || "").trim();
@@ -5612,6 +6110,24 @@
           "Puedes usar número con —, tabulador, | o dejar el monto al final.",
           "info",
         );
+      });
+    }
+    if (manualResumenJsonApplyBtn) {
+      manualResumenJsonApplyBtn.addEventListener("click", () => {
+        applyResumenJsonImport();
+      });
+    }
+    if (manualResumenJsonClearBtn) {
+      manualResumenJsonClearBtn.addEventListener("click", () => {
+        if (manualResumenJsonInput) {
+          manualResumenJsonInput.value = "";
+        }
+        setManualResumenJsonFeedback("", "info");
+      });
+    }
+    if (manualResumenJsonInput) {
+      manualResumenJsonInput.addEventListener("input", () => {
+        setManualResumenJsonFeedback("", "info");
       });
     }
     if (manualAddNewFuenteBtnInline && manualFuente) {
