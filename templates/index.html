@@ -90,6 +90,12 @@
             </select>
           </div>
           <div class="field">
+            <label for="obs_origen_fuente">Del Ejercicio / Remanentes</label>
+            <select id="obs_origen_fuente" name="obs_origen_fuente" title="Separa fuentes del ejercicio contra remanentes o seguimientos.">
+              <option value="">Todos</option>
+            </select>
+          </div>
+          <div class="field">
             <label for="obs_ramo">Ramo 33</label>
             <select id="obs_ramo" name="obs_ramo" title="Filtra por pertenencia a Ramo 33.">
               <option value="">Todos</option>
@@ -436,6 +442,7 @@
     const obsTipoAnexo = document.getElementById("obs_tipo_anexo");
     const obsEstado = document.getElementById("obs_estado");
     const obsFuente = document.getElementById("obs_fuente");
+    const obsOrigenFuente = document.getElementById("obs_origen_fuente");
     const obsRamo = document.getElementById("obs_ramo");
     const obsConceptoIrregularidad = document.getElementById("obs_concepto_irregularidad");
     const obsConceptoField = document.getElementById("obs_concepto_field");
@@ -767,6 +774,7 @@
         tipo_anexo: getSelectedValues(obsTipoAnexo),
         estado: getSelectedValues(obsEstado),
         fuente_financiamiento: getSelectedValues(obsFuente),
+        origen_fuente: getSelectedValues(obsOrigenFuente),
         ramo_33: getSelectedValues(obsRamo),
         concepto_irregularidad: getSelectedValues(obsConceptoIrregularidad),
         periodo_cedula: getSelectedValues(cedulaResultados),
@@ -780,6 +788,7 @@
           tipo_anexo: obsTipoAnexo,
           estado: obsEstado,
           fuente_financiamiento: obsFuente,
+          origen_fuente: obsOrigenFuente,
           ramo_33: obsRamo,
           concepto_irregularidad: obsConceptoIrregularidad,
           periodo_cedula: cedulaResultados,
@@ -821,6 +830,7 @@
           tipo_anexo: "Tipo anexo",
           estado: "Estado",
           fuente_financiamiento: "Fuente",
+          origen_fuente: "Del Ejercicio / Remanentes",
           ramo_33: "Ramo 33",
           concepto_irregularidad: "Concepto",
           periodo_cedula: "Cédula",
@@ -862,6 +872,7 @@
           tipo_anexo: readMany("tipo_anexo"),
           estado: readMany("estado"),
           fuente_financiamiento: readMany("fuente_financiamiento"),
+          origen_fuente: readMany("origen_fuente"),
           ramo_33: readMany("ramo_33"),
           concepto_irregularidad: readMany("concepto_irregularidad"),
           periodo_cedula: readMany("periodo_cedula"),
@@ -885,6 +896,7 @@
           pendingUrlFilters.tipo_anexo,
           pendingUrlFilters.estado,
           pendingUrlFilters.fuente_financiamiento,
+          pendingUrlFilters.origen_fuente,
           pendingUrlFilters.ramo_33,
           pendingUrlFilters.concepto_irregularidad,
           pendingUrlFilters.periodo_cedula,
@@ -899,6 +911,7 @@
         setSelectedValues(obsTipoAnexo, pendingUrlFilters.tipo_anexo);
         setSelectedValues(obsEstado, pendingUrlFilters.estado);
         setSelectedValues(obsFuente, pendingUrlFilters.fuente_financiamiento);
+        setSelectedValues(obsOrigenFuente, pendingUrlFilters.origen_fuente);
         setSelectedValues(obsRamo, pendingUrlFilters.ramo_33);
         setSelectedValues(obsConceptoIrregularidad, pendingUrlFilters.concepto_irregularidad);
         setSelectedValues(cedulaResultados, pendingUrlFilters.periodo_cedula);
@@ -916,6 +929,7 @@
           obsTipoAnexo,
           obsEstado,
           obsFuente,
+          obsOrigenFuente,
           obsRamo,
           obsConceptoIrregularidad,
           cedulaResultados,
@@ -1727,6 +1741,7 @@
         const currentTipoAnexo = getSelectedValues(obsTipoAnexo);
         const currentEstado = getSelectedValues(obsEstado);
         const currentFuente = getSelectedValues(obsFuente);
+        const currentOrigenFuente = getSelectedValues(obsOrigenFuente);
         const currentRamo = getSelectedValues(obsRamo);
         const currentCedula = getSelectedValues(cedulaResultados);
         const currentConcepto = getSelectedValues(obsConceptoIrregularidad);
@@ -1736,6 +1751,7 @@
         const tipos = safeFiltros.tipo_anexo || [];
         const estados = safeFiltros.estado || [];
         const fuentes = safeFiltros.fuente_financiamiento || [];
+        const origenesFuente = safeFiltros.origen_fuente || [];
         const ramos = (safeFiltros.ramo_33 || []).filter((item) => item === "Si" || item === "No");
         const cedulas = safeFiltros.cedulas || [];
         const conceptos = safeFiltros.conceptos_irregularidad || [];
@@ -1762,6 +1778,14 @@
           "Todas",
           currentFuente,
           shouldEnableMultiFilter(fuentes),
+        );
+        fillSelectFromValues(
+          obsOrigenFuente,
+          origenesFuente,
+          "Todos",
+          currentOrigenFuente,
+          shouldEnableMultiFilter(origenesFuente),
+          true,
         );
         fillSelectFromValues(
           obsRamo,
@@ -2226,6 +2250,7 @@
         appendValuesToParams(params, "tipo_auditoria", getSelectedValues(mainTipoAuditoria));
         appendValuesToParams(params, "estado", getSelectedValues(obsEstado));
         appendValuesToParams(params, "fuente_financiamiento", getSelectedValues(obsFuente));
+        appendValuesToParams(params, "origen_fuente", getSelectedValues(obsOrigenFuente));
         appendValuesToParams(params, "ramo_33", getSelectedValues(obsRamo));
         if (!selectedTipoAnexo.length || selectedTipoAnexo.includes("PDP")) {
           appendValuesToParams(params, "concepto_irregularidad", getSelectedValues(obsConceptoIrregularidad));
@@ -2317,6 +2342,7 @@
         appendValuesToParams(params, "tipo_auditoria", getSelectedValues(mainTipoAuditoria));
         appendValuesToParams(params, "estado", getSelectedValues(obsEstado));
         appendValuesToParams(params, "fuente_financiamiento", getSelectedValues(obsFuente));
+        appendValuesToParams(params, "origen_fuente", getSelectedValues(obsOrigenFuente));
         appendValuesToParams(params, "ramo_33", getSelectedValues(obsRamo));
         if (!selectedTipoAnexo.length || selectedTipoAnexo.includes("PDP")) {
           appendValuesToParams(params, "concepto_irregularidad", getSelectedValues(obsConceptoIrregularidad));
@@ -2357,6 +2383,7 @@
         appendValuesToParams(params, "tipo_auditoria", getSelectedValues(mainTipoAuditoria));
         appendValuesToParams(params, "estado", getSelectedValues(obsEstado));
         appendValuesToParams(params, "fuente_financiamiento", getSelectedValues(obsFuente));
+        appendValuesToParams(params, "origen_fuente", getSelectedValues(obsOrigenFuente));
         appendValuesToParams(params, "ramo_33", getSelectedValues(obsRamo));
         if (!selectedTipoAnexo.length || selectedTipoAnexo.includes("PDP")) {
           appendValuesToParams(params, "concepto_irregularidad", getSelectedValues(obsConceptoIrregularidad));
@@ -2381,6 +2408,7 @@
         appendValuesToParams(params, "tipo_auditoria", getSelectedValues(mainTipoAuditoria));
         appendValuesToParams(params, "estado", getSelectedValues(obsEstado));
         appendValuesToParams(params, "fuente_financiamiento", getSelectedValues(obsFuente));
+        appendValuesToParams(params, "origen_fuente", getSelectedValues(obsOrigenFuente));
         appendValuesToParams(params, "ramo_33", getSelectedValues(obsRamo));
         if (!selectedTipoAnexo.length || selectedTipoAnexo.includes("PDP")) {
           appendValuesToParams(params, "concepto_irregularidad", getSelectedValues(obsConceptoIrregularidad));
@@ -2402,6 +2430,7 @@
         appendValuesToParams(params, "tipo_auditoria", getSelectedValues(mainTipoAuditoria));
         appendValuesToParams(params, "estado", getSelectedValues(obsEstado));
         appendValuesToParams(params, "fuente_financiamiento", getSelectedValues(obsFuente));
+        appendValuesToParams(params, "origen_fuente", getSelectedValues(obsOrigenFuente));
         appendValuesToParams(params, "ramo_33", getSelectedValues(obsRamo));
         if (!selectedTipoAnexo.length || selectedTipoAnexo.includes("PDP")) {
           appendValuesToParams(params, "concepto_irregularidad", getSelectedValues(obsConceptoIrregularidad));
@@ -2494,6 +2523,7 @@
         setTipoAnexoValue([]);
         clearSelectSelection(obsEstado);
         clearSelectSelection(obsFuente);
+        clearSelectSelection(obsOrigenFuente);
         clearSelectSelection(obsRamo);
         clearSelectSelection(obsConceptoIrregularidad);
         clearSelectSelection(cedulaResultados);
@@ -2532,9 +2562,10 @@
           loadObservaciones();
         }
       });
-      [
+        [
         obsEstado,
         obsFuente,
+        obsOrigenFuente,
         obsRamo,
         obsConceptoIrregularidad,
         cedulaResultados,
@@ -2555,6 +2586,7 @@
         }
         clearSelectSelection(obsEstado);
         clearSelectSelection(obsFuente);
+        clearSelectSelection(obsOrigenFuente);
         clearSelectSelection(obsRamo);
         clearSelectSelection(obsConceptoIrregularidad);
         clearSelectSelection(cedulaResultados);
@@ -2615,6 +2647,7 @@
             tipo_anexo: () => setTipoAnexoValue([]),
             estado: () => { clearSelectSelection(obsEstado); },
             fuente_financiamiento: () => { clearSelectSelection(obsFuente); },
+            origen_fuente: () => { clearSelectSelection(obsOrigenFuente); },
             ramo_33: () => { clearSelectSelection(obsRamo); },
             concepto_irregularidad: () => { clearSelectSelection(obsConceptoIrregularidad); },
             periodo_cedula: () => { clearSelectSelection(cedulaResultados); },
@@ -2652,6 +2685,7 @@
           filtersFromUrl.tipo_anexo,
           filtersFromUrl.estado,
           filtersFromUrl.fuente_financiamiento,
+          filtersFromUrl.origen_fuente,
           filtersFromUrl.ramo_33,
           filtersFromUrl.concepto_irregularidad,
           filtersFromUrl.periodo_cedula,

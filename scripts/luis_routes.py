@@ -20,6 +20,7 @@ def register_luis_routes(app, deps):
         "tipo_anexo",
         "estado",
         "fuente_financiamiento",
+        "origen_fuente",
         "ramo_33",
         "concepto_irregularidad",
         "periodo_cedula",
@@ -30,6 +31,7 @@ def register_luis_routes(app, deps):
         "tipo_anexo": "Tipo de anexo",
         "estado": "Estado",
         "fuente_financiamiento": "Fuente de financiamiento",
+        "origen_fuente": "Del Ejercicio / Remanentes",
         "ramo_33": "Ramo 33",
         "concepto_irregularidad": "Concepto de irregularidad",
         "periodo_cedula": "Cedula de resultados",
@@ -40,6 +42,7 @@ def register_luis_routes(app, deps):
         "tipo_anexo",
         "estado",
         "fuente_financiamiento",
+        "origen_fuente",
         "ramo_33",
     )
     comparison_filter_labels = {
@@ -48,6 +51,7 @@ def register_luis_routes(app, deps):
         "tipo_anexo": "Tipo de anexo",
         "estado": "Estado",
         "fuente_financiamiento": "Fuente de financiamiento",
+        "origen_fuente": "Del Ejercicio / Remanentes",
         "ramo_33": "Ramo 33",
     }
 
@@ -74,6 +78,7 @@ def register_luis_routes(app, deps):
             "tipo_anexo": parse_multi_values("tipo_anexo"),
             "estado": parse_multi_values("estado"),
             "fuente_financiamiento": parse_multi_values("fuente_financiamiento"),
+            "origen_fuente": parse_multi_values("origen_fuente", normalize_origen_fuente),
             "ramo_33": parse_multi_values("ramo_33"),
             "concepto_irregularidad": parse_multi_values("concepto_irregularidad"),
             "periodo_cedula": parse_multi_values("periodo_cedula"),
@@ -81,6 +86,26 @@ def register_luis_routes(app, deps):
 
     def column_sql(column: str, alias: str = "") -> str:
         return f"{alias}.{column}" if alias else column
+
+    def normalize_origen_fuente(value: str) -> str:
+        clean = " ".join((value or "").split())
+        key = clean.lower()
+        if key in {"remanente", "remanentes"}:
+            return "Remanentes"
+        if key in {"del ejercicio", "ejercicio", "del_ejercicio"}:
+            return "Del Ejercicio"
+        return clean
+
+    def origen_fuente_sql(alias: str = "") -> str:
+        fuente_col = column_sql("fuente_financiamiento", alias)
+        fuente_key = f"LOWER(TRIM(COALESCE({fuente_col}, '')))"
+        return (
+            "CASE "
+            f"WHEN {fuente_key} LIKE 'remanente%' THEN 'Remanentes' "
+            f"WHEN {fuente_key} LIKE 'rea:%' THEN 'Remanentes' "
+            f"WHEN {fuente_key} LIKE 'seguimiento%' THEN 'Remanentes' "
+            "ELSE 'Del Ejercicio' END"
+        )
 
     def apply_filter_clause(
         clauses: list[str],
@@ -103,6 +128,10 @@ def register_luis_routes(app, deps):
                 f"({concepto_col} IN ({placeholders}) OR {subconcepto_col} IN ({placeholders}))"
             )
             params.extend(values)
+            params.extend(values)
+            return
+        if key == "origen_fuente":
+            clauses.append(f"{origen_fuente_sql(alias)} IN ({placeholders})")
             params.extend(values)
             return
         key_to_column = {
@@ -276,6 +305,7 @@ def register_luis_routes(app, deps):
             "tipo_anexo": parse_multi_values("tipo_anexo"),
             "estado": parse_multi_values("estado"),
             "fuente_financiamiento": parse_multi_values("fuente_financiamiento"),
+            "origen_fuente": parse_multi_values("origen_fuente", normalize_origen_fuente),
             "ramo_33": parse_multi_values("ramo_33"),
             "universo": (
                 "complete"
@@ -297,6 +327,7 @@ def register_luis_routes(app, deps):
                     '' AS tipo_anexo,
                     '' AS estado,
                     '' AS fuente_financiamiento,
+                    '' AS origen_fuente,
                     '' AS ramo_33,
                     0 AS monto_pdp_emitido,
                     0 AS monto_pdp_solventado,
@@ -334,6 +365,7 @@ def register_luis_routes(app, deps):
                 TRIM(COALESCE(o.tipo_anexo, '')) AS tipo_anexo,
                 TRIM(COALESCE(o.estado, '')) AS estado,
                 TRIM(COALESCE(o.fuente_financiamiento, '')) AS fuente_financiamiento,
+                {origen_fuente_sql("o")} AS origen_fuente,
                 TRIM(COALESCE(o.ramo_33, '')) AS ramo_33,
                 COALESCE(o.monto_pdp_emitido, 0) AS monto_pdp_emitido,
                 COALESCE(o.monto_pdp_solventado, 0) AS monto_pdp_solventado,
@@ -360,6 +392,7 @@ def register_luis_routes(app, deps):
             tuple(selected_filters.get("tipo_anexo", []) or []),
             tuple(selected_filters.get("estado", []) or []),
             tuple(selected_filters.get("fuente_financiamiento", []) or []),
+            tuple(selected_filters.get("origen_fuente", []) or []),
             tuple(selected_filters.get("ramo_33", []) or []),
         )
 
@@ -640,6 +673,7 @@ def register_luis_routes(app, deps):
             "tipo_anexo": "tipo_anexo",
             "estado": "estado",
             "fuente_financiamiento": "fuente_financiamiento",
+            "origen_fuente": "origen_fuente",
             "ramo_33": "ramo_33",
         }
         column = column_map.get(key)
@@ -884,6 +918,7 @@ def register_luis_routes(app, deps):
             "ente_id",
             "periodo_cedula",
             "fuente_financiamiento",
+            "origen_fuente",
             "tipo_anexo",
             "tipo_auditoria",
             "estado",
@@ -1659,12 +1694,13 @@ def register_luis_routes(app, deps):
                 exclude_key=exclude_key,
                 include_ente=True,
             )
+            value_sql = origen_fuente_sql() if column == "origen_fuente" else column
             return db.execute(
                 f"""
-                SELECT DISTINCT {column} AS value
+                SELECT DISTINCT {value_sql} AS value
                 FROM observaciones
                 WHERE {where_sql}
-                  AND {column} IS NOT NULL AND TRIM({column}) != ''
+                  AND TRIM(COALESCE({value_sql}, '')) != ''
                 ORDER BY value
                 """,
                 where_params,
@@ -1719,6 +1755,7 @@ def register_luis_routes(app, deps):
             "tipo_auditoria": [row[0] for row in query_distinct("tipo_auditoria", "tipo_auditoria")],
             "estado": [row[0] for row in query_distinct("estado", "estado")],
             "fuente_financiamiento": [row[0] for row in query_distinct("fuente_financiamiento", "fuente_financiamiento")],
+            "origen_fuente": [row[0] for row in query_distinct("origen_fuente", "origen_fuente")],
             "ramo_33": [row[0] for row in query_distinct("ramo_33", "ramo_33")],
             "cedulas": [row[0] for row in query_distinct("periodo_cedula", "periodo_cedula")],
             "conceptos_irregularidad": [row[0] for row in conceptos],
@@ -1971,12 +2008,13 @@ def register_luis_routes(app, deps):
                 exclude_key=exclude_key,
                 include_ente=True,
             )
+            value_sql = origen_fuente_sql() if column == "origen_fuente" else column
             return db.execute(
                 f"""
-                SELECT DISTINCT {column} AS value
+                SELECT DISTINCT {value_sql} AS value
                 FROM observaciones
                 WHERE {where_sql}
-                  AND {column} IS NOT NULL AND TRIM({column}) != ''
+                  AND TRIM(COALESCE({value_sql}, '')) != ''
                 ORDER BY value
                 """,
                 where_params,
@@ -1986,6 +2024,7 @@ def register_luis_routes(app, deps):
         tipos = query_distinct("tipo_anexo", "tipo_anexo")
         estados = query_distinct("estado", "estado")
         fuentes = query_distinct("fuente_financiamiento", "fuente_financiamiento")
+        origenes = query_distinct("origen_fuente", "origen_fuente")
         ramos = query_distinct("ramo_33", "ramo_33")
         cedulas = query_distinct("periodo_cedula", "periodo_cedula")
         concepto_where, concepto_params = build_observaciones_scope(
@@ -2148,6 +2187,7 @@ def register_luis_routes(app, deps):
         filtros["entes"] = [dict(row) for row in entes]
         filtros["estado"] = [row[0] for row in estados]
         filtros["fuente_financiamiento"] = [row[0] for row in fuentes]
+        filtros["origen_fuente"] = [row[0] for row in origenes]
         filtros["ramo_33"] = [row[0] for row in ramos]
         filtros["conceptos_irregularidad"] = [row[0] for row in conceptos]
         filtros["periodo_informe"] = [row[0] for row in periodos_informe]
@@ -3397,6 +3437,7 @@ def register_luis_routes(app, deps):
             "tipo_anexo": selected_filters.get("tipo_anexo", []),
             "estado": selected_filters.get("estado", []),
             "fuente_financiamiento": selected_filters.get("fuente_financiamiento", []),
+            "origen_fuente": selected_filters.get("origen_fuente", []),
             "ramo_33": selected_filters.get("ramo_33", []),
             "universo": selected_filters.get("universo", "all"),
         }
@@ -3411,6 +3452,7 @@ def register_luis_routes(app, deps):
                 "tipo_anexo": [],
                 "estado": [],
                 "fuente_financiamiento": [],
+                "origen_fuente": [],
                 "ramo_33": [],
             },
             "summary": {
@@ -3512,6 +3554,10 @@ def register_luis_routes(app, deps):
             "fuente_financiamiento": collect_comparison_distinct_values(
                 option_rows_for("fuente_financiamiento"),
                 "fuente_financiamiento",
+            ),
+            "origen_fuente": collect_comparison_distinct_values(
+                option_rows_for("origen_fuente"),
+                "origen_fuente",
             ),
             "ramo_33": collect_comparison_distinct_values(
                 option_rows_for("ramo_33"),
@@ -3762,7 +3808,7 @@ def register_luis_routes(app, deps):
     @luis_required
     @role_required("editor")
     def fuentes():
-        nombre = request.form.get("fuente_nombre", "").strip()
+        nombre = normalize_fuente_financiamiento(request.form.get("fuente_nombre", "").strip())
         if not nombre:
             return redirect(url_for("index", notice="fuente_error"))
     

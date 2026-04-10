@@ -1,6 +1,7 @@
 from datetime import datetime
 from functools import wraps
 from io import BytesIO
+import json
 import os
 from pathlib import Path
 import re
@@ -51,6 +52,65 @@ UID_PREFIX = "ENT-"
 UID_PATTERN = re.compile(rf"^{UID_PREFIX}(\\d+)$")
 SIGLA_QUOTE_PATTERN = re.compile(r"[\"“”]([^\"“”]+)[\"“”]")
 SIGLA_PAREN_PATTERN = re.compile(r"\\(([^)]+)\\)")
+FUENTE_STOPWORDS = {
+    "a",
+    "al",
+    "con",
+    "de",
+    "del",
+    "el",
+    "en",
+    "la",
+    "las",
+    "los",
+    "o",
+    "para",
+    "por",
+    "sin",
+    "y",
+}
+FUENTE_ACRONYMS = {
+    "ASF",
+    "CC",
+    "CECYTE",
+    "COBACH",
+    "CONACYT",
+    "CONADE",
+    "CONASAMA",
+    "CRESCA",
+    "EMSAD",
+    "FAM",
+    "IB",
+    "IMSS",
+    "INEA",
+    "INSABI",
+    "ISR",
+    "PAIBIM",
+    "REA",
+    "SANAS",
+    "S200",
+    "TLAX",
+}
+FUENTE_CANONICAL_OVERRIDES_RAW = {
+    "CRÉDITOS OTORGADOS AUTORIZADOS": "Créditos Otorgados Autorizados",
+    "Créditos Otorgados Autorizados": "Créditos Otorgados Autorizados",
+    "REA: RECURSOS RECAUDADOS Y PARTICIPACIONES ESTATALES": "REA: Recursos Recaudados y Participaciones Estatales",
+    "REA: Recursos Recaudados y Participaciones Estatales": "REA: Recursos Recaudados y Participaciones Estatales",
+    "Participaciones estatales del (Fondo General de Participaciones)": "Participaciones Estatales (Fondo General de Participaciones)",
+    "Participaciones Estatales (Ingresos Derivados de Fuentes Locales)": "Participaciones Estatales (Ingresos derivados de fuentes locales)",
+    "Participaciones Estatales (Ingresos derivados de fuentes locales)": "Participaciones Estatales (Ingresos derivados de fuentes locales)",
+    "Recursos Recaudados, Participaciones Estatales y Subsidio Federal para Organismos Descentralizados (EMSAD)": "Recursos recaudados, participaciones estatales y subsidio federal para organismos descentralizados (EMSAD)",
+    "Recursos recaudados, participaciones estatales y subsidio federal para organismos descentralizados (EMSAD)": "Recursos recaudados, participaciones estatales y subsidio federal para organismos descentralizados (EMSAD)",
+    "Remanentes de Ejercicios Anteriores": "Remanentes de ejercicios anteriores",
+    "Remanentes de ejercicios anteriores": "Remanentes de ejercicios anteriores",
+    "Convenio De Apoyo Financiero Para El Evento Olimpiada Nacional CONADE": "Convenio de Apoyo Financiero para el Evento Olimpiada Nacional CONADE",
+    "Convenio Específico De Colaboración Para Operar El Programa Denominado Educación Para Adultos (INEA)": "Convenio Específico de Colaboración para Operar el Programa Denominado Educación para Adultos (INEA)",
+    "Recursos Recaudados Y Convenio De Colaboración Para La Transferencia De Recursos Con El Organismo Público Descentralizado Salud De Tlaxcala": "Recursos Recaudados y Convenio de Colaboración para la Transferencia de Recursos con el Organismo Público Descentralizado Salud de Tlaxcala",
+    "Remanentes De Ejercicios Anteriores: Recursos Recaudados": "Remanentes de Ejercicios Anteriores: Recursos Recaudados",
+    "Remanentes De Ejercicios Anteriores: Recursos Recaudados Y Convenio De Colaboración Para La Transferencia De Recursos Con El Organismo Público Descentralizado Salud De Tlaxcala": "Remanentes de Ejercicios Anteriores: Recursos Recaudados y Convenio de Colaboración para la Transferencia de Recursos con el Organismo Público Descentralizado Salud de Tlaxcala",
+    "Programa de Atención Integral para el Bienestar de las Mujeres (PAIBIM).": "Programa de Atención Integral para el Bienestar de las Mujeres (PAIBIM)",
+}
+FUENTE_WORD_PATTERN = re.compile(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]+")
 
 MONTHS_ES = {
     "01": "enero",
@@ -114,6 +174,284 @@ def normalize_text_key(value: str) -> str:
     clean = unicodedata.normalize("NFKD", clean)
     clean = "".join(char for char in clean if not unicodedata.combining(char))
     return re.sub(r"\s+", " ", clean).strip()
+
+
+FUENTE_CANONICAL_OVERRIDES = {
+    normalize_text_key(raw): canonical
+    for raw, canonical in FUENTE_CANONICAL_OVERRIDES_RAW.items()
+}
+
+
+def _fuente_is_all_caps(value: str) -> bool:
+    letters = [char for char in (value or "") if char.isalpha()]
+    return bool(letters) and all(char == char.upper() for char in letters)
+
+
+def _fuente_has_capitalized_stopwords(value: str) -> bool:
+    capitalized = 0
+    for word in re.findall(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+", value or ""):
+        key = normalize_text_key(word)
+        if key in FUENTE_STOPWORDS and word[:1].isupper():
+            capitalized += 1
+            if capitalized >= 2:
+                return True
+    return False
+
+
+def _capitalize_fuente_token(word: str, *, capitalize_next: bool) -> str:
+    if not word:
+        return ""
+    key = normalize_text_key(word)
+    if not key:
+        return word
+    if word.isdigit():
+        return word
+    if word.upper() in FUENTE_ACRONYMS:
+        return word.upper()
+    if not capitalize_next and key in FUENTE_STOPWORDS:
+        return word.lower()
+    return word[:1].upper() + word[1:].lower()
+
+
+def _smart_capitalize_fuente(value: str) -> str:
+    clean = " ".join((value or "").replace("—", "-").replace("–", "-").split())
+    if not clean:
+        return ""
+    parts: list[str] = []
+    last_end = 0
+    capitalize_next = True
+    for match in FUENTE_WORD_PATTERN.finditer(clean):
+        between = clean[last_end:match.start()]
+        if any(marker in between for marker in ":([{"):
+            capitalize_next = True
+        parts.append(between)
+        parts.append(
+            _capitalize_fuente_token(
+                match.group(0),
+                capitalize_next=capitalize_next,
+            )
+        )
+        last_end = match.end()
+        capitalize_next = False
+    parts.append(clean[last_end:])
+    return "".join(parts)
+
+
+def normalize_fuente_financiamiento(value: str) -> str:
+    clean = " ".join((value or "").replace("—", "-").replace("–", "-").split())
+    if not clean:
+        return ""
+    override = FUENTE_CANONICAL_OVERRIDES.get(normalize_text_key(clean))
+    if override:
+        return override
+    if _fuente_is_all_caps(clean) or _fuente_has_capitalized_stopwords(clean):
+        clean = _smart_capitalize_fuente(clean)
+    return FUENTE_CANONICAL_OVERRIDES.get(normalize_text_key(clean), clean)
+
+
+def is_remanente_fuente(value: str) -> bool:
+    key = normalize_text_key(value)
+    return (
+        key.startswith("remanente")
+        or key.startswith("remanentes")
+        or key.startswith("rea:")
+        or key.startswith("seguimiento")
+    )
+
+
+def _normalize_fuente_snapshot_json(raw_value: str, *, fields: tuple[str, ...]) -> str:
+    clean = (raw_value or "").strip()
+    if not clean:
+        return raw_value
+    try:
+        payload = json.loads(clean)
+    except json.JSONDecodeError:
+        return raw_value
+
+    changed = False
+    items = payload if isinstance(payload, list) else [payload] if isinstance(payload, dict) else []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        for field in fields:
+            current = " ".join(str(item.get(field) or "").split())
+            normalized = normalize_fuente_financiamiento(current)
+            if current != normalized:
+                item[field] = normalized
+                changed = True
+    if not changed:
+        return raw_value
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def normalize_fuentes_data(conn: sqlite3.Connection) -> None:
+    original_row_factory = conn.row_factory
+    conn.row_factory = sqlite3.Row
+    try:
+        catalog_rows = conn.execute(
+            """
+            SELECT id, TRIM(COALESCE(nombre, '')) AS nombre
+            FROM fuentes_financiamiento
+            ORDER BY id ASC
+            """
+        ).fetchall()
+        catalog_groups: dict[str, dict[str, object]] = {}
+        replacement_map: dict[int, int] = {}
+
+        for row in catalog_rows:
+            fuente_id = int(row["id"])
+            canonical_name = normalize_fuente_financiamiento(row["nombre"] or "")
+            if not canonical_name:
+                continue
+            group_key = normalize_text_key(canonical_name)
+            group = catalog_groups.setdefault(
+                group_key,
+                {"canonical": canonical_name, "rows": []},
+            )
+            group["rows"].append(
+                {
+                    "id": fuente_id,
+                    "nombre": (row["nombre"] or "").strip(),
+                }
+            )
+
+        for group in catalog_groups.values():
+            canonical_name = str(group["canonical"])
+            rows = list(group["rows"])
+            exact_matches = [
+                row for row in rows
+                if " ".join((row["nombre"] or "").split()) == canonical_name
+            ]
+            survivor = min(exact_matches or rows, key=lambda item: int(item["id"]))
+            survivor_id = int(survivor["id"])
+
+            if (survivor["nombre"] or "").strip() != canonical_name:
+                conn.execute(
+                    "UPDATE fuentes_financiamiento SET nombre = ? WHERE id = ?",
+                    (canonical_name, survivor_id),
+                )
+
+            for row in rows:
+                row_id = int(row["id"])
+                if row_id == survivor_id:
+                    continue
+                replacement_map[row_id] = survivor_id
+
+        for source_id, target_id in replacement_map.items():
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO entes_fuentes (
+                    ejercicio,
+                    ente_id,
+                    fuente_id,
+                    tipo_auditoria,
+                    created_by,
+                    created_at
+                )
+                SELECT
+                    ejercicio,
+                    ente_id,
+                    ?,
+                    tipo_auditoria,
+                    created_by,
+                    created_at
+                FROM entes_fuentes
+                WHERE fuente_id = ?
+                """,
+                (target_id, source_id),
+            )
+            conn.execute("DELETE FROM entes_fuentes WHERE fuente_id = ?", (source_id,))
+            for table_name in ("registros", "oficios", "cargas_manuales"):
+                conn.execute(
+                    f"UPDATE {table_name} SET fuente_id = ? WHERE fuente_id = ?",
+                    (target_id, source_id),
+                )
+            conn.execute("DELETE FROM fuentes_financiamiento WHERE id = ?", (source_id,))
+
+        catalog_lookup = {
+            int(row["id"]): normalize_fuente_financiamiento(row["nombre"] or "")
+            for row in conn.execute(
+                """
+                SELECT id, TRIM(COALESCE(nombre, '')) AS nombre
+                FROM fuentes_financiamiento
+                ORDER BY id ASC
+                """
+            ).fetchall()
+        }
+
+        cargas_rows = conn.execute(
+            """
+            SELECT
+                id,
+                fuente_id,
+                TRIM(COALESCE(fuente_nombre, '')) AS fuente_nombre,
+                TRIM(COALESCE(estado, '')) AS estado,
+                fuente_detalle_json,
+                pdp_detalle_json
+            FROM cargas_manuales
+            ORDER BY id ASC
+            """
+        ).fetchall()
+        for row in cargas_rows:
+            carga_id = int(row["id"])
+            fuente_id = row["fuente_id"]
+            fuente_id_int = int(fuente_id) if fuente_id is not None else None
+            canonical_name = (
+                catalog_lookup.get(fuente_id_int)
+                if fuente_id_int is not None and fuente_id_int > 0
+                else normalize_fuente_financiamiento(row["fuente_nombre"] or "")
+            ) or normalize_fuente_financiamiento(row["fuente_nombre"] or "")
+            fuente_detalle_json = _normalize_fuente_snapshot_json(
+                row["fuente_detalle_json"] or "",
+                fields=("fuente_nombre",),
+            )
+            pdp_detalle_json = _normalize_fuente_snapshot_json(
+                row["pdp_detalle_json"] or "",
+                fields=("fuente",),
+            )
+            if (
+                " ".join((row["fuente_nombre"] or "").split()) != canonical_name
+                or fuente_detalle_json != (row["fuente_detalle_json"] or "")
+                or pdp_detalle_json != (row["pdp_detalle_json"] or "")
+            ):
+                conn.execute(
+                    """
+                    UPDATE cargas_manuales
+                    SET fuente_nombre = ?,
+                        fuente_detalle_json = ?,
+                        pdp_detalle_json = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        canonical_name,
+                        fuente_detalle_json,
+                        pdp_detalle_json,
+                        carga_id,
+                    ),
+                )
+
+        observacion_fuentes = conn.execute(
+            """
+            SELECT DISTINCT TRIM(COALESCE(fuente_financiamiento, '')) AS fuente
+            FROM observaciones
+            WHERE TRIM(COALESCE(fuente_financiamiento, '')) != ''
+            """
+        ).fetchall()
+        for row in observacion_fuentes:
+            fuente_actual = (row["fuente"] or "").strip()
+            canonical_name = normalize_fuente_financiamiento(fuente_actual)
+            if not canonical_name or canonical_name == fuente_actual:
+                continue
+            conn.execute(
+                """
+                UPDATE observaciones
+                SET fuente_financiamiento = ?
+                WHERE TRIM(COALESCE(fuente_financiamiento, '')) = ?
+                """,
+                (canonical_name, fuente_actual),
+            )
+    finally:
+        conn.row_factory = original_row_factory
 
 
 def normalize_tipo_auditoria(value: str) -> str:
@@ -969,6 +1307,7 @@ def init_db() -> None:
         if missing_uid:
             backfill_ente_uids(conn)
         backfill_historial_ente_uids(conn)
+        normalize_fuentes_data(conn)
         conn.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_obs_ejercicio
@@ -1183,7 +1522,9 @@ ROUTE_DEPS = {
     "get_db": get_db,
     "normalize_ente_id": normalize_ente_id,
     "normalize_ente_id_sql": normalize_ente_id_sql,
+    "normalize_fuente_financiamiento": normalize_fuente_financiamiento,
     "normalize_tipo_auditoria": normalize_tipo_auditoria,
+    "is_remanente_fuente": is_remanente_fuente,
     "periodo_sql": periodo_sql,
     "parse_periodo_cedula": parse_periodo_cedula,
     "parse_historial_date": parse_historial_date,

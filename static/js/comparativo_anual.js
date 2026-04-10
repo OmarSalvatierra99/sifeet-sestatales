@@ -16,6 +16,7 @@
   const tipoAnexoSelect = document.getElementById("comparison_tipo_anexo");
   const estadoSelect = document.getElementById("comparison_estado");
   const fuenteSelect = document.getElementById("comparison_fuente");
+  const origenFuenteSelect = document.getElementById("comparison_origen_fuente");
   const ramoSelect = document.getElementById("comparison_ramo");
   const resetButton = document.getElementById("comparisonResetBtn");
   const clearFab = document.getElementById("comparison_clear_fab");
@@ -70,6 +71,7 @@
     tipo_anexo: "",
     estado: "",
     fuente_financiamiento: "",
+    origen_fuente: "",
     ramo_33: "",
   });
 
@@ -83,6 +85,7 @@
       tipo_anexo: [],
       estado: [],
       fuente_financiamiento: [],
+      origen_fuente: [],
       ramo_33: [],
     },
     summary: null,
@@ -155,6 +158,7 @@
     tipo_anexo: filters.tipo_anexo || "",
     estado: filters.estado || "",
     fuente_financiamiento: filters.fuente_financiamiento || "",
+    origen_fuente: filters.origen_fuente || "",
     ramo_33: filters.ramo_33 || "",
   });
 
@@ -212,6 +216,9 @@
     }
     if (draft.filters.fuente_financiamiento) {
       params.append("fuente_financiamiento", draft.filters.fuente_financiamiento);
+    }
+    if (draft.filters.origen_fuente) {
+      params.append("origen_fuente", draft.filters.origen_fuente);
     }
     if (draft.filters.ramo_33) {
       params.append("ramo_33", draft.filters.ramo_33);
@@ -433,6 +440,7 @@
       options.fuente_financiamiento || [],
       draft.filters.fuente_financiamiento,
     );
+    syncSelectOptions(origenFuenteSelect, options.origen_fuente || [], draft.filters.origen_fuente);
     syncSelectOptions(ramoSelect, options.ramo_33 || [], draft.filters.ramo_33);
   };
 
@@ -962,6 +970,9 @@
         fuente_financiamiento: Array.isArray(selectedFilters.fuente_financiamiento)
           ? (selectedFilters.fuente_financiamiento[0] || "")
           : "",
+        origen_fuente: Array.isArray(selectedFilters.origen_fuente)
+          ? (selectedFilters.origen_fuente[0] || "")
+          : "",
         ramo_33: Array.isArray(selectedFilters.ramo_33) ? (selectedFilters.ramo_33[0] || "") : "",
       };
       state.summary = data.summary || {};
@@ -1023,6 +1034,7 @@
     [tipoAnexoSelect, "tipo_anexo"],
     [estadoSelect, "estado"],
     [fuenteSelect, "fuente_financiamiento"],
+    [origenFuenteSelect, "origen_fuente"],
     [ramoSelect, "ramo_33"],
   ].forEach(([element, key]) => {
     if (!element) {

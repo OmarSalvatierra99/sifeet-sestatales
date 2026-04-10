@@ -864,7 +864,7 @@ def register_gabo_routes(app, deps):
         *,
         create_missing: bool = False,
     ) -> tuple[int | None, str]:
-        clean_name = " ".join((fuente_nombre or "").split())
+        clean_name = normalize_fuente_financiamiento(fuente_nombre)
         if not clean_name:
             raise ValueError("Debes escribir la nueva fuente.")
         row = db.execute(
@@ -1182,6 +1182,7 @@ def register_gabo_routes(app, deps):
         solventacion_totales_by_anexo: dict[str, dict] | None = None,
         replace_scope: bool = False,
     ) -> None:
+        fuente_nombre = normalize_fuente_financiamiento(fuente_nombre)
         if replace_scope:
             db.execute(
                 """
@@ -1225,7 +1226,9 @@ def register_gabo_routes(app, deps):
                         monto_emitido = pdp_amounts[pdp_index] if pdp_index < len(pdp_amounts) else 0.0
                     pdp_concepto = (detalle.get("concepto") or "").strip() or None
                     pdp_subconcepto = (detalle.get("subconcepto") or "").strip() or None
-                    fuente_detalle = " ".join(str(detalle.get("fuente") or "").split())
+                    fuente_detalle = normalize_fuente_financiamiento(
+                        " ".join(str(detalle.get("fuente") or "").split())
+                    )
                     if fuente_detalle:
                         fuente_row_nombre = fuente_detalle
                     if totales_tipo and numero_observacion == 1:
@@ -1322,18 +1325,16 @@ def register_gabo_routes(app, deps):
                 {
                     "concepto": " ".join(str(data.get("concepto") or "").split()),
                     "subconcepto": " ".join(str(data.get("subconcepto") or "").split()),
-                    "fuente": " ".join(str(data.get("fuente") or "").split()),
+                    "fuente": normalize_fuente_financiamiento(
+                        " ".join(str(data.get("fuente") or "").split())
+                    ),
                     "monto": "" if monto_raw is None else str(monto_raw).strip(),
                 }
             )
         return details
 
     def infer_manual_estado(fuente_nombre: str) -> str:
-        return (
-            "R"
-            if re.match(r"^(remanentes|rea)\b", (fuente_nombre or "").strip(), flags=re.IGNORECASE)
-            else "Emitido"
-        )
+        return "Emitido"
 
     def build_fuente_detalle_snapshot(
         *,
@@ -1347,7 +1348,7 @@ def register_gabo_routes(app, deps):
     ) -> dict[str, object]:
         return {
             "tipo_auditoria": tipo_auditoria,
-            "fuente_nombre": fuente_nombre,
+            "fuente_nombre": normalize_fuente_financiamiento(fuente_nombre),
             "cantidad_sa": int(cantidad_sa),
             "cantidad_pdp": int(cantidad_pdp),
             "cantidad_pras": int(cantidad_pras),
@@ -1539,7 +1540,7 @@ def register_gabo_routes(app, deps):
                     "concepto": concepto,
                     "subconcepto": subconcepto,
                     "monto": monto_val,
-                    "fuente": fuente,
+                    "fuente": normalize_fuente_financiamiento(fuente),
                 }
             )
 
@@ -1559,7 +1560,9 @@ def register_gabo_routes(app, deps):
         for item in payload:
             if not isinstance(item, dict):
                 continue
-            fuente_nombre = " ".join(str(item.get("fuente_nombre") or "").split())
+            fuente_nombre = normalize_fuente_financiamiento(
+                " ".join(str(item.get("fuente_nombre") or "").split())
+            )
             tipo_auditoria = " ".join(str(item.get("tipo_auditoria") or "").split())
             if not fuente_nombre:
                 continue
@@ -1927,8 +1930,10 @@ def register_gabo_routes(app, deps):
                 if not periodo:
                     raise ValueError(f"Línea {line_number}: PERIODO requerido.")
 
-                fuente_financiamiento = " ".join(
-                    str(row_data.get(header_map["fuente_financiamiento"], "") or "").split()
+                fuente_financiamiento = normalize_fuente_financiamiento(
+                    " ".join(
+                        str(row_data.get(header_map["fuente_financiamiento"], "") or "").split()
+                    )
                 )
                 if not fuente_financiamiento:
                     raise ValueError(
@@ -2350,7 +2355,9 @@ def register_gabo_routes(app, deps):
         ejercicio = " ".join((source.get("ejercicio") or "").split())
         ente_id = normalize_ente_id(source.get("ente_id") or "")
         tipo_auditoria = normalize_tipo_auditoria(source.get("tipo_auditoria") or "")
-        fuente_nombre = " ".join((source.get("nombre") or "").split())
+        fuente_nombre = normalize_fuente_financiamiento(
+            " ".join((source.get("nombre") or "").split())
+        )
 
         if not ejercicio:
             return jsonify({"ok": False, "message": "Debes seleccionar el ejercicio."}), 400
@@ -3912,11 +3919,8 @@ def register_gabo_routes(app, deps):
                         raise ValueError("No se pudo resolver el nombre de la fuente seleccionada.")
 
                     # Regla automática para carga Gabo:
-                    # Ramo XXXIII fijo en "No" y remanentes quedan en "R"; el resto se marca como Emitido.
-                    if re.match(r"^(remanentes|rea)\b", fuente_nombre.strip(), flags=re.IGNORECASE):
-                        estado = "R"
-                    else:
-                        estado = "Emitido"
+                    # Ramo XXXIII fijo en "No" y el estado inicial queda como Emitido.
+                    estado = "Emitido"
                     if asunto == "Notificación de Cédula de Resultados":
                         pdp_details_by_fuente: list[list[dict]] = []
                         if usa_fuentes_detalle:
@@ -4387,7 +4391,9 @@ def register_gabo_routes(app, deps):
                                     for extra_idx, extra_row in enumerate(
                                         fuentes_detalle_rows[1:], start=1
                                     ):
-                                        extra_fuente_nombre = " ".join(str(extra_row["fuente_nombre"]).split())
+                                        extra_fuente_nombre = normalize_fuente_financiamiento(
+                                            " ".join(str(extra_row["fuente_nombre"]).split())
+                                        )
                                         extra_periodo = " ".join(str(extra_row.get("periodo") or "").split())
                                         if not extra_fuente_nombre:
                                             continue
