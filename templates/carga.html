@@ -24,7 +24,14 @@
         </div>
         <div class="user-actions">
           <span class="user-role">Carga</span>
-          <a class="btn-secondary btn-compact" href="{{ url_for('logout') }}">Cerrar sesión</a>
+          <form
+            id="gaboLogoutForm"
+            class="logout-form"
+            method="post"
+            action="{{ url_for('logout') }}"
+          >
+            <button type="submit" class="btn-secondary btn-compact">Cerrar sesión</button>
+          </form>
         </div>
       </div>
     </div>
@@ -658,6 +665,7 @@
     const loaderOpenTitularesBtn = document.getElementById("loaderOpenTitularesBtn");
     const loaderOpenObsAdminBtn = document.getElementById("loaderOpenObsAdminBtn");
     const loaderOpenBulkUploadBtn = document.getElementById("loaderOpenBulkUploadBtn");
+    const gaboLogoutForm = document.getElementById("gaboLogoutForm");
 
     const principalEjercicio = document.getElementById("principal_ejercicio");
     const principalEnte = document.getElementById("principal_ente_id");
@@ -838,6 +846,25 @@
       }
       return value;
     };
+
+    const clearGaboDraftState = () => {
+      try {
+        window.localStorage.removeItem(gaboWizardDraftKey);
+      } catch (error) {
+        console.warn("No se pudo limpiar el borrador local de Gabo.", error);
+      }
+      try {
+        window.sessionStorage.removeItem(contextDraftKey);
+      } catch (error) {
+        console.warn("No se pudo limpiar el contexto temporal de Gabo.", error);
+      }
+    };
+
+    if (gaboLogoutForm) {
+      gaboLogoutForm.addEventListener("submit", () => {
+        clearGaboDraftState();
+      });
+    }
 
     const formatMoneyInput = (rawValue) => {
       const parsed = parseMoneyInput(rawValue);

@@ -243,6 +243,10 @@ def register_luis_routes(app, deps):
         return merged
 
     anexos_orden = ("R", "SA", "PDP", "PRAS", "PEFCF")
+    comparison_chart_anexos_orden = ("SA", "PDP", "PRAS", "PEFCF", "R")
+    comparison_chart_anexos_rank = {
+        anexo: idx for idx, anexo in enumerate(comparison_chart_anexos_orden)
+    }
     anexos_alias = {
         "PEFCT": "PEFCF",
         "PEFCE": "PEFCF",
@@ -524,6 +528,7 @@ def register_luis_routes(app, deps):
         return list(grouped.values())
 
     def summarize_comparison_scope(scope_rows: list[dict], selected_years: list[str]) -> dict:
+        year_rank = {year: idx for idx, year in enumerate(selected_years)}
         metrics_by_year = {
             year: {
                 "emitidas": 0,
@@ -561,8 +566,8 @@ def register_luis_routes(app, deps):
                 status_key = (ejercicio, estado)
                 status_totals[status_key] = status_totals.get(status_key, 0) + 1
 
-            tipo_anexo = (row.get("tipo_anexo") or "").strip()
-            if not tipo_anexo:
+            tipo_anexo = normalize_anexo_bucket(row.get("tipo_anexo") or "")
+            if tipo_anexo not in comparison_chart_anexos_rank:
                 continue
 
             anexo_key = (ejercicio, tipo_anexo)
@@ -635,7 +640,17 @@ def register_luis_routes(app, deps):
                 "tipo_anexo": tipo_anexo,
                 "total": total,
             }
-            for (ejercicio, tipo_anexo), total in sorted(anexo_totals.items())
+            for (ejercicio, tipo_anexo), total in sorted(
+                anexo_totals.items(),
+                key=lambda item: (
+                    year_rank.get(item[0][0], len(year_rank)),
+                    comparison_chart_anexos_rank.get(
+                        item[0][1],
+                        len(comparison_chart_anexos_rank),
+                    ),
+                    item[0][1],
+                ),
+            )
         ]
         stacked_by_anexo_rows = [
             {
@@ -646,7 +661,14 @@ def register_luis_routes(app, deps):
             }
             for item in sorted(
                 stacked_by_anexo.values(),
-                key=lambda row: (row["ejercicio"], row["tipo_anexo"]),
+                key=lambda row: (
+                    year_rank.get(row["ejercicio"], len(year_rank)),
+                    comparison_chart_anexos_rank.get(
+                        row["tipo_anexo"],
+                        len(comparison_chart_anexos_rank),
+                    ),
+                    row["tipo_anexo"],
+                ),
             )
         ]
         return {
@@ -3828,7 +3850,13 @@ def register_luis_routes(app, deps):
     @luis_required
     @role_required("editor")
     def irregularidades():
-        concepto = request.form.get("irregularidad_concepto", "").strip()
+        try:
+            concepto = normalize_irregularidad_concepto(
+                request.form.get("irregularidad_concepto", "").strip(),
+                strict=True,
+            )
+        except ValueError:
+            concepto = ""
         if not concepto:
             return redirect(url_for("index", notice="irregularidad_error"))
     

@@ -24,7 +24,9 @@
         </div>
         <div class="user-actions">
           <span class="user-role">Carga</span>
-          <a class="btn-secondary btn-compact" href="{{ url_for('logout') }}">Cerrar sesión</a>
+          <form class="logout-form" method="post" action="{{ url_for('logout') }}">
+            <button type="submit" class="btn-secondary btn-compact">Cerrar sesión</button>
+          </form>
         </div>
       </div>
     </div>

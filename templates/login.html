@@ -8,9 +8,6 @@
   <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
 </head>
 <body class="login-page">
-  {% set selected_username = request.form.get('username', '') %}
-  {% set user_display_names = {'luis': 'C.P Luis Felipe Camilo Fuentes', 'gabo': 'Ing. Omar Gabriel Salvatierra Garcia'} %}
-  {% set selected_display = user_display_names.get(selected_username, 'usuario') %}
   <main class="login-shell" aria-labelledby="login-title">
     <section class="login-auth-panel" aria-label="Formulario de acceso">
       <div class="login-logo-wrap" aria-hidden="true">
@@ -30,18 +27,14 @@
       <aside class="login-access-card" aria-label="Usuarios autorizados">
         <h3>Usuarios autorizados</h3>
         <div class="login-access-list">
-          <button class="login-access-user{% if selected_username == 'luis' %} is-selected{% endif %}" type="button" data-username="luis" data-display="C.P Luis Felipe Camilo Fuentes">
-            <span class="login-access-initials" aria-hidden="true">LU</span>
+          {% for usuario in usuarios_activos %}
+          <button class="login-access-user{% if selected_username == usuario.username %} is-selected{% endif %}" type="button" data-username="{{ usuario.username }}" data-display="{{ usuario.display_name }}">
+            <span class="login-access-initials" aria-hidden="true">{{ usuario.display_name[:2] | upper }}</span>
             <span class="login-access-meta">
-              <strong>C.P Luis Felipe Camilo Fuentes</strong>
+              <strong>{{ usuario.display_name }}</strong>
             </span>
           </button>
-          <button class="login-access-user{% if selected_username == 'gabo' %} is-selected{% endif %}" type="button" data-username="gabo" data-display="Ing. Omar Gabriel Salvatierra Garcia">
-            <span class="login-access-initials" aria-hidden="true">GA</span>
-            <span class="login-access-meta">
-              <strong>Ing. Omar Gabriel Salvatierra Garcia</strong>
-            </span>
-          </button>
+          {% endfor %}
         </div>
       </aside>
 

@@ -1730,6 +1730,12 @@ tbody tr:hover td {
 
 .loader-page .site-header {
   position: sticky;
+  z-index: 80;
+}
+
+.logout-form {
+  margin: 0;
+  display: inline-flex;
 }
 
 .loader-page .header-inner {

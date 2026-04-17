@@ -25,6 +25,8 @@
   const statusYearCanvas = document.getElementById("comparisonStatusYearChart");
   const variationCanvas = document.getElementById("comparisonVariationChart");
   const anexoTotalsCanvas = document.getElementById("comparisonAnexoTotalsChart");
+  const comparisonAnexoOrder = ["SA", "PDP", "PRAS", "PEFCF", "R"];
+  const comparisonAnexoSet = new Set(comparisonAnexoOrder);
   const stackedCanvas = document.getElementById("comparisonStackedChart");
   const pdpCanvas = document.getElementById("comparisonPdpChart");
   const topChangesList = document.getElementById("comparisonTopChangesList");
@@ -630,25 +632,12 @@
     });
   };
 
-  const collapseTopAnexoRows = (rows) => {
-    const totalsByType = new Map();
-    (Array.isArray(rows) ? rows : []).forEach((row) => {
-      const tipo = String(row.tipo_anexo || "").trim();
-      if (!tipo) {
-        return;
-      }
-      const bucketTotal = Number(row.total || 0) + Number(row.pendientes || 0) + Number(row.solventadas || 0);
-      totalsByType.set(tipo, (totalsByType.get(tipo) || 0) + bucketTotal);
-    });
-    const orderedTypes = Array.from(totalsByType.entries())
-      .sort((left, right) => right[1] - left[1])
-      .map((item) => item[0]);
-    const topTypes = orderedTypes.slice(0, 4);
-    const useOther = orderedTypes.length > 4;
-    return {
-      labels: useOther ? [...topTypes, "Otros"] : topTypes,
-      bucketFor: (tipo) => (topTypes.includes(tipo) ? tipo : "Otros"),
-    };
+  const normalizeComparisonAnexo = (value) => {
+    const clean = String(value || "").trim().toUpperCase();
+    if (clean === "PEFCT" || clean === "PEFCE") {
+      return "PEFCF";
+    }
+    return comparisonAnexoSet.has(clean) ? clean : "";
   };
 
   const renderAnexoTotalsChart = () => {
@@ -657,22 +646,27 @@
       return;
     }
     const rows = (state.summary && state.summary.anexo_totals_by_year) || [];
-    const collapsed = collapseTopAnexoRows(rows);
     const bucketMap = new Map();
     const totalByYear = new Map();
     rows.forEach((row) => {
       const year = row.ejercicio;
       const total = Number(row.total || 0);
-      const bucket = collapsed.bucketFor(String(row.tipo_anexo || "").trim());
+      const bucket = normalizeComparisonAnexo(row.tipo_anexo);
+      if (!bucket) {
+        return;
+      }
       const key = `${year}||${bucket}`;
       bucketMap.set(key, (bucketMap.get(key) || 0) + total);
       totalByYear.set(year, (totalByYear.get(year) || 0) + total);
     });
+    const labels = comparisonAnexoOrder.filter((bucket) => (
+      state.selectedYears.some((year) => Number(bucketMap.get(`${year}||${bucket}`) || 0) > 0)
+    ));
     charts.anexoTotals = new Chart(anexoTotalsCanvas, {
       type: "bar",
       data: {
         labels: state.selectedYears,
-        datasets: collapsed.labels.map((bucket, index) => {
+        datasets: labels.map((bucket, index) => {
           const rawCounts = state.selectedYears.map((year) => Number(bucketMap.get(`${year}||${bucket}`) || 0));
           return {
             label: bucket,

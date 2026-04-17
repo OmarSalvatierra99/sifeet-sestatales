@@ -3,6 +3,12 @@ from functools import wraps
 from io import BytesIO
 import json
 import os
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 from pathlib import Path
 import re
 import sqlite3
@@ -19,9 +25,14 @@ from scripts.luis_routes import register_luis_routes
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "sifeet.db")
+WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
+if str(WORKSPACE_ROOT) not in sys.path:
+    sys.path.insert(0, str(WORKSPACE_ROOT))
+
+from shared_user_catalog import build_user_map, get_display_name, ordered_users
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key")
+app.secret_key = os.getenv("SECRET_KEY")
 template_reload_env = os.getenv("TEMPLATES_AUTO_RELOAD")
 template_auto_reload = (
     template_reload_env.strip().lower() in {"1", "true", "yes", "on"}
@@ -31,18 +42,22 @@ template_auto_reload = (
 app.config["TEMPLATES_AUTO_RELOAD"] = template_auto_reload
 app.jinja_env.auto_reload = template_auto_reload
 
-USERS = {
-    "luis": {
-        "password_hash": generate_password_hash("luis2025"),
-        "role": "viewer",
-    },
-    "gabo": {
-        "password_hash": generate_password_hash("gabo2025"),
-        "role": "loader",
-    },
-}
+PROJECT_KEY = "07-sifet-estatales"
 LUIS_USERNAME = "luis"
 GABO_USERNAME = "gabo"
+
+def _build_users() -> dict:
+    users: dict = {}
+    for username, payload in build_user_map(PROJECT_KEY).items():
+        role = payload["role"] or ("loader" if username == GABO_USERNAME else "viewer")
+        users[username] = {
+            "password_hash": generate_password_hash(payload["password"]),
+            "role": role,
+            "display_name": payload["display_name"],
+        }
+    return users
+
+USERS = _build_users()
 ASUNTOS_MANUALES = {
     "Notificación de Cédula de Resultados",
 }
@@ -91,6 +106,88 @@ FUENTE_ACRONYMS = {
     "S200",
     "TLAX",
 }
+IRREGULARIDAD_ACRONYMS = {
+    "CFDI",
+}
+IRREGULARIDAD_CANONICAL_RAW = tuple(
+    line.strip()
+    for line in """
+DEUDORES DIVERSOS
+PAGO A PROVEEDORES, PRESTADORES DE SERVICIOS Y/O CONTRATISTAS SIN ACREDITAR LA RECEPCIÓN DEL BIEN, SERVICIO U OBRA
+OMISIÓN EN LA ENTREGA DE INFORMACIÓN
+FALTA DE DISPOSICIONES ADMINISTRATIVAS
+INCUMPLIMIENTO A LOS LINEAMIENTOS DE AUSTERIDAD DEL GASTO PÚBLICO DE LA GESTIÓN ADMINISTRATIVA
+INCUMPLIMIENTO A LOS LINEAMIENTOS EN MATERIA DE ADQUISICIÓN DE BIENES Y CONTRATACIÓN DE SERVICIOS Y PAGOS RESPECTIVOS
+OMISIÓN DE COMPROBANTE FISCAL DIGITAL POR INTERNET
+INCORRECTO CONTROL DE REGISTROS CONTABLES Y PRESUPUESTALES
+DEFICIENCIAS EN LA PUBLICACIÓN DE LAS OBLIGACIONES DE TRANSPARENCIA
+INCONSISTENCIAS EN TRÁMITES, PROCESOS, SISTEMAS O EXPEDIENTES
+INCONSISTENCIAS EN MATERIA DE SERVICIOS PERSONALES
+COMPROBACIÓN CANCELADA CON LA LEYENDA OPERADO U OTRO
+FALTA DE DOCUMENTACIÓN JUSTIFICATIVA
+ANTICIPO A PROVEEDORES, PRESTADORES DE SERVICIOS, CONTRATISTAS POR OBRAS PÚBLICAS
+OBLIGACIONES FINANCIERAS GENERADAS EN EJERCICIOS ANTERIORES SIN SER PAGADAS
+INCONSISTENCIA EN LA VERIFICACIÓN Y RESGUARDO DE BIENES MUEBLES E INMUEBLES
+DEFICIENTE CONTROL DE CUENTAS BANCARIAS
+FALTA DE DISTRIBUCIÓN Y/O APLICACIÓN DE SUPERÁVIT
+ACLARACIÓN DE PROCESOS ESPECÍFICOS
+DIFERENCIAS EN EL ENTERO DE IMPUESTOS, CUOTAS O APORTACIONES
+DIFERENCIAS EN LA MINISTRACIÓN DE RECURSOS
+GASTOS PAGADOS SIN DOCUMENTACIÓN COMPROBATORIA
+PAGO DE GASTOS IMPROCEDENTES
+PAGO DE GASTOS EN EXCESO
+PAGO DE BIENES Y/O SERVICIOS SIN ACREDITAR SU RECEPCIÓN Y/O APLICACIÓN
+INGRESOS RECAUDADOS NO DEPOSITADOS
+BIENES O APOYOS A PERSONAS O INSTITUCIONES NO PROPORCIONADOS
+FALTANTE DE BIENES MUEBLES
+OBLIGACIONES FINANCIERAS CONTRAÍDAS SIN LIQUIDEZ PARA PAGARLAS POR TERMINO DE ADMINISTRACIÓN
+PAGO POR CONCEPTOS DE OBRA, INSUMOS, BIENES O SERVICIOS A PRECIOS SUPERIORES AL DE MERCADO
+VOLÚMENES DE OBRA PAGADOS NO EJECUTADOS
+CONCEPTOS DE OBRA PAGADOS NO EJECUTADOS
+PROCESOS CONSTRUCTIVOS DEFICIENTES QUE CAUSAN AFECTACIONES FÍSICAS EN LAS OBRAS PÚBLICAS
+PAGO DE OBRAS SIN ACREDITAR SU EXISTENCIA FÍSICA
+PAGO DE CONCEPTOS QUE NO CUMPLEN CON LAS ESPECIFICACIONES TÉCNICAS CONTRATADAS
+IMPUESTOS, CUOTAS Y DERECHOS RETENIDOS NO ENTERADOS SIN LIQUIDEZ
+PENALIZACIÓN POR ATRASO EN LA EJECUCIÓN DE LOS TRABAJOS CON BASE A LAS FECHAS CONTRATADAS
+INCUMPLIMIENTO A LA NORMATIVA
+ADQUISICIONES A PRECIOS SUPERIORES A LOS DE MERCADO
+INCONSISTENCIAS EN INFORMACIÓN FINANCIERA CONTABLE Y PRESUPUESTAL
+APLICACIÓN DE RECURSOS NO AUTORIZADOS DE REMANENTES DE EJERCICIOS ANTERIORES
+SOBREGIROS Y/O SUBEJERCICIOS PRESUPUESTALES
+INCUMPLIMIENTO DE LA NORMATIVA EN MATERIA DE SERVICIOS PERSONALES
+INCUMPLIMIENTO A CONDICIONES CONTRACTUALES
+INADECUADA INTEGRACIÓN DE EXPEDIENTES
+OBLIGACIONES FINANCIERAS CONTRAÍDAS SIN LIQUIDEZ PARA SU PAGO
+OMISIÓN E INCONSISTENCIAS EN LOS CONTRATOS DE ADQUISICIONES, ARRENDAMIENTOS Y SERVICIOS/OBRA PÚBLICA
+INCUMPLIMIENTO A LA NORMA POR EL ALTA Y BAJA DE BIENES MUEBLES E INMUEBLES
+INCUMPLIMIENTO E INCONSISTENCIAS AL PROCEDIMIENTO DE ADJUDICACIÓN
+FALTA DE CAPACIDAD FINANCIERA
+INCONSISTENCIAS EN LOS EXPEDIENTES DE OBRA PÚBLICA
+GASTOS SUPERIORES A LOS INGRESOS
+OMISIÓN EN EL CUMPLIMIENTO DE LA LEY DE DISCIPLINA FINANCIERA
+GASTO DEVENGADO SIN ACREDITAR BIENES Y SERVICIOS
+COMPROBANTES FISCALES DIGITALES POR INTERNET CANCELADOS Y/O ALTERADOS
+PROVEEDORES Y PRESTADORES DE SERVICIOS QUE NO CUENTAN CON LA ACTIVIDAD ECONÓMICA
+COMPROBANTE QUE NO REÚNE LOS REQUISITOS FISCALES
+DEFICIENTE CONTROL DE REGISTROS CONTABLES Y PRESUPUESTALES
+DEFICIENCIAS DETECTADAS MEDIANTE APLICACIÓN DE CUESTIONARIO DE CONTROL INTERNO
+OBLIGACIONES FINANCIERAS CONTRAÍDAS CON LIQUIDEZ PARA SU PAGO
+INCONSISTENCIA EN LA IDENTIFICACIÓN DE BIENES MUEBLES EN EL INVENTARIO
+FALTA DE SISTEMAS DE CONTROL INTERNO
+PROCESOS DE CONTROL INTERNO DEFICIENTE / NO ACTUALIZADO
+RESULTADOS DE EVALUACIÓN DE CONTROL INTERNO DEFICIENTES
+FALTA DE EVALUACIÓN DE INDICADORES / METAS - OBJETIVOS
+PAGO DE SUELDOS Y REMUNERACIONES POR SERVICIOS PERSONALES NO RECIBIDOS
+OMISIÓN A REQUERIMIENTOS DE INFORMACIÓN
+OMISIÓN AL PAGO DE OBLIGACIONES FINANCIERAS Y/O FISCALES
+OMISIÓN EN LA ACTUALIZACIÓN Y CONCILIACIÓN FÍSICO-CONTABLE DE INVENTARIOS
+INCOMPATIBILIDAD EN EL DESEMPEÑO DE EMPLEO, CARGO O COMISIÓN
+OBRAS Y/O CONCEPTOS PAGADOS NO FISCALIZADOS POR OCULTAMIENTO DE DOCUMENTACIÓN COMPROBATORIA DE SU EJECUCIÓN
+FORTALECIMIENTO EN MATERIA DE IGUALDAD, PERSPECTIVA DE GÉNERO, PREVENCIÓN Y ERRADICACIÓN DE LA VIOLENCIA EN CONTRA DE LAS MUJERES.
+INCUMPLIMIENTO NORMATIVO EN MATERIA DE IGUALDAD, PERSPECTIVA DE GÉNERO, PREVENCIÓN Y ERRADICACIÓN DE LA VIOLENCIA EN CONTRA DE LAS MUJERES
+""".strip().splitlines()
+    if line.strip()
+)
 FUENTE_CANONICAL_OVERRIDES_RAW = {
     "CRÉDITOS OTORGADOS AUTORIZADOS": "Créditos Otorgados Autorizados",
     "Créditos Otorgados Autorizados": "Créditos Otorgados Autorizados",
@@ -257,6 +354,372 @@ def is_remanente_fuente(value: str) -> bool:
         or key.startswith("rea:")
         or key.startswith("seguimiento")
     )
+
+
+def _sentence_case_irregularidad(value: str) -> str:
+    clean = " ".join((value or "").replace("—", "-").replace("–", "-").split()).rstrip(".").strip()
+    if not clean:
+        return ""
+    sentence = clean.lower()
+    first_alpha_index = next((index for index, char in enumerate(sentence) if char.isalpha()), None)
+    if first_alpha_index is not None:
+        sentence = (
+            sentence[:first_alpha_index]
+            + sentence[first_alpha_index].upper()
+            + sentence[first_alpha_index + 1:]
+        )
+    for acronym in IRREGULARIDAD_ACRONYMS:
+        sentence = re.sub(
+            rf"\b{re.escape(acronym.lower())}\b",
+            acronym,
+            sentence,
+            flags=re.IGNORECASE,
+        )
+    return sentence
+
+
+def normalize_irregularidad_key(value: str) -> str:
+    clean = normalize_text_key(value)
+    if not clean:
+        return ""
+    clean = re.sub(r"^\d+\s*[-.)]?\s*", "", clean)
+    clean = clean.rstrip(".").strip()
+    clean = re.sub(r"[^a-z0-9]+", " ", clean)
+    return re.sub(r"\s+", " ", clean).strip()
+
+
+IRREGULARIDAD_CANONICAL = tuple(
+    _sentence_case_irregularidad(item)
+    for item in IRREGULARIDAD_CANONICAL_RAW
+)
+IRREGULARIDAD_CANONICAL_MAP = {
+    normalize_irregularidad_key(item): item
+    for item in IRREGULARIDAD_CANONICAL
+}
+IRREGULARIDAD_CANONICAL_ITEMS = tuple(
+    sorted(
+        IRREGULARIDAD_CANONICAL_MAP.items(),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    )
+)
+
+
+def _irregularidad_canonical(label: str) -> str:
+    return IRREGULARIDAD_CANONICAL_MAP[normalize_irregularidad_key(label)]
+
+
+def _irregularidad_has_any(key: str, *tokens: str) -> bool:
+    return any(token in key for token in tokens)
+
+
+def _irregularidad_match_family(key: str) -> str | None:
+    for canonical_key, canonical_label in IRREGULARIDAD_CANONICAL_ITEMS:
+        if key == canonical_key or key.startswith(canonical_key + " "):
+            return canonical_label
+    if "deudores diversos" in key:
+        return _irregularidad_canonical("Deudores diversos")
+    if "gastos a comprobar" in key or "recursos publicos faltantes" in key:
+        return _irregularidad_canonical("Deudores diversos")
+    if "requerimiento" in key and "informacion" in key:
+        return _irregularidad_canonical("Omisión a requerimientos de información")
+    if "entrega de informacion" in key:
+        return _irregularidad_canonical("Omisión en la entrega de información")
+    if "cfdi" in key and _irregularidad_has_any(key, "cancelad", "alterad"):
+        return _irregularidad_canonical(
+            "Comprobantes fiscales digitales por internet cancelados y/o alterados"
+        )
+    if "cfdi" in key or "comprobante fiscal digital por internet" in key:
+        return _irregularidad_canonical("Omisión de comprobante fiscal digital por internet")
+    if "requisitos fiscales" in key:
+        return _irregularidad_canonical("Comprobante que no reúne los requisitos fiscales")
+    if "gastos improcedentes" in key or "pago improcedente" in key or "pago duplicado" in key:
+        return _irregularidad_canonical("Pago de gastos improcedentes")
+    if "improcedente" in key and _irregularidad_has_any(key, "gasto", "pago", "servicio", "bienes y o servicios"):
+        return _irregularidad_canonical("Pago de gastos improcedentes")
+    if _irregularidad_has_any(
+        key,
+        "pago en exceso",
+        "pagos en exceso",
+        "pago de gastos en exceso",
+        "superior a lo estipulado",
+    ):
+        return _irregularidad_canonical("Pago de gastos en exceso")
+    if "mercado" in key:
+        if "adquisicion" in key:
+            return _irregularidad_canonical("Adquisiciones a precios superiores a los de mercado")
+        if _irregularidad_has_any(key, "obra", "insumo", "bien", "servicio"):
+            return _irregularidad_canonical(
+                "Pago por conceptos de obra, insumos, bienes o servicios a precios superiores al de mercado"
+            )
+    if (
+        _irregularidad_has_any(
+            key,
+            "diferencias volumetricas",
+            "volumen faltante",
+            "volumenes excedentes",
+            "volumenes faltantes",
+            "volumen pagado no ejecutado",
+            "medidas superiores",
+            "medidas menores",
+        )
+        or ("volumenes de obra" in key and _irregularidad_has_any(key, "faltante", "diferencias"))
+    ):
+        return _irregularidad_canonical("Volúmenes de obra pagados no ejecutados")
+    if _irregularidad_has_any(
+        key,
+        "concepto no ejecutado",
+        "conceptos no ejecutados",
+        "trabajos no ejecutados",
+        "medidas superiores no ejecutadas",
+        "concepto de obra pagado no ejecutado",
+        "concepto pagado no ejecutado",
+        "concepto sin evidencia",
+    ) or ("conceptos de obra" in key and "no ejecutados" in key):
+        return _irregularidad_canonical("Conceptos de obra pagados no ejecutados")
+    if "conceptos de obra" in key and _irregularidad_has_any(key, "faltantes", "sin evidencia de ejecucion"):
+        return _irregularidad_canonical("Conceptos de obra pagados no ejecutados")
+    if "procesos constructivos deficientes" in key:
+        return _irregularidad_canonical(
+            "Procesos constructivos deficientes que causan afectaciones físicas en las obras públicas"
+        )
+    if "mala calidad" in key:
+        return _irregularidad_canonical(
+            "Procesos constructivos deficientes que causan afectaciones físicas en las obras públicas"
+        )
+    if "pago de obras" in key and "sin acreditar" in key:
+        return _irregularidad_canonical("Pago de obras sin acreditar su existencia física")
+    if "especificaciones tecnicas" in key or "incumplimiento de especificaciones" in key:
+        return _irregularidad_canonical(
+            "Pago de conceptos que no cumplen con las especificaciones técnicas contratadas"
+        )
+    if "conceptos que no cumplen especificaciones" in key:
+        return _irregularidad_canonical(
+            "Pago de conceptos que no cumplen con las especificaciones técnicas contratadas"
+        )
+    if (
+        _irregularidad_has_any(key, "bienes y o servicios", "pago de bienes", "pago de servicios")
+        and _irregularidad_has_any(
+            key,
+            "sin acreditar",
+            "sin evidencia",
+            "sin justificar",
+            "sin documentacion",
+            "uso y destino",
+        )
+    ):
+        return _irregularidad_canonical(
+            "Pago de bienes y/o servicios sin acreditar su recepción y/o aplicación"
+        )
+    if _irregularidad_has_any(key, "pagos sin acreditar", "pago sin acreditar"):
+        return _irregularidad_canonical(
+            "Pago de bienes y/o servicios sin acreditar su recepción y/o aplicación"
+        )
+    if (
+        _irregularidad_has_any(
+            key,
+            "adquisicion de",
+            "compra de",
+            "arrendamiento de",
+            "renta de",
+            "servicio de",
+            "servicios de",
+            "consumo de",
+            "entrega no acreditada",
+        )
+        and _irregularidad_has_any(
+            key,
+            "sin acreditar",
+            "sin evidencia",
+            "sin documentacion",
+            "no acreditada",
+            "no acreditado",
+            "sin presentar evidencia",
+            "sin recepcion",
+            "sin acreditar entrega",
+        )
+    ):
+        return _irregularidad_canonical(
+            "Pago de bienes y/o servicios sin acreditar su recepción y/o aplicación"
+        )
+    if "combustible" in key and _irregularidad_has_any(
+        key,
+        "bitacora",
+        "bitacoras",
+        "no se acredita suministro",
+        "sin acreditar",
+        "sin evidencia",
+        "sin documentacion",
+    ):
+        return _irregularidad_canonical(
+            "Pago de bienes y/o servicios sin acreditar su recepción y/o aplicación"
+        )
+    if (
+        _irregularidad_has_any(key, "prestadores de servicios", "contratistas", "proveedores")
+        and "sin acreditar" in key
+        and _irregularidad_has_any(key, "bien servicio u obra", "recepcion del bien", "recepcion del servicio")
+    ):
+        return _irregularidad_canonical(
+            "Pago a proveedores, prestadores de servicios y/o contratistas sin acreditar la recepción del bien, servicio u obra"
+        )
+    if _irregularidad_has_any(
+        key,
+        "sin documentacion justificativa",
+        "sin documentacion comprobatoria",
+        "sin evidencia",
+    ):
+        return _irregularidad_canonical("Falta de documentación justificativa")
+    if _irregularidad_has_any(
+        key,
+        "omision de documentacion",
+        "falta de documentacion",
+        "sin presentar evidencia",
+        "no justificados",
+        "sin contrato",
+    ):
+        return _irregularidad_canonical("Falta de documentación justificativa")
+    if "apoyo economico" in key and _irregularidad_has_any(
+        key,
+        "sin documentacion",
+        "sin evidencia",
+    ):
+        return _irregularidad_canonical("Falta de documentación justificativa")
+    if "gastos pagados" in key and "documentacion comprobatoria" in key:
+        return _irregularidad_canonical("Gastos pagados sin documentación comprobatoria")
+    if "bienes o apoyos" in key and _irregularidad_has_any(key, "no proporcionados", "no entregados"):
+        return _irregularidad_canonical("Bienes o apoyos a personas o instituciones no proporcionados")
+    if "uniformes" in key and _irregularidad_has_any(key, "no acreditada", "no proporcionados", "no entregados"):
+        return _irregularidad_canonical("Bienes o apoyos a personas o instituciones no proporcionados")
+    if "faltante de bienes muebles" in key:
+        return _irregularidad_canonical("Faltante de bienes muebles")
+    if "ingresos recaudados" in key and "no depositados" in key:
+        return _irregularidad_canonical("Ingresos recaudados no depositados")
+    if "ingresos no registrados" in key:
+        return _irregularidad_canonical("Inconsistencias en información financiera contable y presupuestal")
+    if "sueldos y remuneraciones" in key and "no recibidos" in key:
+        return _irregularidad_canonical(
+            "Pago de sueldos y remuneraciones por servicios personales no recibidos"
+        )
+    if "inasistencias" in key and _irregularidad_has_any(key, "sueldos", "remuneraciones"):
+        return _irregularidad_canonical(
+            "Pago de sueldos y remuneraciones por servicios personales no recibidos"
+        )
+    if "incompatibilidad" in key and _irregularidad_has_any(key, "empleo", "cargo", "comision"):
+        return _irregularidad_canonical("Incompatibilidad en el desempeño de empleo, cargo o comisión")
+    if "contrato" in key and _irregularidad_has_any(
+        key,
+        "prestacion de servicios",
+        "servicios",
+        "arrendamiento",
+        "obra publica",
+    ):
+        return _irregularidad_canonical(
+            "Omisión e inconsistencias en los contratos de adquisiciones, arrendamientos y servicios/obra pública"
+        )
+    if "obligaciones financieras" in key:
+        if "con liquidez" in key and "pago" in key:
+            return _irregularidad_canonical("Obligaciones financieras contraídas con liquidez para su pago")
+        if "sin liquidez" in key and "termino de administracion" in key:
+            return _irregularidad_canonical(
+                "Obligaciones financieras contraídas sin liquidez para pagarlas por termino de administración"
+            )
+        if "sin liquidez" in key and "pago" in key:
+            return _irregularidad_canonical("Obligaciones financieras contraídas sin liquidez para su pago")
+    if "control interno" in key:
+        if "cuestionario" in key:
+            return _irregularidad_canonical(
+                "Deficiencias detectadas mediante aplicación de cuestionario de control interno"
+            )
+        if "evaluacion" in key and "deficient" in key:
+            return _irregularidad_canonical("Resultados de evaluación de control interno deficientes")
+        if "sistemas" in key and "falta" in key:
+            return _irregularidad_canonical("Falta de sistemas de control interno")
+        if _irregularidad_has_any(key, "deficiente", "no actualizado"):
+            return _irregularidad_canonical("Procesos de control interno deficiente / no actualizado")
+    if "identificacion de bienes muebles" in key and "inventario" in key:
+        return _irregularidad_canonical(
+            "Inconsistencia en la identificación de bienes muebles en el inventario"
+        )
+    if "actualizacion y conciliacion fisico contable" in key and "inventario" in key:
+        return _irregularidad_canonical(
+            "Omisión en la actualización y conciliación físico-contable de inventarios"
+        )
+    if "verificacion" in key and "resguardo" in key and "bienes muebles e inmuebles" in key:
+        return _irregularidad_canonical(
+            "Inconsistencia en la verificación y resguardo de bienes muebles e inmuebles"
+        )
+    if "cuentas bancarias" in key:
+        return _irregularidad_canonical("Deficiente control de cuentas bancarias")
+    if "registros contables" in key and "presupuestales" in key:
+        if "deficiente" in key:
+            return _irregularidad_canonical("Deficiente control de registros contables y presupuestales")
+        return _irregularidad_canonical("Incorrecto control de registros contables y presupuestales")
+    if "informacion financiera" in key and "contable" in key and "presupuestal" in key:
+        return _irregularidad_canonical("Inconsistencias en información financiera contable y presupuestal")
+    if "remanentes de ejercicios anteriores" in key and "no autorizados" in key:
+        return _irregularidad_canonical(
+            "Aplicación de recursos no autorizados de remanentes de ejercicios anteriores"
+        )
+    if _irregularidad_has_any(key, "sobregiro", "subejercicio"):
+        return _irregularidad_canonical("Sobregiros y/o subejercicios presupuestales")
+    if _irregularidad_has_any(
+        key,
+        "personal no autorizado",
+        "prestacion no autorizada",
+        "bonos por proceso electoral",
+        "bonos",
+        "apoyo bimestral",
+        "apoyo trimestral",
+        "complemento de sueldo",
+        "compensacion garantizada",
+        "medidas del bienestar",
+    ):
+        return _irregularidad_canonical("Incumplimiento de la normativa en materia de servicios personales")
+    if key in {
+        "arrendamiento de pension vehicular",
+        "servicio de arrendamiento de impresoras",
+    }:
+        return _irregularidad_canonical("Aclaración de procesos específicos")
+    return None
+
+
+def normalize_irregularidad_concepto(
+    value: str,
+    *,
+    allow_blank: bool = False,
+    strict: bool = False,
+) -> str:
+    clean = " ".join((value or "").replace("—", "-").replace("–", "-").split())
+    clean = re.sub(r"^\s*\d+\s*[-.)]?\s*", "", clean).rstrip(".").strip()
+    if not clean:
+        if allow_blank:
+            return ""
+        if strict:
+            raise ValueError("Debes capturar un concepto de irregularidad.")
+        return ""
+    key = normalize_irregularidad_key(clean)
+    if key in {"0", "-"}:
+        if allow_blank:
+            return ""
+        if strict:
+            raise ValueError("Debes capturar un concepto de irregularidad.")
+        return ""
+    canonical = IRREGULARIDAD_CANONICAL_MAP.get(key) or _irregularidad_match_family(key)
+    if canonical:
+        return canonical
+    if strict:
+        raise ValueError(
+            f"Concepto de irregularidad no homologado: '{clean}'. Usa el catálogo canónico."
+        )
+    return _sentence_case_irregularidad(clean)
+
+
+def normalize_irregularidad_subconcepto(value: str) -> str:
+    clean = " ".join((value or "").replace("—", "-").replace("–", "-").split())
+    clean = re.sub(r"^\s*\d+\s*[-.)]?\s*", "", clean).rstrip(".").strip()
+    if normalize_irregularidad_key(clean) in {"", "0", "-", "na", "n a", "s n"}:
+        return ""
+    return clean
 
 
 def _normalize_fuente_snapshot_json(raw_value: str, *, fields: tuple[str, ...]) -> str:
@@ -450,6 +913,171 @@ def normalize_fuentes_data(conn: sqlite3.Connection) -> None:
                 """,
                 (canonical_name, fuente_actual),
             )
+    finally:
+        conn.row_factory = original_row_factory
+
+
+def _normalize_irregularidad_snapshot_json(raw_value: str) -> str:
+    clean = (raw_value or "").strip()
+    if not clean:
+        return raw_value
+    try:
+        payload = json.loads(clean)
+    except json.JSONDecodeError:
+        return raw_value
+    if not isinstance(payload, list):
+        return raw_value
+
+    changed = False
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        concepto_actual = " ".join(str(item.get("concepto") or "").split())
+        subconcepto_actual = " ".join(str(item.get("subconcepto") or "").split())
+        concepto_normalizado = normalize_irregularidad_concepto(
+            concepto_actual,
+            allow_blank=True,
+            strict=bool(concepto_actual),
+        )
+        subconcepto_normalizado = normalize_irregularidad_subconcepto(subconcepto_actual)
+        if concepto_actual != concepto_normalizado:
+            item["concepto"] = concepto_normalizado
+            changed = True
+        if subconcepto_actual != subconcepto_normalizado:
+            item["subconcepto"] = subconcepto_normalizado
+            changed = True
+    if not changed:
+        return raw_value
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def normalize_irregularidades_data(conn: sqlite3.Connection) -> None:
+    original_row_factory = conn.row_factory
+    conn.row_factory = sqlite3.Row
+    try:
+        catalog_rows = conn.execute(
+            """
+            SELECT id, TRIM(COALESCE(concepto, '')) AS concepto
+            FROM catalogo_irregularidades
+            ORDER BY id ASC
+            """
+        ).fetchall()
+        catalog_groups: dict[str, dict[str, object]] = {}
+        replacement_map: dict[int, int] = {}
+
+        for row in catalog_rows:
+            irregularidad_id = int(row["id"])
+            canonical_name = normalize_irregularidad_concepto(
+                row["concepto"] or "",
+                allow_blank=True,
+                strict=bool((row["concepto"] or "").strip()),
+            )
+            if not canonical_name:
+                continue
+            group_key = normalize_irregularidad_key(canonical_name)
+            group = catalog_groups.setdefault(
+                group_key,
+                {"canonical": canonical_name, "rows": []},
+            )
+            group["rows"].append(
+                {
+                    "id": irregularidad_id,
+                    "concepto": (row["concepto"] or "").strip(),
+                }
+            )
+
+        for group in catalog_groups.values():
+            canonical_name = str(group["canonical"])
+            rows = list(group["rows"])
+            exact_matches = [
+                row for row in rows
+                if " ".join((row["concepto"] or "").split()) == canonical_name
+            ]
+            survivor = min(exact_matches or rows, key=lambda item: int(item["id"]))
+            survivor_id = int(survivor["id"])
+
+            if (survivor["concepto"] or "").strip() != canonical_name:
+                conn.execute(
+                    "UPDATE catalogo_irregularidades SET concepto = ? WHERE id = ?",
+                    (canonical_name, survivor_id),
+                )
+
+            for row in rows:
+                row_id = int(row["id"])
+                if row_id == survivor_id:
+                    continue
+                replacement_map[row_id] = survivor_id
+
+        for source_id, target_id in replacement_map.items():
+            conn.execute(
+                "UPDATE registros SET irregularidad_id = ? WHERE irregularidad_id = ?",
+                (target_id, source_id),
+            )
+            conn.execute(
+                "DELETE FROM catalogo_irregularidades WHERE id = ?",
+                (source_id,),
+            )
+
+        observaciones_rows = conn.execute(
+            """
+            SELECT
+                id,
+                TRIM(COALESCE(pdp_concepto_irregularidad, '')) AS concepto,
+                TRIM(COALESCE(pdp_subconcepto_irregularidad, '')) AS subconcepto
+            FROM observaciones
+            WHERE TRIM(COALESCE(pdp_concepto_irregularidad, '')) != ''
+               OR TRIM(COALESCE(pdp_subconcepto_irregularidad, '')) != ''
+            ORDER BY id ASC
+            """
+        ).fetchall()
+        for row in observaciones_rows:
+            concepto_actual = (row["concepto"] or "").strip()
+            subconcepto_actual = (row["subconcepto"] or "").strip()
+            concepto_normalizado = normalize_irregularidad_concepto(
+                concepto_actual,
+                allow_blank=True,
+                strict=bool(concepto_actual),
+            )
+            subconcepto_normalizado = normalize_irregularidad_subconcepto(subconcepto_actual)
+            if (
+                concepto_actual != concepto_normalizado
+                or subconcepto_actual != subconcepto_normalizado
+            ):
+                conn.execute(
+                    """
+                    UPDATE observaciones
+                    SET pdp_concepto_irregularidad = ?,
+                        pdp_subconcepto_irregularidad = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        concepto_normalizado,
+                        subconcepto_normalizado,
+                        int(row["id"]),
+                    ),
+                )
+
+        cargas_rows = conn.execute(
+            """
+            SELECT id, pdp_detalle_json
+            FROM cargas_manuales
+            WHERE TRIM(COALESCE(pdp_detalle_json, '')) != ''
+            ORDER BY id ASC
+            """
+        ).fetchall()
+        for row in cargas_rows:
+            pdp_detalle_json = _normalize_irregularidad_snapshot_json(
+                row["pdp_detalle_json"] or ""
+            )
+            if pdp_detalle_json != (row["pdp_detalle_json"] or ""):
+                conn.execute(
+                    """
+                    UPDATE cargas_manuales
+                    SET pdp_detalle_json = ?
+                    WHERE id = ?
+                    """,
+                    (pdp_detalle_json, int(row["id"])),
+                )
     finally:
         conn.row_factory = original_row_factory
 
@@ -1308,6 +1936,7 @@ def init_db() -> None:
             backfill_ente_uids(conn)
         backfill_historial_ente_uids(conn)
         normalize_fuentes_data(conn)
+        normalize_irregularidades_data(conn)
         conn.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_obs_ejercicio
@@ -1451,8 +2080,9 @@ def close_db(_exception: Exception | None) -> None:
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = None
+    selected_username = (request.values.get("username") or "").strip().lower()
     if request.method == "POST":
-        username = request.form.get("username", "").strip().lower()
+        username = selected_username
         password = request.form.get("password", "").strip()
         next_url = (request.form.get("next") or "").strip()
         user = USERS.get(username)
@@ -1471,13 +2101,31 @@ def login():
         if current_user is not None:
             return redirect(url_for(home_endpoint_for_user(current_user)))
         next_url = request.args.get("next", "")
-    return render_template("login.html", error=error, next_url=next_url)
+    usuarios_activos = ordered_users(PROJECT_KEY, priority={"luis": 0, "gabo": 1})
+    selected_display = get_display_name(selected_username, fallback="usuario")
+    return render_template(
+        "login.html",
+        error=error,
+        next_url=next_url,
+        usuarios_activos=usuarios_activos,
+        selected_username=selected_username,
+        selected_display=selected_display,
+    )
 
 
-@app.get("/logout")
+@app.route("/logout", methods=["GET", "POST"])
 def logout():
     session.clear()
-    return redirect(url_for("login"))
+    response = redirect(url_for("login"))
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
+
+@app.route("/api/health")
+@app.route("/health")
+def health_check():
+    return jsonify({"status": "ok", "service": "sifet-estatales"}), 200
 
 
 def resolve_project_path(raw_path: str, *, must_exist: bool) -> Path:
@@ -1523,6 +2171,8 @@ ROUTE_DEPS = {
     "normalize_ente_id": normalize_ente_id,
     "normalize_ente_id_sql": normalize_ente_id_sql,
     "normalize_fuente_financiamiento": normalize_fuente_financiamiento,
+    "normalize_irregularidad_concepto": normalize_irregularidad_concepto,
+    "normalize_irregularidad_subconcepto": normalize_irregularidad_subconcepto,
     "normalize_tipo_auditoria": normalize_tipo_auditoria,
     "is_remanente_fuente": is_remanente_fuente,
     "periodo_sql": periodo_sql,

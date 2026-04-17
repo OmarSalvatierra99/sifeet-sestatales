@@ -1323,8 +1323,13 @@ def register_gabo_routes(app, deps):
             monto_raw = data.get("monto")
             details.append(
                 {
-                    "concepto": " ".join(str(data.get("concepto") or "").split()),
-                    "subconcepto": " ".join(str(data.get("subconcepto") or "").split()),
+                    "concepto": normalize_irregularidad_concepto(
+                        data.get("concepto") or "",
+                        allow_blank=True,
+                    ),
+                    "subconcepto": normalize_irregularidad_subconcepto(
+                        data.get("subconcepto") or ""
+                    ),
                     "fuente": normalize_fuente_financiamiento(
                         " ".join(str(data.get("fuente") or "").split())
                     ),
@@ -1517,8 +1522,11 @@ def register_gabo_routes(app, deps):
         details: list[dict] = []
         for item in payload[:cantidad_pdp]:
             data = item if isinstance(item, dict) else {}
-            concepto = " ".join(str(data.get("concepto") or "").split())
-            subconcepto = " ".join(str(data.get("subconcepto") or "").split())
+            concepto = normalize_irregularidad_concepto(
+                data.get("concepto") or "",
+                strict=True,
+            )
+            subconcepto = normalize_irregularidad_subconcepto(data.get("subconcepto") or "")
             fuente = " ".join(str(data.get("fuente") or "").split())
             monto_field = data.get("monto")
             monto_raw = "" if monto_field is None else str(monto_field).strip()
@@ -1889,10 +1897,15 @@ def register_gabo_routes(app, deps):
             return f"{fecha_inicio}|{fecha_fin}"
         return _normalize_mass_upload_text_key(clean)
 
-    def _normalize_mass_upload_concept(value: str) -> str:
+    def _normalize_mass_upload_concept(value: str, *, line_number: int | None = None) -> str:
         clean = " ".join((value or "").split())
         clean = re.sub(r"^\s*\d+\s*[-.)]?\s*", "", clean).strip()
-        return clean
+        try:
+            return normalize_irregularidad_concepto(clean, strict=True)
+        except ValueError as exc:
+            if line_number is None:
+                raise
+            raise ValueError(f"Línea {line_number}: {exc}") from exc
 
     def _read_mass_upload_file_rows(upload_file) -> tuple[list[dict], str]:
         if upload_file is None:
@@ -1953,7 +1966,8 @@ def register_gabo_routes(app, deps):
                     line_number=line_number,
                 )
                 concepto_irregularidad = _normalize_mass_upload_concept(
-                    row_data.get(header_map["concepto_irregularidad"], "")
+                    row_data.get(header_map["concepto_irregularidad"], ""),
+                    line_number=line_number,
                 )
                 rows.append(
                     {

@@ -3,9 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# AI agent files
-AGENTS.md
-CLAUDE.md
+# AI agent files (ahora en prompts/)
 GEMINI.md
 .cursorrules
 .cursor/
@@ -69,7 +67,7 @@ htmlcov/
 # Logs
 gunicorn.log
 *.log.*
-logs/
+logs/*.log
 
 # System files
 *.sock
