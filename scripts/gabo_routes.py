@@ -2,14 +2,17 @@ import csv
 from datetime import datetime
 from io import StringIO
 import json
+import os
 from pathlib import Path
 import re
 import sqlite3
 import sys
+import tempfile
 import unicodedata
 
 from flask import jsonify, render_template, request
 from backup_utils import prune_backup_dir
+from scripts.parsers import parse_cedula
 
 
 def split_periodo_tokens(raw_value: str) -> list[str]:
@@ -3604,6 +3607,27 @@ def register_gabo_routes(app, deps):
         )
         db.commit()
         return jsonify({"ok": True, "deleted": total, "backup_path": backup_path})
+
+    @app.post("/api/cedulas/procesar")
+    @gabo_required
+    def api_procesar_cedula():
+        if "file" not in request.files:
+            return jsonify({"error": "No se recibió ningún archivo."}), 400
+        f = request.files["file"]
+        if not f.filename:
+            return jsonify({"error": "Nombre de archivo vacío."}), 400
+        if not f.filename.lower().endswith(".pdf"):
+            return jsonify({"error": "Solo se aceptan archivos PDF."}), 400
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp_path = tmp.name
+            f.save(tmp_path)
+        try:
+            result = parse_cedula(tmp_path)
+        except Exception as e:
+            return jsonify({"error": f"Error al procesar el PDF: {e}"}), 500
+        finally:
+            os.unlink(tmp_path)
+        return jsonify(result)
 
     @app.route("/carga", methods=["GET", "POST"])
     @gabo_required

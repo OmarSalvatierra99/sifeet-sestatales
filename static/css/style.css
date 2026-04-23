@@ -3176,7 +3176,16 @@ tbody tr:hover td {
   background: #eaf4ee;
 }
 
-#manualResumenFuentesSection,
+#manualResumenFuentesSection {
+  width: 100%;
+  min-width: 0;
+  padding-left: 0.4rem;
+  padding-right: 0.4rem;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+
 #manualResumenFuentesBody {
   width: 100%;
   min-width: 0;
@@ -3235,6 +3244,63 @@ tbody tr:hover td {
 
 .manual-resumen-json-feedback[data-level="warning"] {
   color: #8a5a12;
+}
+
+.oficio-upload-zone {
+  border: 2px dashed #c0d4c8;
+  border-radius: 12px;
+  padding: 1.5rem 1rem;
+  text-align: center;
+  background: #fafcfb;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.oficio-upload-zone:hover,
+.oficio-upload-zone.drag-over {
+  border-color: var(--color-accent);
+  background: #eef6f0;
+}
+.oficio-upload-zone.has-file {
+  border-color: #3ba164;
+  background: #edf8f0;
+}
+.oficio-upload-zone.processing {
+  opacity: 0.7;
+  pointer-events: none;
+}
+.oficio-upload-icon {
+  font-size: 1.8rem;
+  display: block;
+  margin-bottom: 0.35rem;
+}
+.oficio-upload-zone p {
+  color: #6b7f72;
+  margin: 0.15rem 0;
+  font-size: 0.85rem;
+}
+.oficio-upload-link {
+  background: none;
+  border: none;
+  color: var(--color-accent);
+  font-weight: 700;
+  cursor: pointer;
+  font-size: inherit;
+  text-decoration: underline;
+  padding: 0;
+}
+.oficio-file-name {
+  margin-top: 0.5rem;
+  font-weight: 700;
+  color: var(--color-accent);
+  font-size: 0.82rem;
+}
+.oficio-json-fallback {
+  margin-top: 0.25rem;
+}
+.oficio-json-fallback > summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: #6b7f72;
 }
 
 .manual-resumen-actions-top {

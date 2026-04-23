@@ -215,16 +215,29 @@
                 <div class="loader-source-card-actions" id="manualResumenToolbar" style="display:none;"></div>
               </div>
               <details class="manual-resumen-json-import" id="manualResumenJsonImport">
-                <summary>Carga rápida por JSON</summary>
+                <summary>Cargar Oficio</summary>
                 <p class="helper">
-                  Pega un JSON con <code>auditoria</code>, <code>fuentes</code> y <code>registros</code>.
-                  La importación reemplaza la tabla actual.
+                  Sube el PDF de la Cédula de Resultados para extraer las observaciones,
+                  o pega un JSON manualmente. La importación reemplaza la tabla actual.
                 </p>
-                <textarea
-                  id="manualResumenJsonInput"
-                  rows="9"
-                  spellcheck="false"
-                  placeholder='{
+                <div class="oficio-upload-zone" id="oficioUploadZone">
+                  <input type="file" id="oficioPdfInput" accept=".pdf" hidden>
+                  <span class="oficio-upload-icon">📄</span>
+                  <p>Arrastra aquí el PDF de la Cédula de Resultados</p>
+                  <p>o <button class="oficio-upload-link" type="button" onclick="document.getElementById('oficioPdfInput').click()">selecciona un archivo</button></p>
+                  <p class="oficio-file-name" id="oficioFileName" hidden></p>
+                </div>
+                <div class="manual-resumen-json-actions">
+                  <button type="button" class="btn-secondary btn-compact" id="oficioProcessBtn" disabled>Procesar PDF</button>
+                  <button type="button" class="btn-secondary btn-compact" id="oficioClearBtn" style="display:none">Limpiar</button>
+                </div>
+                <details class="oficio-json-fallback">
+                  <summary class="helper">Pegar JSON manualmente</summary>
+                  <textarea
+                    id="manualResumenJsonInput"
+                    rows="9"
+                    spellcheck="false"
+                    placeholder='{
   "auditoria": "Financiera",
   "fuentes": [
     {
@@ -242,11 +255,12 @@
     }
   ]
 }'
-                ></textarea>
-                <div class="manual-resumen-json-actions">
-                  <button type="button" class="btn-secondary btn-compact" id="manualResumenJsonApplyBtn">Cargar JSON</button>
-                  <button type="button" class="btn-secondary btn-compact" id="manualResumenJsonClearBtn">Limpiar texto</button>
-                </div>
+                  ></textarea>
+                  <div class="manual-resumen-json-actions">
+                    <button type="button" class="btn-secondary btn-compact" id="manualResumenJsonApplyBtn">Cargar JSON</button>
+                    <button type="button" class="btn-secondary btn-compact" id="manualResumenJsonClearBtn">Limpiar texto</button>
+                  </div>
+                </details>
                 <p class="helper manual-resumen-json-feedback" id="manualResumenJsonFeedback"></p>
               </details>
               <div id="manualResumenFuentesBody" class="manual-resumen-table">
@@ -810,6 +824,12 @@
     const manualResumenJsonApplyBtn = document.getElementById("manualResumenJsonApplyBtn");
     const manualResumenJsonClearBtn = document.getElementById("manualResumenJsonClearBtn");
     const manualResumenJsonFeedback = document.getElementById("manualResumenJsonFeedback");
+    const oficioUploadZone = document.getElementById("oficioUploadZone");
+    const oficioPdfInput = document.getElementById("oficioPdfInput");
+    const oficioFileName = document.getElementById("oficioFileName");
+    const oficioProcessBtn = document.getElementById("oficioProcessBtn");
+    const oficioClearBtn = document.getElementById("oficioClearBtn");
+    let oficioSelectedFile = null;
     const manualResumenContainer = document.getElementById("manualResumenFuentesBody");
     let isSyncingContextFields = false;
     const MIXED_TIPO_AUDITORIA = "Financiera y Obra Pública";
@@ -3951,6 +3971,133 @@
       };
     };
 
+    const applyResumenFromPayload = (payload) => {
+      let importResult = null;
+      try {
+        importResult = buildResumenJsonImportResult(payload);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "No se pudo interpretar el JSON.";
+        setManualResumenJsonFeedback(message, "error");
+        showWizardToast(message, "error");
+        return;
+      }
+
+      const currentScopeTipo = principalTipoAuditoria ? String(principalTipoAuditoria.value || "").trim() : "";
+      if (currentScopeTipo && !isMixedScopeTipo(currentScopeTipo)) {
+        const invalidRow = (Array.isArray(importResult.rows) ? importResult.rows : []).find((row) => (
+          String(row && row.tipo_auditoria || "").trim() !== currentScopeTipo
+        ));
+        if (invalidRow) {
+          const message = `El JSON contiene ${invalidRow.tipo_auditoria}, pero el contexto activo está en ${currentScopeTipo}.`;
+          setManualResumenJsonFeedback(message, "error");
+          showWizardToast(message, "error");
+          return;
+        }
+      }
+
+      if (Array.isArray(fuentesDetalleState) && fuentesDetalleState.length) {
+        const confirmed = window.confirm("La tabla actual se reemplazará con la carga del oficio. ¿Deseas continuar?");
+        if (!confirmed) {
+          return;
+        }
+      }
+
+      const shouldApplyScopeTipo = !!(
+        importResult.tipoAuditoria
+        && principalTipoAuditoria
+        && !currentScopeTipo
+      );
+      fuentesDetalleState = Array.isArray(importResult.rows) ? importResult.rows : [];
+      editingFuenteIndex = null;
+      if (shouldApplyScopeTipo && principalTipoAuditoria) {
+        principalTipoAuditoria.value = importResult.tipoAuditoria;
+        syncPrincipalFiltersToForms({ syncTitular: true });
+      }
+      pdpDetalleState = normalizePdpDetalleState(importResult.totalPdp || 0, []);
+      syncFuentesDetalleState();
+      syncPdpDetalleJson();
+      renderFuentesDetalleRows();
+      renderPdpDetalleMenu();
+      renderPdpBreakdown();
+      updateFuenteEditorMode();
+
+      const baseMessage = importResult.totalPdp > 0
+        ? `Oficio cargado: ${importResult.rows.length} fila(s) y ${importResult.totalObservaciones} observación(es). Completa ${importResult.totalPdp} detalle(s) PDP para guardar.`
+        : `Oficio cargado: ${importResult.rows.length} fila(s) y ${importResult.totalObservaciones} observación(es).`;
+      const feedbackMessage = importResult.totalsWarning
+        ? `${baseMessage} ${importResult.totalsWarning}`
+        : baseMessage;
+      setManualResumenJsonFeedback(
+        feedbackMessage,
+        importResult.totalsWarning ? "warning" : "success",
+      );
+      showWizardToast(baseMessage, importResult.totalsWarning ? "info" : "success");
+      if (manualResumenJsonImport && "open" in manualResumenJsonImport) {
+        manualResumenJsonImport.open = false;
+      }
+    };
+
+    const processOficioPdf = async () => {
+      if (!oficioSelectedFile) return;
+      if (oficioProcessBtn) {
+        oficioProcessBtn.disabled = true;
+        oficioProcessBtn.textContent = "Procesando...";
+      }
+      if (oficioUploadZone) oficioUploadZone.classList.add("processing");
+      setManualResumenJsonFeedback("", "info");
+
+      const form = new FormData();
+      form.append("file", oficioSelectedFile);
+
+      try {
+        const res = await fetch("/api/cedulas/procesar", { method: "POST", body: form });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          const message = data.error || "Error desconocido al procesar el archivo.";
+          setManualResumenJsonFeedback(message, "error");
+          showWizardToast(message, "error");
+        } else {
+          applyResumenFromPayload(data);
+        }
+      } catch (_err) {
+        const message = "Error de red al contactar el servidor.";
+        setManualResumenJsonFeedback(message, "error");
+        showWizardToast(message, "error");
+      } finally {
+        if (oficioProcessBtn) {
+          oficioProcessBtn.disabled = false;
+          oficioProcessBtn.textContent = "Procesar PDF";
+        }
+        if (oficioUploadZone) oficioUploadZone.classList.remove("processing");
+      }
+    };
+
+    const setOficioFile = (file) => {
+      if (!file || !file.name.toLowerCase().endsWith(".pdf")) {
+        setManualResumenJsonFeedback("Solo se aceptan archivos PDF.", "error");
+        return;
+      }
+      oficioSelectedFile = file;
+      if (oficioFileName) {
+        oficioFileName.textContent = file.name;
+        oficioFileName.hidden = false;
+      }
+      if (oficioUploadZone) oficioUploadZone.classList.add("has-file");
+      if (oficioProcessBtn) oficioProcessBtn.disabled = false;
+      if (oficioClearBtn) oficioClearBtn.style.display = "";
+      setManualResumenJsonFeedback("", "info");
+    };
+
+    const clearOficioUpload = () => {
+      oficioSelectedFile = null;
+      if (oficioPdfInput) oficioPdfInput.value = "";
+      if (oficioFileName) oficioFileName.hidden = true;
+      if (oficioUploadZone) oficioUploadZone.classList.remove("has-file");
+      if (oficioProcessBtn) oficioProcessBtn.disabled = true;
+      if (oficioClearBtn) oficioClearBtn.style.display = "none";
+      setManualResumenJsonFeedback("", "info");
+    };
+
     const applyResumenJsonImport = () => {
       const rawText = String(manualResumenJsonInput ? manualResumenJsonInput.value || "" : "").trim();
       if (!rawText) {
@@ -6156,6 +6303,37 @@
       manualResumenJsonInput.addEventListener("input", () => {
         setManualResumenJsonFeedback("", "info");
       });
+    }
+    if (oficioUploadZone) {
+      oficioUploadZone.addEventListener("click", (e) => {
+        if (e.target === oficioUploadZone || oficioUploadZone.contains(e.target)) {
+          if (oficioPdfInput && e.target !== oficioPdfInput) oficioPdfInput.click();
+        }
+      });
+      oficioUploadZone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        oficioUploadZone.classList.add("drag-over");
+      });
+      oficioUploadZone.addEventListener("dragleave", () => {
+        oficioUploadZone.classList.remove("drag-over");
+      });
+      oficioUploadZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        oficioUploadZone.classList.remove("drag-over");
+        const file = e.dataTransfer && e.dataTransfer.files[0];
+        if (file) setOficioFile(file);
+      });
+    }
+    if (oficioPdfInput) {
+      oficioPdfInput.addEventListener("change", () => {
+        if (oficioPdfInput.files && oficioPdfInput.files[0]) setOficioFile(oficioPdfInput.files[0]);
+      });
+    }
+    if (oficioProcessBtn) {
+      oficioProcessBtn.addEventListener("click", () => processOficioPdf());
+    }
+    if (oficioClearBtn) {
+      oficioClearBtn.addEventListener("click", () => clearOficioUpload());
     }
     if (manualAddNewFuenteBtnInline && manualFuente) {
       manualAddNewFuenteBtnInline.addEventListener("click", () => {
