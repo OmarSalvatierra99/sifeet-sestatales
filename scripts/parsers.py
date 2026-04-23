@@ -8,6 +8,26 @@ import pdfplumber
 
 ACCIONES = ['SA', 'PDP', 'PRAS', 'PEFCF', 'R']
 
+_MESES_ES = {
+    'enero': '01', 'febrero': '02', 'marzo': '03', 'abril': '04',
+    'mayo': '05', 'junio': '06', 'julio': '07', 'agosto': '08',
+    'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12',
+}
+
+
+def _fecha_es_to_iso(text):
+    """Convierte '15 de enero de 2025' a '2025-01-15'."""
+    if not text:
+        return ''
+    m = re.search(r'(\d{1,2})\s+de\s+(\w+)\s+(?:de[l]?\s+)?(\d{4})', text.lower())
+    if not m:
+        return ''
+    dia, mes_nombre, anio = m.group(1), m.group(2), m.group(3)
+    mes = _MESES_ES.get(mes_nombre, '')
+    if not mes:
+        return ''
+    return f'{anio}-{mes}-{dia.zfill(2)}'
+
 
 def _clean(text):
     if not text:
@@ -36,9 +56,11 @@ def _extract_header(full_text):
     """Extrae número de oficio y fecha del texto completo del documento."""
     oficio = re.search(r'[Oo][Ff][Ii][Cc][Ii][Oo]\s+No\.\s+(OFS/\d+/\d+)', full_text)
     fecha = re.search(r'Tlaxcala,\s+Tlax\.,\s+(?:a\s+)?(.+?\d{4})\.', full_text)
+    fecha_raw = _clean(fecha.group(1)) if fecha else None
+    fecha_iso = _fecha_es_to_iso(fecha_raw) if fecha_raw else None
     return (
         oficio.group(1) if oficio else None,
-        _clean(fecha.group(1)) if fecha else None,
+        fecha_iso or fecha_raw,
     )
 
 

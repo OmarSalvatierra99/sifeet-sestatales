@@ -214,11 +214,11 @@
                 </div>
                 <div class="loader-source-card-actions" id="manualResumenToolbar" style="display:none;"></div>
               </div>
-              <details class="manual-resumen-json-import" id="manualResumenJsonImport">
+              <details class="manual-resumen-json-import" id="manualResumenJsonImport" open>
                 <summary>Cargar Oficio</summary>
                 <p class="helper">
-                  Sube el PDF de la Cédula de Resultados para extraer las observaciones,
-                  o pega un JSON manualmente. La importación reemplaza la tabla actual.
+                  Sube el PDF de la Cédula de Resultados para extraer las observaciones
+                  y llenar automáticamente el alcance, oficio y fecha de notificación.
                 </p>
                 <div class="oficio-upload-zone" id="oficioUploadZone">
                   <input type="file" id="oficioPdfInput" accept=".pdf" hidden>
@@ -4013,6 +4013,24 @@
         principalTipoAuditoria.value = importResult.tipoAuditoria;
         syncPrincipalFiltersToForms({ syncTitular: true });
       }
+
+      /* ── Auto-fill Alcance and Oficio from PDF payload ── */
+      if (importResult.tipoAuditoria && principalTipoAuditoria) {
+        principalTipoAuditoria.value = importResult.tipoAuditoria;
+        syncPrincipalFiltersToForms({ syncTitular: true });
+      }
+      const payloadOficio = payload && typeof payload === "object" ? (payload.oficio || "") : "";
+      if (payloadOficio && principalNumeroOficioInput) {
+        principalNumeroOficioInput.value = payloadOficio;
+        syncPrincipalOficioField({ padConsecutive: true });
+        syncPrincipalFiltersToForms({ syncTitular: true });
+      }
+      const payloadFecha = payload && typeof payload === "object" ? (payload.fecha || "") : "";
+      if (payloadFecha && principalFechaNotificacion) {
+        principalFechaNotificacion.value = payloadFecha;
+        syncPrincipalFiltersToForms({ syncTitular: true });
+      }
+
       pdpDetalleState = normalizePdpDetalleState(importResult.totalPdp || 0, []);
       syncFuentesDetalleState();
       syncPdpDetalleJson();

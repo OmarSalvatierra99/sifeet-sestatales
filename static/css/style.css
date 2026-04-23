@@ -1762,13 +1762,13 @@ tbody tr:hover td {
 }
 
 .loader-page {
-  --container-max: 1380px;
+  --container-max: 100%;
 }
 
 .loader-page .page-content.loader-content {
-  max-width: min(1380px, calc(100vw - 1.4rem));
-  padding-left: 0.7rem;
-  padding-right: 0.7rem;
+  max-width: calc(100vw - 2rem);
+  padding-left: 1rem;
+  padding-right: 1rem;
 }
 
 .loader-content {
@@ -1852,7 +1852,7 @@ tbody tr:hover td {
 }
 
 .loader-principal-form .loader-expediente-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .loader-oficio-picker-field,
@@ -3249,7 +3249,7 @@ tbody tr:hover td {
 .oficio-upload-zone {
   border: 2px dashed #c0d4c8;
   border-radius: 12px;
-  padding: 1.5rem 1rem;
+  padding: 2rem 1.5rem;
   text-align: center;
   background: #fafcfb;
   cursor: pointer;
