@@ -71,9 +71,9 @@
                     {% endfor %}
                   </select>
                 </div>
-                <div class="field">
+                <div class="field ente-search-field">
                   <label for="principal_ente_id">Ente</label>
-                  <select id="principal_ente_id" data-selected="{{ form_data.manual_ente_id }}">
+                  <select id="principal_ente_id" data-selected="{{ form_data.manual_ente_id }}" class="ente-search-hidden-select">
                     <option value="">Selecciona un ente</option>
                     {% for ente in manual_entes %}
                       <option value="{{ ente.ente_id }}" {% if form_data.manual_ente_id == ente.ente_id %}selected{% endif %}>
@@ -81,6 +81,11 @@
                       </option>
                     {% endfor %}
                   </select>
+                  <div class="ente-search-wrapper">
+                    <input type="text" id="ente_search_input" class="ente-search-input" placeholder="Buscar ente..." autocomplete="off">
+                    <button type="button" class="ente-search-clear" id="ente_search_clear" title="Limpiar">&times;</button>
+                    <div class="ente-search-dropdown" id="ente_search_dropdown"></div>
+                  </div>
                 </div>
                 <div class="field">
                   <label for="principal_tipo_auditoria">Alcance del oficio</label>
@@ -2170,6 +2175,7 @@
           principalEnte.value = "";
         }
         principalEnte.dataset.selected = String(principalEnte.value || "").trim();
+        principalEnte.dispatchEvent(new Event("ente-search-sync"));
       } catch (_error) {
         if (requestId !== principalEntesFetchId) {
           return;
@@ -6992,6 +6998,150 @@
           updateWizardModeAvailability();
         });
       }
+
+      /* ── Ente searchable select component ── */
+      (function initEnteSearch() {
+        const hiddenSelect = document.getElementById("principal_ente_id");
+        const searchInput = document.getElementById("ente_search_input");
+        const dropdown = document.getElementById("ente_search_dropdown");
+        const clearBtn = document.getElementById("ente_search_clear");
+        if (!hiddenSelect || !searchInput || !dropdown || !clearBtn) return;
+
+        let options = [];
+        let activeIndex = -1;
+
+        function collectOptions() {
+          options = [];
+          for (const opt of hiddenSelect.options) {
+            if (!opt.value) continue;
+            options.push({ value: opt.value, label: opt.textContent.trim() });
+          }
+        }
+
+        function highlightMatch(text, query) {
+          if (!query) return text;
+          const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          return text.replace(new RegExp(`(${escaped})`, "gi"), "<mark>$1</mark>");
+        }
+
+        function renderDropdown(query) {
+          const q = (query || "").toLowerCase().trim();
+          const filtered = q
+            ? options.filter(o => o.label.toLowerCase().includes(q))
+            : options;
+
+          if (!filtered.length) {
+            dropdown.innerHTML = '<div class="ente-search-no-results">Sin resultados</div>';
+            dropdown.classList.add("is-open");
+            activeIndex = -1;
+            return;
+          }
+
+          dropdown.innerHTML = filtered.map((o, i) => (
+            `<div class="ente-search-option" data-value="${o.value}" data-index="${i}">${highlightMatch(o.label, q)}</div>`
+          )).join("");
+          dropdown.classList.add("is-open");
+          activeIndex = -1;
+        }
+
+        function selectOption(value, label) {
+          hiddenSelect.value = value;
+          hiddenSelect.dataset.selected = value;
+          searchInput.value = label.replace(/<[^>]*>/g, "");
+          clearBtn.style.display = "block";
+          dropdown.classList.remove("is-open");
+          hiddenSelect.dispatchEvent(new Event("change"));
+        }
+
+        function syncInputFromSelect() {
+          collectOptions();
+          const val = hiddenSelect.value;
+          if (val) {
+            const match = options.find(o => o.value === val);
+            searchInput.value = match ? match.label : "";
+            clearBtn.style.display = "block";
+          } else {
+            searchInput.value = "";
+            clearBtn.style.display = "none";
+          }
+        }
+
+        searchInput.addEventListener("focus", () => {
+          collectOptions();
+          renderDropdown(searchInput.value);
+        });
+
+        searchInput.addEventListener("input", () => {
+          collectOptions();
+          renderDropdown(searchInput.value);
+          if (!searchInput.value) {
+            clearBtn.style.display = "none";
+            hiddenSelect.value = "";
+            hiddenSelect.dataset.selected = "";
+            hiddenSelect.dispatchEvent(new Event("change"));
+          } else {
+            clearBtn.style.display = "block";
+          }
+        });
+
+        searchInput.addEventListener("keydown", (e) => {
+          const items = dropdown.querySelectorAll(".ente-search-option");
+          if (!items.length) return;
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            activeIndex = Math.min(activeIndex + 1, items.length - 1);
+            items.forEach((el, i) => el.classList.toggle("is-active", i === activeIndex));
+            items[activeIndex].scrollIntoView({ block: "nearest" });
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            activeIndex = Math.max(activeIndex - 1, 0);
+            items.forEach((el, i) => el.classList.toggle("is-active", i === activeIndex));
+            items[activeIndex].scrollIntoView({ block: "nearest" });
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            if (activeIndex >= 0 && items[activeIndex]) {
+              const item = items[activeIndex];
+              selectOption(item.dataset.value, item.textContent);
+            }
+          } else if (e.key === "Escape") {
+            dropdown.classList.remove("is-open");
+            searchInput.blur();
+          }
+        });
+
+        dropdown.addEventListener("click", (e) => {
+          const item = e.target.closest(".ente-search-option");
+          if (item) {
+            selectOption(item.dataset.value, item.textContent);
+          }
+        });
+
+        clearBtn.addEventListener("click", () => {
+          searchInput.value = "";
+          clearBtn.style.display = "none";
+          hiddenSelect.value = "";
+          hiddenSelect.dataset.selected = "";
+          hiddenSelect.dispatchEvent(new Event("change"));
+          searchInput.focus();
+        });
+
+        document.addEventListener("click", (e) => {
+          if (!e.target.closest(".ente-search-wrapper")) {
+            dropdown.classList.remove("is-open");
+          }
+        });
+
+        // Observe changes to the hidden select (from loadPrincipalEntes)
+        const observer = new MutationObserver(() => syncInputFromSelect());
+        observer.observe(hiddenSelect, { childList: true, attributes: true, attributeFilter: ["value"] });
+
+        // Also hook into the select's change event for programmatic changes
+        hiddenSelect.addEventListener("ente-search-sync", syncInputFromSelect);
+
+        // Initial sync
+        syncInputFromSelect();
+      })();
+
       if (principalTipoAuditoria) {
         principalTipoAuditoria.addEventListener("change", () => {
           clearManualEditState();

@@ -524,6 +524,94 @@ select.is-multi-hidden {
   display: none;
 }
 
+/* ── Ente searchable select ── */
+.ente-search-hidden-select {
+  display: none !important;
+}
+
+.ente-search-field {
+  position: relative;
+}
+
+.ente-search-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.ente-search-input {
+  padding-right: 2.2rem !important;
+}
+
+.ente-search-clear {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  color: #7b877e;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  line-height: 1;
+  display: none;
+}
+
+.ente-search-clear:hover {
+  color: var(--color-ink);
+}
+
+.ente-search-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  max-height: 260px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--color-border-strong);
+  border-top: none;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.ente-search-dropdown.is-open {
+  display: block;
+}
+
+.ente-search-option {
+  padding: 0.6rem 0.9rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background-color 0.12s;
+  border-bottom: 1px solid #f0f2f0;
+}
+
+.ente-search-option:last-child {
+  border-bottom: none;
+}
+
+.ente-search-option:hover,
+.ente-search-option.is-active {
+  background: #e8f0ea;
+}
+
+.ente-search-option mark {
+  background: #c8e6c9;
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.ente-search-no-results {
+  padding: 0.7rem 0.9rem;
+  font-size: 0.88rem;
+  color: #7b877e;
+  font-style: italic;
+}
+
 .multi-select-dropdown {
   position: relative;
   width: 100%;
