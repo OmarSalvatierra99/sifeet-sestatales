@@ -28,6 +28,7 @@ def _insert_observacion(
     tipo_anexo: str,
     numero_observacion: int,
     estado: str = "Pendiente",
+    oficio: str = "OFS/0001/2025",
 ) -> None:
     now = datetime.now(UTC).isoformat(timespec="seconds")
     monto_emitido = 100.0 if tipo_anexo == "PDP" else 0.0
@@ -67,7 +68,7 @@ def _insert_observacion(
             "No",
             "01 de enero al 31 de enero",
             "01 de enero al 31 de enero",
-            "OFS/0001/2025",
+            oficio,
             "2025-01-01",
             tipo_anexo,
             numero_observacion,
@@ -100,6 +101,92 @@ def test_gabo_logout_uses_post_and_clears_session(client):
     protected = client.get("/carga")
     assert protected.status_code == 302
     assert "/login" in protected.headers["Location"]
+
+
+def test_gabo_oficios_resumen_groups_observaciones_by_oficio(client, monkeypatch, tmp_path):
+    """El resumen de Gabo debe agrupar conteos y montos por oficio."""
+    import app as app_module
+
+    test_db_path = tmp_path / "oficios_resumen_test.db"
+    monkeypatch.setattr(app_module, "DB_PATH", str(test_db_path))
+    app_module.init_db()
+
+    conn = sqlite3.connect(test_db_path)
+    try:
+        _insert_observacion(conn, ejercicio="2025", tipo_anexo="SA", numero_observacion=1)
+        _insert_observacion(conn, ejercicio="2025", tipo_anexo="PDP", numero_observacion=2)
+        _insert_observacion(conn, ejercicio="2025", tipo_anexo="PRAS", numero_observacion=3)
+        _insert_observacion(conn, ejercicio="2025", tipo_anexo="R", numero_observacion=4)
+        _insert_observacion(conn, ejercicio="2025", tipo_anexo="PEFCF", numero_observacion=5)
+        conn.commit()
+    finally:
+        conn.close()
+
+    _set_logged_user(client, "gabo", "loader")
+    response = client.get("/carga/oficios-resumen?ejercicio=2025&ente_id=ENTE-001")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert len(payload["rows"]) == 1
+    row = payload["rows"][0]
+    assert row["oficio"] == "OFS/0001/2025"
+    assert row["sa"] == 1
+    assert row["pdp"] == 1
+    assert row["pras"] == 1
+    assert row["r"] == 1
+    assert row["pefcf"] == 1
+    assert row["monto_emitido"] == 100.0
+    assert row["monto_solventado"] == 25.0
+    assert row["monto_pendiente"] == 75.0
+
+
+def test_gabo_can_delete_observaciones_by_oficio_scope(client, monkeypatch, tmp_path):
+    """El borrado por oficio debe eliminar solo el oficio seleccionado."""
+    import app as app_module
+
+    test_db_path = tmp_path / "oficios_delete_test.db"
+    monkeypatch.setattr(app_module, "DB_PATH", str(test_db_path))
+    app_module.init_db()
+
+    conn = sqlite3.connect(test_db_path)
+    try:
+        _insert_observacion(conn, ejercicio="2025", tipo_anexo="SA", numero_observacion=1)
+        _insert_observacion(conn, ejercicio="2025", tipo_anexo="PDP", numero_observacion=2)
+        _insert_observacion(
+            conn,
+            ejercicio="2025",
+            tipo_anexo="PRAS",
+            numero_observacion=3,
+            oficio="OFS/0002/2025",
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    _set_logged_user(client, "gabo", "loader")
+    response = client.post(
+        "/carga/observaciones-admin/borrar-todo",
+        json={"ejercicio": "2025", "ente_id": "ENTE-001", "oficio": "OFS/0001/2025"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["deleted"] == 2
+
+    conn = sqlite3.connect(test_db_path)
+    try:
+        remaining_selected = conn.execute(
+            "SELECT COUNT(*) FROM observaciones WHERE oficio = 'OFS/0001/2025'"
+        ).fetchone()[0]
+        remaining_other = conn.execute(
+            "SELECT COUNT(*) FROM observaciones WHERE oficio = 'OFS/0002/2025'"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    assert remaining_selected == 0
+    assert remaining_other == 1
 
 
 def test_comparativo_anual_stats_orders_and_normalizes_anexos(

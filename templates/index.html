@@ -32,35 +32,43 @@
 
   <main class="page-content">
     <nav class="mode-switch" aria-label="Modos de consulta">
-      <a class="mode-switch-link is-active" href="{{ url_for('index') }}">Consulta operativa</a>
+      <a class="mode-switch-link is-active" href="{{ url_for('index') }}" id="luisConsultaTab">Consulta operativa</a>
       <a class="mode-switch-link" href="{{ url_for('comparativo_anual') }}">Comparativo anual</a>
+      <button class="mode-switch-link mode-switch-button" type="button" id="luisToolsTab">Herramientas</button>
     </nav>
 
-    <section class="panel tools-panel" aria-labelledby="toolsPanelTitle">
-      <div class="panel-header panel-header-compact">
+    <section class="panel tools-panel tools-tab-panel" aria-labelledby="toolsPanelTitle" id="luisToolsPanel" hidden>
+      <div class="panel-header">
         <h2 id="toolsPanelTitle">Herramientas</h2>
-        <p>Acciones rápidas para control del ejercicio activo.</p>
+        <p>Acciones para administrar salidas y catálogos del ejercicio seleccionado.</p>
       </div>
-      <div class="tools-actions">
-        <button
-          class="panel-action-btn"
-          type="button"
-          id="fuentes_export"
-          data-base-href="{{ url_for('fuentes_financiamiento_exportar') }}"
-        >
-          <span class="floating-clear-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none">
-              <path d="M12 4v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-              <path d="M8 10l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M5 18h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-            </svg>
-          </span>
-          <span>Exportar fuentes de financiamiento</span>
-        </button>
+      <div class="tools-tab-grid">
+        <article class="tool-action-card">
+          <div class="tool-action-copy">
+            <span class="tool-action-kicker">Fuentes de financiamiento</span>
+            <h3>Exportar fuentes</h3>
+            <p>Genera un archivo con únicamente las fuentes del ejercicio activo.</p>
+          </div>
+          <button
+            class="panel-action-btn"
+            type="button"
+            id="fuentes_export"
+            data-base-href="{{ url_for('fuentes_financiamiento_exportar') }}"
+          >
+            <span class="floating-clear-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M12 4v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                <path d="M8 10l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M5 18h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <span>Exportar fuentes</span>
+          </button>
+        </article>
       </div>
     </section>
 
-    <section class="panel filter-panel">
+    <section class="panel filter-panel luis-operational-panel">
       <div class="panel-header">
         <h2>Filtros</h2>
         <p>Selecciona primero los filtros en cascada y después consulta los resultados en la sección inferior.</p>
@@ -99,6 +107,18 @@
             <label for="obs_fuente">Fuente de financiamiento</label>
             <select id="obs_fuente" name="obs_fuente" title="Filtra por fuente de financiamiento.">
               <option value="">Todas</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="obs_modalidad">Modalidad</label>
+            <select id="obs_modalidad" name="obs_modalidad" title="Separa fuentes normales y convenios.">
+              <option value="">Todas</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="obs_convenio">Ente hijo / convenio</label>
+            <select id="obs_convenio" name="obs_convenio" title="Filtra observaciones registradas como convenio.">
+              <option value="">Todos</option>
             </select>
           </div>
           <div class="field">
@@ -149,7 +169,7 @@
       </div>
     </section>
 
-    <section class="results-layout tab-section" data-tab="observaciones">
+    <section class="results-layout tab-section luis-operational-panel" data-tab="observaciones">
       <div class="results-overview-row">
         <section class="panel" id="summarySection">
           <div class="panel-header">
@@ -390,6 +410,7 @@
                 <th>Estado</th>
                 <th>Fecha</th>
                 <th>Fuente</th>
+                <th>Convenio</th>
                 <th>Concepto de Irregularidad</th>
                 <th>Monto emitido</th>
                 <th>Monto solventado</th>
@@ -398,7 +419,7 @@
             </thead>
             <tbody id="obsTableBody">
               <tr>
-                <td colspan="10" class="muted">Sin resultados.</td>
+                <td colspan="11" class="muted">Sin resultados.</td>
               </tr>
             </tbody>
           </table>
@@ -423,7 +444,7 @@
       </section>
     </section>
 
-    <section class="panel catalogo-panel tab-section" data-tab="catalogo">
+    <section class="panel catalogo-panel tab-section luis-operational-panel" data-tab="catalogo">
       <div class="panel-header">
         <h2>Catálogo de entes</h2>
         <p>Consulta el ID único, el nombre actual y si hubo cambios de nombre.</p>
@@ -493,6 +514,8 @@
     const obsTipoAnexo = document.getElementById("obs_tipo_anexo");
     const obsEstado = document.getElementById("obs_estado");
     const obsFuente = document.getElementById("obs_fuente");
+    const obsModalidad = document.getElementById("obs_modalidad");
+    const obsConvenio = document.getElementById("obs_convenio");
     const obsOrigenFuente = document.getElementById("obs_origen_fuente");
     const obsRamo = document.getElementById("obs_ramo");
     const obsRamo28 = document.getElementById("obs_ramo_28");
@@ -504,6 +527,10 @@
     const obsClearFab = document.getElementById("obs_clear_fab");
     const activeFiltersToggle = document.getElementById("activeFiltersToggle");
     const fuentesExport = document.getElementById("fuentes_export");
+    const luisConsultaTab = document.getElementById("luisConsultaTab");
+    const luisToolsTab = document.getElementById("luisToolsTab");
+    const luisToolsPanel = document.getElementById("luisToolsPanel");
+    const luisOperationalPanels = Array.from(document.querySelectorAll(".luis-operational-panel"));
     const obsExport = document.getElementById("obs_export");
     const pendientesPeriodoExport = document.getElementById("pendientes_periodo_export");
     const responsablesPeriodoExportWrap = document.getElementById("responsablesPeriodoExportWrap");
@@ -617,9 +644,9 @@
         });
         if (loading) {
           obsTableBody.innerHTML = `
-            <tr><td colspan="10"><div class="skeleton-row"></div></td></tr>
-            <tr><td colspan="10"><div class="skeleton-row"></div></td></tr>
-            <tr><td colspan="10"><div class="skeleton-row"></div></td></tr>
+            <tr><td colspan="11"><div class="skeleton-row"></div></td></tr>
+            <tr><td colspan="11"><div class="skeleton-row"></div></td></tr>
+            <tr><td colspan="11"><div class="skeleton-row"></div></td></tr>
           `;
         }
       };
@@ -827,6 +854,8 @@
         tipo_anexo: getSelectedValues(obsTipoAnexo),
         estado: getSelectedValues(obsEstado),
         fuente_financiamiento: getSelectedValues(obsFuente),
+        modalidad: getSelectedValues(obsModalidad),
+        convenio_ente_nombre: getSelectedValues(obsConvenio),
         origen_fuente: getSelectedValues(obsOrigenFuente),
         ramo_33: getSelectedValues(obsRamo),
         ramo_28: getSelectedValues(obsRamo28),
@@ -842,6 +871,8 @@
           tipo_anexo: obsTipoAnexo,
           estado: obsEstado,
           fuente_financiamiento: obsFuente,
+          modalidad: obsModalidad,
+          convenio_ente_nombre: obsConvenio,
           origen_fuente: obsOrigenFuente,
           ramo_33: obsRamo,
           ramo_28: obsRamo28,
@@ -885,6 +916,8 @@
           tipo_anexo: "Tipo anexo",
           estado: "Estado",
           fuente_financiamiento: "Fuente",
+          modalidad: "Modalidad",
+          convenio_ente_nombre: "Convenio",
           origen_fuente: "Del Ejercicio / Remanentes",
           ramo_33: "Ramo 33",
           ramo_28: "Ramo 28",
@@ -928,6 +961,8 @@
           tipo_anexo: readMany("tipo_anexo"),
           estado: readMany("estado"),
           fuente_financiamiento: readMany("fuente_financiamiento"),
+          modalidad: readMany("modalidad"),
+          convenio_ente_nombre: readMany("convenio_ente_nombre"),
           origen_fuente: readMany("origen_fuente"),
           ramo_33: readMany("ramo_33"),
           ramo_28: readMany("ramo_28"),
@@ -953,6 +988,8 @@
           pendingUrlFilters.tipo_anexo,
           pendingUrlFilters.estado,
           pendingUrlFilters.fuente_financiamiento,
+          pendingUrlFilters.modalidad,
+          pendingUrlFilters.convenio_ente_nombre,
           pendingUrlFilters.origen_fuente,
           pendingUrlFilters.ramo_33,
           pendingUrlFilters.ramo_28,
@@ -969,6 +1006,8 @@
         setSelectedValues(obsTipoAnexo, pendingUrlFilters.tipo_anexo);
         setSelectedValues(obsEstado, pendingUrlFilters.estado);
         setSelectedValues(obsFuente, pendingUrlFilters.fuente_financiamiento);
+        setSelectedValues(obsModalidad, pendingUrlFilters.modalidad);
+        setSelectedValues(obsConvenio, pendingUrlFilters.convenio_ente_nombre);
         setSelectedValues(obsOrigenFuente, pendingUrlFilters.origen_fuente);
         setSelectedValues(obsRamo, pendingUrlFilters.ramo_33);
         setSelectedValues(obsRamo28, pendingUrlFilters.ramo_28);
@@ -988,6 +1027,8 @@
           obsTipoAnexo,
           obsEstado,
           obsFuente,
+          obsModalidad,
+          obsConvenio,
           obsOrigenFuente,
           obsRamo,
           obsRamo28,
@@ -1842,6 +1883,8 @@
         const currentTipoAnexo = getSelectedValues(obsTipoAnexo);
         const currentEstado = getSelectedValues(obsEstado);
         const currentFuente = getSelectedValues(obsFuente);
+        const currentModalidad = getSelectedValues(obsModalidad);
+        const currentConvenio = getSelectedValues(obsConvenio);
         const currentOrigenFuente = getSelectedValues(obsOrigenFuente);
         const currentRamo = getSelectedValues(obsRamo);
         const currentRamo28 = getSelectedValues(obsRamo28);
@@ -1853,6 +1896,8 @@
         const tipos = safeFiltros.tipo_anexo || [];
         const estados = safeFiltros.estado || [];
         const fuentes = safeFiltros.fuente_financiamiento || [];
+        const modalidades = safeFiltros.modalidad || [];
+        const convenios = safeFiltros.convenios || [];
         const origenesFuente = safeFiltros.origen_fuente || [];
         const ramos = (safeFiltros.ramo_33 || []).filter((item) => item === "Si" || item === "No");
         const ramos28 = (safeFiltros.ramo_28 || []).filter((item) => item === "Si" || item === "No");
@@ -1881,6 +1926,20 @@
           "Todas",
           currentFuente,
           shouldEnableMultiFilter(fuentes),
+        );
+        fillSelectFromValues(
+          obsModalidad,
+          modalidades,
+          "Todas",
+          currentModalidad,
+          shouldEnableMultiFilter(modalidades),
+        );
+        fillSelectFromValues(
+          obsConvenio,
+          convenios,
+          "Todos",
+          currentConvenio,
+          shouldEnableMultiFilter(convenios),
         );
         fillSelectFromValues(
           obsOrigenFuente,
@@ -2193,7 +2252,7 @@
 
       const renderObservacionesPage = () => {
         if (!obsRows.length) {
-          obsTableBody.innerHTML = "<tr><td colspan=\"10\" class=\"muted\">Sin resultados.</td></tr>";
+          obsTableBody.innerHTML = "<tr><td colspan=\"11\" class=\"muted\">Sin resultados.</td></tr>";
           obsCount.textContent = `${obsTotalRows} observaciones encontradas.`;
           renderPdpSummary();
           renderPendientesPorPeriodo();
@@ -2218,6 +2277,8 @@
             row.estado,
             row.fecha_notificacion,
             row.fuente_financiamiento,
+            row.convenio_nombre,
+            row.convenio_ente_nombre,
             row.pdp_concepto_irregularidad,
             row.pdp_subconcepto_irregularidad,
           ]
@@ -2231,6 +2292,9 @@
           const montoEmitido = row.tipo_anexo === "PDP" ? formatMonto(row.monto_pdp_emitido) : "—";
           const montoSolventado = row.tipo_anexo === "PDP" ? formatMonto(row.monto_pdp_solventado) : "—";
           const montoPendiente = row.tipo_anexo === "PDP" ? formatMonto(row.monto_pdp_pendiente) : "—";
+          const convenioLabel = row.modalidad === "Convenio"
+            ? (row.convenio_ente_nombre || row.convenio_nombre || "Convenio")
+            : "—";
 
           return `
             <tr>
@@ -2242,6 +2306,7 @@
               <td><span class="tag tag-state">${row.estado || "—"}</span></td>
               <td>${row.fecha_notificacion || "—"}</td>
               <td>${row.fuente_financiamiento || "—"}</td>
+              <td>${convenioLabel}</td>
               <td>${conceptoIrregularidad}</td>
               <td>${montoEmitido}</td>
               <td>${montoSolventado}</td>
@@ -2317,7 +2382,7 @@
           if (responsablesPeriodoExportWrap) {
             responsablesPeriodoExportWrap.hidden = false;
           }
-          obsTableBody.innerHTML = "<tr><td colspan=\"10\" class=\"muted\">Selecciona un ejercicio.</td></tr>";
+          obsTableBody.innerHTML = "<tr><td colspan=\"11\" class=\"muted\">Selecciona un ejercicio.</td></tr>";
           obsCount.textContent = "Selecciona un ejercicio para ver resultados.";
           if (obsResponsablesBody) {
             obsResponsablesBody.innerHTML = `
@@ -2352,6 +2417,8 @@
         appendValuesToParams(params, "tipo_auditoria", getSelectedValues(mainTipoAuditoria));
         appendValuesToParams(params, "estado", getSelectedValues(obsEstado));
         appendValuesToParams(params, "fuente_financiamiento", getSelectedValues(obsFuente));
+        appendValuesToParams(params, "modalidad", getSelectedValues(obsModalidad));
+        appendValuesToParams(params, "convenio_ente_nombre", getSelectedValues(obsConvenio));
         appendValuesToParams(params, "origen_fuente", getSelectedValues(obsOrigenFuente));
         appendValuesToParams(params, "ramo_33", getSelectedValues(obsRamo));
         appendValuesToParams(params, "ramo_28", getSelectedValues(obsRamo28));
@@ -2401,7 +2468,7 @@
           if (responsablesPeriodoExportWrap) {
             responsablesPeriodoExportWrap.hidden = false;
           }
-          obsTableBody.innerHTML = "<tr><td colspan=\"10\" class=\"muted\">No se pudo cargar la información.</td></tr>";
+          obsTableBody.innerHTML = "<tr><td colspan=\"11\" class=\"muted\">No se pudo cargar la información.</td></tr>";
           if (obsResponsablesBody) {
             obsResponsablesBody.innerHTML = `
               <tr>
@@ -2445,6 +2512,8 @@
         appendValuesToParams(params, "tipo_auditoria", getSelectedValues(mainTipoAuditoria));
         appendValuesToParams(params, "estado", getSelectedValues(obsEstado));
         appendValuesToParams(params, "fuente_financiamiento", getSelectedValues(obsFuente));
+        appendValuesToParams(params, "modalidad", getSelectedValues(obsModalidad));
+        appendValuesToParams(params, "convenio_ente_nombre", getSelectedValues(obsConvenio));
         appendValuesToParams(params, "origen_fuente", getSelectedValues(obsOrigenFuente));
         appendValuesToParams(params, "ramo_33", getSelectedValues(obsRamo));
         appendValuesToParams(params, "ramo_28", getSelectedValues(obsRamo28));
@@ -2500,6 +2569,8 @@
         appendValuesToParams(params, "tipo_auditoria", getSelectedValues(mainTipoAuditoria));
         appendValuesToParams(params, "estado", getSelectedValues(obsEstado));
         appendValuesToParams(params, "fuente_financiamiento", getSelectedValues(obsFuente));
+        appendValuesToParams(params, "modalidad", getSelectedValues(obsModalidad));
+        appendValuesToParams(params, "convenio_ente_nombre", getSelectedValues(obsConvenio));
         appendValuesToParams(params, "origen_fuente", getSelectedValues(obsOrigenFuente));
         appendValuesToParams(params, "ramo_33", getSelectedValues(obsRamo));
         appendValuesToParams(params, "ramo_28", getSelectedValues(obsRamo28));
@@ -2526,6 +2597,8 @@
         appendValuesToParams(params, "tipo_auditoria", getSelectedValues(mainTipoAuditoria));
         appendValuesToParams(params, "estado", getSelectedValues(obsEstado));
         appendValuesToParams(params, "fuente_financiamiento", getSelectedValues(obsFuente));
+        appendValuesToParams(params, "modalidad", getSelectedValues(obsModalidad));
+        appendValuesToParams(params, "convenio_ente_nombre", getSelectedValues(obsConvenio));
         appendValuesToParams(params, "origen_fuente", getSelectedValues(obsOrigenFuente));
         appendValuesToParams(params, "ramo_33", getSelectedValues(obsRamo));
         appendValuesToParams(params, "ramo_28", getSelectedValues(obsRamo28));
@@ -2549,6 +2622,8 @@
         appendValuesToParams(params, "tipo_auditoria", getSelectedValues(mainTipoAuditoria));
         appendValuesToParams(params, "estado", getSelectedValues(obsEstado));
         appendValuesToParams(params, "fuente_financiamiento", getSelectedValues(obsFuente));
+        appendValuesToParams(params, "modalidad", getSelectedValues(obsModalidad));
+        appendValuesToParams(params, "convenio_ente_nombre", getSelectedValues(obsConvenio));
         appendValuesToParams(params, "origen_fuente", getSelectedValues(obsOrigenFuente));
         appendValuesToParams(params, "ramo_33", getSelectedValues(obsRamo));
         appendValuesToParams(params, "ramo_28", getSelectedValues(obsRamo28));
@@ -2629,9 +2704,45 @@
         });
       };
 
+      const setLuisMainView = (view) => {
+        const isToolsView = view === "herramientas";
+        if (luisToolsPanel) {
+          luisToolsPanel.hidden = !isToolsView;
+        }
+        luisOperationalPanels.forEach((panel) => {
+          panel.hidden = isToolsView;
+        });
+        if (luisConsultaTab) {
+          luisConsultaTab.classList.toggle("is-active", !isToolsView);
+        }
+        if (luisToolsTab) {
+          luisToolsTab.classList.toggle("is-active", isToolsView);
+        }
+        if (activeFiltersToggle) {
+          activeFiltersToggle.hidden = isToolsView;
+          activeFiltersToggle.setAttribute("aria-expanded", "false");
+        }
+        if (activeFiltersPanel && isToolsView) {
+          activeFiltersPanel.classList.remove("is-open");
+        }
+        if (obsClearFab) {
+          obsClearFab.hidden = isToolsView;
+        }
+      };
+
       tabButtons.forEach((button) => {
         button.addEventListener("click", () => setTab(button.dataset.tab));
       });
+      if (luisConsultaTab) {
+        luisConsultaTab.addEventListener("click", (event) => {
+          event.preventDefault();
+          setLuisMainView("consulta");
+        });
+      }
+      if (luisToolsTab) {
+        luisToolsTab.addEventListener("click", () => setLuisMainView("herramientas"));
+      }
+      setLuisMainView("consulta");
       setTab("observaciones");
 
       const handleEjercicioChange = async () => {
@@ -2643,6 +2754,8 @@
         setTipoAnexoValue([]);
         clearSelectSelection(obsEstado);
         clearSelectSelection(obsFuente);
+        clearSelectSelection(obsModalidad);
+        clearSelectSelection(obsConvenio);
         clearSelectSelection(obsOrigenFuente);
         clearSelectSelection(obsRamo);
         clearSelectSelection(obsRamo28);
@@ -2686,6 +2799,8 @@
         [
         obsEstado,
         obsFuente,
+        obsModalidad,
+        obsConvenio,
         obsOrigenFuente,
         obsRamo,
         obsRamo28,
@@ -2708,6 +2823,8 @@
         }
         clearSelectSelection(obsEstado);
         clearSelectSelection(obsFuente);
+        clearSelectSelection(obsModalidad);
+        clearSelectSelection(obsConvenio);
         clearSelectSelection(obsOrigenFuente);
         clearSelectSelection(obsRamo);
         clearSelectSelection(obsRamo28);
@@ -2773,6 +2890,8 @@
             tipo_anexo: () => setTipoAnexoValue([]),
             estado: () => { clearSelectSelection(obsEstado); },
             fuente_financiamiento: () => { clearSelectSelection(obsFuente); },
+            modalidad: () => { clearSelectSelection(obsModalidad); },
+            convenio_ente_nombre: () => { clearSelectSelection(obsConvenio); },
             origen_fuente: () => { clearSelectSelection(obsOrigenFuente); },
             ramo_33: () => { clearSelectSelection(obsRamo); },
             ramo_28: () => { clearSelectSelection(obsRamo28); },
@@ -2812,6 +2931,8 @@
           filtersFromUrl.tipo_anexo,
           filtersFromUrl.estado,
           filtersFromUrl.fuente_financiamiento,
+          filtersFromUrl.modalidad,
+          filtersFromUrl.convenio_ente_nombre,
           filtersFromUrl.origen_fuente,
           filtersFromUrl.ramo_33,
           filtersFromUrl.ramo_28,

@@ -15,6 +15,19 @@ import sqlite3
 from pathlib import Path
 
 
+def ente_numero_sort_sql(column: str) -> str:
+    clean = f"TRIM(COALESCE({column}, ''))"
+    return (
+        "CASE "
+        f"WHEN {clean} = '' THEN 0 "
+        f"WHEN INSTR({clean}, '.') > 0 THEN "
+        f"CAST(SUBSTR({clean}, 1, INSTR({clean}, '.') - 1) AS REAL) * 1000 "
+        f"+ CAST(SUBSTR({clean}, INSTR({clean}, '.') + 1) AS REAL) "
+        f"ELSE CAST({clean} AS REAL) * 1000 "
+        "END"
+    )
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--db", default="sifeet.db", help="SQLite DB path (default: sifeet.db)")
@@ -39,11 +52,11 @@ def main() -> int:
     cur = conn.cursor()
 
     rows = cur.execute(
-        """
+        f"""
         SELECT ente_id, ente_nombre
         FROM entes_detalle
         WHERE ejercicio = ?
-        ORDER BY CAST(ente_numero AS REAL) ASC, ente_numero ASC
+        ORDER BY {ente_numero_sort_sql('ente_numero')} ASC, ente_numero ASC
         """,
         (str(args.ejercicio),),
     ).fetchall()
@@ -89,4 +102,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

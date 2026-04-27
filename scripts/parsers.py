@@ -35,6 +35,25 @@ def _clean(text):
     return text.replace('\n', ' ').strip()
 
 
+def _clean_multiline(text):
+    return re.sub(r'\s+', ' ', _clean(text)).strip()
+
+
+def _clean_convenio(text):
+    clean = _clean_multiline(text)
+    clean = re.sub(r'\bCONVENI\s+O\b', 'CONVENIO', clean, flags=re.IGNORECASE)
+    clean = re.sub(r'\s*:\s*', ': ', clean)
+    return clean
+
+
+def _infer_convenio_ente(convenio_nombre):
+    clean = _clean_convenio(convenio_nombre)
+    if not clean:
+        return ''
+    parts = [part.strip() for part in clean.split(':') if part.strip()]
+    return parts[-1] if len(parts) > 1 else clean
+
+
 def _parse_num_list(cell):
     """'1, 2, 3' o '0' → [1, 2, 3] o []"""
     if not cell:
@@ -86,6 +105,93 @@ def _is_cedula_table(table):
     return any('rogresivo' in str(c) for c in table[0] if c)
 
 
+def _is_convenios_table(table):
+    if not table or len(table) < 2:
+        return False
+    header_text = ' '.join(_clean_multiline(c).lower() for row in table[:2] for c in row if c)
+    return 'nombre del convenio' in header_text and 'fuente' in header_text
+
+
+def _parse_convenios_table(table):
+    """
+    Convierte la tabla C) Convenios en la misma estructura de fuentes,
+    marcando la modalidad para evitar duplicarla como fuente normal del ente padre.
+    """
+    data = table[2:]
+    fuentes = {}
+    current_fuente = None
+    current_convenio = None
+    totales = {}
+
+    header = [_clean_multiline(c).lower() for c in (table[0] if table else [])]
+    convenio_idx = 1
+    fuente_idx = 0
+    for idx, label in enumerate(header):
+        if 'convenio' in label:
+            convenio_idx = idx
+        elif 'fuente' in label or 'financiamiento' in label:
+            fuente_idx = idx
+
+    for row in data:
+        if len(row) < 9:
+            continue
+        cells = list(row) + [''] * max(0, 9 - len(row))
+        fuente_raw = cells[fuente_idx]
+        convenio_raw = cells[convenio_idx]
+        periodo = cells[2]
+        sa, pdp, pras, pefcf, r, total = cells[3:9]
+
+        if fuente_raw and 'Total de las Observaciones' in str(fuente_raw):
+            totales = {
+                'SA':             _parse_int(sa),
+                'PDP':            _parse_int(pdp),
+                'PRAS':           _parse_int(pras),
+                'PEFCF':          _parse_int(pefcf),
+                'R':              _parse_int(r),
+                'total_emitidas': _parse_int(total),
+            }
+            continue
+        if convenio_raw and 'Total de las Observaciones' in str(convenio_raw):
+            totales = {
+                'SA':             _parse_int(sa),
+                'PDP':            _parse_int(pdp),
+                'PRAS':           _parse_int(pras),
+                'PEFCF':          _parse_int(pefcf),
+                'R':              _parse_int(r),
+                'total_emitidas': _parse_int(total),
+            }
+            continue
+
+        if fuente_raw:
+            current_fuente = _clean_multiline(fuente_raw)
+        if convenio_raw:
+            current_convenio = _clean_convenio(convenio_raw)
+
+        if current_fuente and current_convenio and periodo:
+            key = (current_fuente, current_convenio)
+            registro = {
+                'periodo':        _clean_multiline(periodo),
+                'SA':             _parse_num_list(sa),
+                'PDP':            _parse_num_list(pdp),
+                'PRAS':           _parse_num_list(pras),
+                'PEFCF':          _parse_num_list(pefcf),
+                'R':              _parse_num_list(r),
+                'total_emitidas': _parse_int(total),
+            }
+            fuentes.setdefault(key, []).append(registro)
+
+    fuentes_list = []
+    for (fuente, convenio), registros in fuentes.items():
+        fuentes_list.append({
+            'nombre': fuente,
+            'modalidad': 'Convenio',
+            'convenio_nombre': convenio,
+            'convenio_ente_nombre': _infer_convenio_ente(convenio),
+            'registros': registros,
+        })
+    return fuentes_list, totales
+
+
 def _parse_cedula_table(table):
     """
     Convierte las filas de una tabla de cédula en listas estructuradas.
@@ -131,6 +237,25 @@ def _parse_cedula_table(table):
     return fuentes_list, totales
 
 
+def _fuente_merge_key(fuente):
+    return (
+        _clean_multiline(fuente.get('modalidad') or 'Fuente').lower(),
+        _clean_multiline(fuente.get('nombre') or '').lower(),
+        _clean_convenio(fuente.get('convenio_nombre') or '').lower(),
+    )
+
+
+def _merge_fuentes(entry, fuentes):
+    existing = {_fuente_merge_key(fuente): fuente for fuente in entry.get('fuentes', [])}
+    for fuente in fuentes:
+        key = _fuente_merge_key(fuente)
+        if key in existing:
+            existing[key].setdefault('registros', []).extend(fuente.get('registros') or [])
+            continue
+        entry.setdefault('fuentes', []).append(fuente)
+        existing[key] = fuente
+
+
 def parse_cedula(pdf_path):
     """
     Parsea un PDF de Cédula de Resultados.
@@ -139,23 +264,31 @@ def parse_cedula(pdf_path):
     result = {'oficio': None, 'fecha': None, 'auditorias': []}
     full_text = ''
     seen_tipos = {}
+    last_tipo = None
 
     with pdfplumber.open(pdf_path) as pdf:
         for page in pdf.pages:
             page_text = page.extract_text() or ''
             full_text += page_text + '\n'
             tables = page.extract_tables()
+            page_tipo = _detect_audit_type(page_text)
+            if page_tipo != 'Sin clasificar':
+                last_tipo = page_tipo
 
             for table in tables:
                 if not _is_cedula_table(table):
                     continue
-                tipo = _detect_audit_type(page_text)
-                fuentes, totales = _parse_cedula_table(table)
+                if _is_convenios_table(table):
+                    tipo = 'Obra Pública'
+                    fuentes, totales = _parse_convenios_table(table)
+                else:
+                    tipo = page_tipo if page_tipo != 'Sin clasificar' else (last_tipo or page_tipo)
+                    fuentes, totales = _parse_cedula_table(table)
                 if not fuentes:
                     continue
 
                 if tipo in seen_tipos:
-                    seen_tipos[tipo]['fuentes'].extend(fuentes)
+                    _merge_fuentes(seen_tipos[tipo], fuentes)
                 else:
                     entry = {'tipo': tipo, 'fuentes': fuentes, 'totales': totales}
                     seen_tipos[tipo] = entry

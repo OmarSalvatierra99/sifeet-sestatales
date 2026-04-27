@@ -39,29 +39,6 @@
 
   <main class="page-content loader-content">
     {% set principal_tipo = form_data.manual_tipo_auditoria or form_data.titular_tipo_auditoria %}
-    <section class="panel tools-panel" aria-labelledby="loaderToolsPanelTitle">
-      <div class="panel-header panel-header-compact">
-        <h2 id="loaderToolsPanelTitle">Herramientas</h2>
-        <p>Acciones rápidas para control del ejercicio activo.</p>
-      </div>
-      <div class="tools-actions">
-        <button
-          class="panel-action-btn"
-          type="button"
-          id="gabo_fuentes_export"
-          data-base-href="{{ url_for('fuentes_financiamiento_exportar') }}"
-        >
-          <span class="floating-clear-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none">
-              <path d="M12 4v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-              <path d="M8 10l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M5 18h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-            </svg>
-          </span>
-          <span>Exportar fuentes de financiamiento</span>
-        </button>
-      </div>
-    </section>
 
     <section class="panel loader-mode-panel loader-expediente-panel">
       <div class="panel-header panel-header-compact">
@@ -74,10 +51,6 @@
               <div class="loader-expediente-inline-title">
                 <span class="loader-current-mode-label">Carga activa</span>
                 <strong>{{ "Carga de titulares" if initial_loader_mode == "titulares" else "Notificación de Cédula de Resultados" }}</strong>
-              </div>
-              <div class="loader-expediente-mini-meta">
-                <span class="loader-obs-chip">Estado <strong>Emitido</strong></span>
-                <span class="loader-obs-chip">Flujo <strong>Fuente por fuente</strong></span>
               </div>
             </div>
           <div class="loader-expediente-collection">
@@ -164,15 +137,98 @@
       <div class="status status-info" id="wizardToast" hidden></div>
     </section>
 
+    <section class="panel loader-oficios-summary-panel" id="gaboOficiosResumenPanel">
+      <div class="panel-header panel-header-compact">
+        <h2>Observaciones por oficio</h2>
+        <p>Conteo de observaciones y montos por oficio para el contexto activo.</p>
+      </div>
+      <div class="table-wrap gabo-oficios-table-wrap">
+        <table class="table-compact gabo-oficios-table">
+          <thead>
+            <tr>
+              <th>Oficio</th>
+              <th>Ente</th>
+              <th>Alcance</th>
+              <th>Fecha</th>
+              <th>SA</th>
+              <th>PDP</th>
+              <th>PRAS</th>
+              <th>R</th>
+              <th>PEFCF</th>
+              <th>Total</th>
+              <th>Monto emitido</th>
+              <th>Monto solventado</th>
+              <th>Monto pendiente</th>
+              <th>Opciones</th>
+            </tr>
+          </thead>
+          <tbody id="gaboOficiosResumenBody">
+            <tr>
+              <td colspan="14" class="muted">Selecciona un ejercicio para consultar los oficios registrados.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="panel loader-card loader-manual-workspace" data-loader-mode-panel="manual">
       <div class="panel-header panel-header-compact loader-manual-header">
         <h2 id="manualPanelTitle">Notificación de Cédula de Resultados</h2>
         <p>Resumen de Observaciones</p>
       </div>
       {% if manual_result %}
-        <div class="status {% if manual_result.level == 'info' %}status-info{% elif manual_result.ok %}status-success{% else %}status-error{% endif %}">
-          {{ manual_result.message }}
+        <div id="manualResultMsg" class="status {% if manual_result.level == 'info' %}status-info{% elif manual_result.ok %}status-success{% else %}status-error{% endif %}" style="overflow:visible;">
+          <p style="margin:0 0 0.4rem 0;font-size:1rem;">{{ manual_result.message }}</p>
+          {% if manual_result.summary %}
+          <div style="overflow-x:auto;margin-top:0.25rem;">
+            <table style="width:100%;border-collapse:collapse;font-size:0.78rem;font-weight:400;min-width:700px;">
+              <thead>
+                <tr style="border-bottom:2px solid currentColor;text-align:left;">
+                  <th style="padding:0.25rem 0.4rem;">Ente</th>
+                  <th style="padding:0.25rem 0.4rem;">Oficio</th>
+                  <th style="padding:0.25rem 0.4rem;">Ej.</th>
+                  <th style="padding:0.25rem 0.4rem;">Fuente</th>
+                  <th style="padding:0.25rem 0.4rem;text-align:center;">SA</th>
+                  <th style="padding:0.25rem 0.4rem;text-align:center;">PDP</th>
+                  <th style="padding:0.25rem 0.4rem;text-align:center;">PRAS</th>
+                  <th style="padding:0.25rem 0.4rem;text-align:center;">PEFCF</th>
+                  <th style="padding:0.25rem 0.4rem;text-align:center;">R</th>
+                  <th style="padding:0.25rem 0.4rem;text-align:right;">Emitido</th>
+                  <th style="padding:0.25rem 0.4rem;text-align:right;">Solventado</th>
+                  <th style="padding:0.25rem 0.4rem;text-align:right;">Pendiente</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style="padding:0.25rem 0.4rem;">{{ manual_result.summary.ente }}</td>
+                  <td style="padding:0.25rem 0.4rem;">{{ manual_result.summary.oficio }}</td>
+                  <td style="padding:0.25rem 0.4rem;">{{ manual_result.summary.ejercicio }}</td>
+                  <td style="padding:0.25rem 0.4rem;">{{ manual_result.summary.fuente }}</td>
+                  <td style="padding:0.25rem 0.4rem;text-align:center;">{{ manual_result.summary.sa }}</td>
+                  <td style="padding:0.25rem 0.4rem;text-align:center;">{{ manual_result.summary.pdp }}</td>
+                  <td style="padding:0.25rem 0.4rem;text-align:center;">{{ manual_result.summary.pras }}</td>
+                  <td style="padding:0.25rem 0.4rem;text-align:center;">{{ manual_result.summary.pefcf }}</td>
+                  <td style="padding:0.25rem 0.4rem;text-align:center;">{{ manual_result.summary.r }}</td>
+                  <td style="padding:0.25rem 0.4rem;text-align:right;">${{ "{:,.2f}".format(manual_result.summary.monto_emitido) }}</td>
+                  <td style="padding:0.25rem 0.4rem;text-align:right;">${{ "{:,.2f}".format(manual_result.summary.monto_solventado) }}</td>
+                  <td style="padding:0.25rem 0.4rem;text-align:right;">${{ "{:,.2f}".format(manual_result.summary.monto_pendiente) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          {% endif %}
         </div>
+        <script>
+        (function(){
+          if("scrollRestoration" in history) history.scrollRestoration="manual";
+          var el=document.getElementById("manualResultMsg");
+          if(el){
+            window.addEventListener("load",function(){
+              setTimeout(function(){el.scrollIntoView({behavior:"smooth",block:"start"});},250);
+            });
+          }
+        })();
+        </script>
       {% endif %}
       <form class="record-form loader-manual-form" method="POST" autocomplete="off" id="manualCaptureForm">
         <input type="hidden" id="manual_id" name="manual_id" value="{{ form_data.manual_id }}">
@@ -253,11 +309,10 @@
                   <input type="file" id="oficioPdfInput" accept=".pdf" hidden>
                   <span class="oficio-upload-icon">📄</span>
                   <p>Arrastra aquí el PDF de la Cédula de Resultados</p>
-                  <p>o <button class="oficio-upload-link" type="button" onclick="document.getElementById('oficioPdfInput').click()">selecciona un archivo</button></p>
+                  <p>o <button class="oficio-upload-link" type="button">selecciona un archivo</button></p>
                   <p class="oficio-file-name" id="oficioFileName" hidden></p>
                 </div>
                 <div class="manual-resumen-json-actions">
-                  <button type="button" class="btn-secondary btn-compact" id="oficioProcessBtn" disabled>Procesar PDF</button>
                   <button type="button" class="btn-secondary btn-compact" id="oficioClearBtn" style="display:none">Limpiar</button>
                 </div>
                 <details class="oficio-json-fallback">
@@ -485,9 +540,10 @@
       </form>
     </section>
 
-    <section class="panel loader-card" data-loader-mode-panel="titulares">
-      <div class="panel-header">
+    <section class="panel loader-card titular-workspace-card" data-loader-mode-panel="titulares">
+      <div class="panel-header panel-header-compact">
         <h2>Carga de titulares</h2>
+        <p>Registro de titular y administrativo para el contexto activo.</p>
       </div>
       {% if titular_result %}
         <div class="status {% if titular_result.level == 'info' %}status-info{% elif titular_result.ok %}status-success{% else %}status-error{% endif %}">
@@ -498,41 +554,64 @@
         <input id="titular_ejercicio" name="titular_ejercicio" type="hidden" value="{{ form_data.titular_ejercicio }}">
         <input id="titular_ente_id" name="titular_ente_id" type="hidden" value="{{ form_data.titular_ente_id }}">
         <input id="titular_tipo_auditoria" name="titular_tipo_auditoria" type="hidden" value="{{ form_data.titular_tipo_auditoria }}">
-        <div class="loader-context-review loader-context-review-compact">
-          <p>Contexto activo para titulares:</p>
-          <div class="loader-preview-metrics">
-            <span class="loader-obs-chip">Ejercicio: <strong id="titularContextSummaryEjercicio">-</strong></span>
-            <span class="loader-obs-chip">Ente: <strong id="titularContextSummaryEnte">-</strong></span>
-            <span class="loader-obs-chip">Tipo: <strong id="titularContextSummaryTipo">-</strong></span>
+        <div class="titular-context-shell">
+          <div class="form-grid titular-context-grid">
+            <div class="loader-review-item">
+              <span>Ejercicio</span>
+              <strong id="titularContextSummaryEjercicio">-</strong>
+            </div>
+            <div class="loader-review-item">
+              <span>Ente fiscalizable</span>
+              <strong id="titularContextSummaryEnte">-</strong>
+            </div>
+            <div class="loader-review-item">
+              <span>Alcance</span>
+              <strong id="titularContextSummaryTipo">-</strong>
+            </div>
           </div>
         </div>
-        <div class="loader-titulares-sections">
-          <section class="loader-titulares-block" aria-label="Datos del titular">
-            <h3>Titular</h3>
-            <div class="form-grid">
-              <div class="field">
-                <label for="titular_nombre">Nombre del titular</label>
-                <input id="titular_nombre" name="titular_nombre" type="text" value="{{ form_data.titular_nombre }}" required>
+        <div class="titular-mode-panel">
+          <div class="titular-mode-head">
+            <h3>Responsables del periodo</h3>
+            <p>Captura los nombres y periodos que correspondan al informe seleccionado.</p>
+          </div>
+          <div class="titular-roles-grid">
+            <section class="titular-role-card" aria-label="Datos del titular">
+              <div class="titular-role-head">
+                <h4>Titular</h4>
+                <span class="titular-historial-pill">Informe</span>
               </div>
-              <div class="field">
-                <label for="titular_periodo_informe">Periodo del titular</label>
-                <input id="titular_periodo_informe" name="titular_periodo_informe" type="text" value="{{ form_data.titular_periodo_informe }}" placeholder="Ej. 01 de enero al 31 de diciembre" required>
+              <div class="form-grid titular-role-grid">
+                <div class="field titular-role-name-field">
+                  <label for="titular_nombre">Nombre del titular</label>
+                  <input id="titular_nombre" name="titular_nombre" type="text" value="{{ form_data.titular_nombre }}" required>
+                </div>
+                <div class="field titular-role-name-field">
+                  <label for="titular_periodo_informe">Periodo del titular</label>
+                  <input id="titular_periodo_informe" name="titular_periodo_informe" type="text" value="{{ form_data.titular_periodo_informe }}" placeholder="Ej. 01 de enero al 31 de diciembre" required>
+                </div>
               </div>
-            </div>
-          </section>
-          <section class="loader-titulares-block" aria-label="Datos del administrativo">
-            <h3>Administrativo</h3>
-            <div class="form-grid">
-              <div class="field">
-                <label for="titular_administrativo">Nombre del administrativo</label>
-                <input id="titular_administrativo" name="titular_administrativo" type="text" value="{{ form_data.titular_administrativo }}" required>
+            </section>
+            <section class="titular-role-card" aria-label="Datos del administrativo">
+              <div class="titular-role-head">
+                <h4>Administrativo / Responsable de obra</h4>
+                <label class="titular-inline-check" for="titular_periodo_admin_mismo">
+                  <input id="titular_periodo_admin_mismo" type="checkbox">
+                  <span>Mismo periodo</span>
+                </label>
               </div>
-              <div class="field">
-                <label for="titular_periodo_administrativo">Periodo del administrativo</label>
-                <input id="titular_periodo_administrativo" name="titular_periodo_administrativo" type="text" value="{{ form_data.titular_periodo_administrativo }}" placeholder="Ej. 01 de enero al 31 de diciembre" required>
+              <div class="form-grid titular-role-grid">
+                <div class="field titular-role-name-field">
+                  <label for="titular_administrativo">Nombre del administrativo</label>
+                  <input id="titular_administrativo" name="titular_administrativo" type="text" value="{{ form_data.titular_administrativo }}" required>
+                </div>
+                <div class="field titular-role-name-field">
+                  <label for="titular_periodo_administrativo">Periodo del administrativo</label>
+                  <input id="titular_periodo_administrativo" name="titular_periodo_administrativo" type="text" value="{{ form_data.titular_periodo_administrativo }}" placeholder="Ej. 01 de enero al 31 de diciembre" required>
+                </div>
               </div>
-            </div>
-          </section>
+            </section>
+          </div>
         </div>
         <div class="loader-step-nav">
           <button class="btn-primary" type="submit" name="action" value="titular_save">Guardar y concluir titulares</button>
@@ -709,7 +788,6 @@
     const loaderOpenObsAdminBtn = document.getElementById("loaderOpenObsAdminBtn");
     const loaderOpenBulkUploadBtn = document.getElementById("loaderOpenBulkUploadBtn");
     const gaboLogoutForm = document.getElementById("gaboLogoutForm");
-    const gaboFuentesExport = document.getElementById("gabo_fuentes_export");
 
     const principalEjercicio = document.getElementById("principal_ejercicio");
     const principalEnte = document.getElementById("principal_ente_id");
@@ -726,26 +804,7 @@
     const principalNumeroOficio = document.getElementById("principal_numero_oficio");
     const principalFechaNotificacion = document.getElementById("principal_fecha_notificacion");
     const principalScopeInfo = document.getElementById("principal_scope_info");
-    const syncGaboToolsByEjercicio = () => {
-      if (gaboFuentesExport) {
-        gaboFuentesExport.disabled = !(principalEjercicio && principalEjercicio.value);
-      }
-    };
-    const exportGaboFuentesFinanciamiento = () => {
-      if (!gaboFuentesExport) {
-        return;
-      }
-      if (!(principalEjercicio && principalEjercicio.value)) {
-        return;
-      }
-      const baseHref = gaboFuentesExport.dataset.baseHref || "/fuentes-financiamiento-exportar";
-      const params = new URLSearchParams({ ejercicio: principalEjercicio.value });
-      window.location.href = `${baseHref}${params.toString() ? `?${params.toString()}` : ""}`;
-    };
-    if (gaboFuentesExport) {
-      syncGaboToolsByEjercicio();
-      gaboFuentesExport.addEventListener("click", exportGaboFuentesFinanciamiento);
-    }
+    const gaboOficiosResumenBody = document.getElementById("gaboOficiosResumenBody");
     const manualAsunto = document.getElementById("manual_asunto");
     const manualEjercicio = document.getElementById("manual_ejercicio");
     const manualEnte = document.getElementById("manual_ente_id");
@@ -859,6 +918,7 @@
     const titularPeriodoInforme = document.getElementById("titular_periodo_informe");
     const titularNombre = document.getElementById("titular_nombre");
     const titularPeriodoAdministrativo = document.getElementById("titular_periodo_administrativo");
+    const titularPeriodoAdminMismo = document.getElementById("titular_periodo_admin_mismo");
     const titularAdministrativo = document.getElementById("titular_administrativo");
     const titularContextSummaryEjercicio = document.getElementById("titularContextSummaryEjercicio");
     const titularContextSummaryEnte = document.getElementById("titularContextSummaryEnte");
@@ -877,9 +937,9 @@
     const oficioUploadZone = document.getElementById("oficioUploadZone");
     const oficioPdfInput = document.getElementById("oficioPdfInput");
     const oficioFileName = document.getElementById("oficioFileName");
-    const oficioProcessBtn = document.getElementById("oficioProcessBtn");
     const oficioClearBtn = document.getElementById("oficioClearBtn");
     let oficioSelectedFile = null;
+    let isOficioPdfProcessing = false;
     const manualResumenContainer = document.getElementById("manualResumenFuentesBody");
     let isSyncingContextFields = false;
     const MIXED_TIPO_AUDITORIA = "Financiera y Obra Pública";
@@ -902,6 +962,222 @@
     const formatMoney = (value) => {
       const amount = Number(value) || 0;
       return amount.toLocaleString("es-MX", { style: "currency", currency: "MXN", minimumFractionDigits: 2 });
+    };
+
+    let gaboOficiosResumenFetchId = 0;
+    let gaboOficiosResumenTimer = null;
+    let gaboOficiosResumenRows = [];
+
+    const splitGaboOficioTipos = (value) => (
+      String(value || "")
+        .split(",")
+        .map((tipo) => tipo.trim())
+        .filter(Boolean)
+    );
+
+    const resolveGaboOficioScopeTipo = (row) => {
+      const tipos = splitGaboOficioTipos(row && row.tipos_auditoria);
+      if (tipos.length === 1) {
+        return tipos[0];
+      }
+      const currentTipo = principalTipoAuditoria ? String(principalTipoAuditoria.value || "").trim() : "";
+      if (currentTipo && !isMixedScopeTipo(currentTipo) && tipos.includes(currentTipo)) {
+        return currentTipo;
+      }
+      return "";
+    };
+
+    const buildGaboOficioEditHref = (row) => {
+      const baseHref = loaderOpenObsAdminBtn && loaderOpenObsAdminBtn.dataset.baseHref
+        ? loaderOpenObsAdminBtn.dataset.baseHref
+        : "/carga/observaciones-admin";
+      const url = new URL(baseHref, window.location.origin);
+      url.searchParams.set("return_vista", "manual");
+      const ejercicio = principalEjercicio ? String(principalEjercicio.value || "").trim() : "";
+      const enteId = String((row && row.ente_id) || "").trim();
+      const oficio = String((row && row.oficio) || "").trim();
+      const tipoAuditoria = resolveGaboOficioScopeTipo(row);
+      if (ejercicio) {
+        url.searchParams.set("ejercicio", ejercicio);
+      }
+      if (enteId) {
+        url.searchParams.set("ente_id", enteId);
+      }
+      if (tipoAuditoria) {
+        url.searchParams.set("tipo_auditoria", tipoAuditoria);
+      }
+      if (oficio) {
+        url.searchParams.set("oficio", oficio);
+      }
+      return `${url.pathname}?${url.searchParams.toString()}`;
+    };
+
+    const renderGaboOficiosResumen = (rows = [], totals = {}, message = "") => {
+      if (!gaboOficiosResumenBody) {
+        return;
+      }
+      if (message) {
+        gaboOficiosResumenRows = [];
+        gaboOficiosResumenBody.innerHTML = (
+          `<tr><td colspan="14" class="muted">${escapeHtml(message)}</td></tr>`
+        );
+        return;
+      }
+      const list = Array.isArray(rows) ? rows : [];
+      if (!list.length) {
+        gaboOficiosResumenRows = [];
+        gaboOficiosResumenBody.innerHTML = (
+          '<tr><td colspan="14" class="muted">Sin oficios registrados para el contexto activo.</td></tr>'
+        );
+        return;
+      }
+      gaboOficiosResumenRows = list;
+      const toInt = (value) => Number.parseInt(String(value ?? "0"), 10) || 0;
+      const bodyRows = list.map((row, rowIndex) => {
+        const ente = [
+          String(row.ente_numero || "").trim(),
+          String(row.ente_nombre || "").trim(),
+        ].filter(Boolean).join(" - ") || "-";
+        const editHref = buildGaboOficioEditHref(row);
+        return (
+          `<tr>` +
+          `<td class="gabo-oficios-oficio">${escapeHtml(row.oficio || "-")}</td>` +
+          `<td>${escapeHtml(ente)}</td>` +
+          `<td>${escapeHtml(row.tipos_auditoria || "-")}</td>` +
+          `<td>${escapeHtml(formatFechaForSummary(row.fecha_notificacion || ""))}</td>` +
+          `<td>${toInt(row.sa)}</td>` +
+          `<td>${toInt(row.pdp)}</td>` +
+          `<td>${toInt(row.pras)}</td>` +
+          `<td>${toInt(row.r)}</td>` +
+          `<td>${toInt(row.pefcf)}</td>` +
+          `<td><strong>${toInt(row.total)}</strong></td>` +
+          `<td>${escapeHtml(formatMoney(row.monto_emitido))}</td>` +
+          `<td>${escapeHtml(formatMoney(row.monto_solventado))}</td>` +
+          `<td>${escapeHtml(formatMoney(row.monto_pendiente))}</td>` +
+          `<td class="gabo-oficios-actions-cell">` +
+          `<details class="gabo-oficios-menu">` +
+          `<summary>Opciones</summary>` +
+          `<div class="gabo-oficios-menu-list">` +
+          `<a class="btn-secondary btn-compact" href="${escapeHtml(editHref)}">Cargar Resultados de Solventación</a>` +
+          `<button type="button" class="btn-danger btn-compact" data-gabo-oficio-delete="${rowIndex}">Eliminar</button>` +
+          `</div>` +
+          `</details>` +
+          `</td>` +
+          `</tr>`
+        );
+      }).join("");
+      const totalRow = (
+        `<tr class="gabo-oficios-total">` +
+        `<th colspan="4">Total</th>` +
+        `<th>${toInt(totals.sa)}</th>` +
+        `<th>${toInt(totals.pdp)}</th>` +
+        `<th>${toInt(totals.pras)}</th>` +
+        `<th>${toInt(totals.r)}</th>` +
+        `<th>${toInt(totals.pefcf)}</th>` +
+        `<th>${toInt(totals.total)}</th>` +
+        `<th>${escapeHtml(formatMoney(totals.monto_emitido))}</th>` +
+        `<th>${escapeHtml(formatMoney(totals.monto_solventado))}</th>` +
+        `<th>${escapeHtml(formatMoney(totals.monto_pendiente))}</th>` +
+        `<th></th>` +
+        `</tr>`
+      );
+      gaboOficiosResumenBody.innerHTML = bodyRows + totalRow;
+    };
+
+    const deleteGaboOficioResumen = async (row, triggerButton = null) => {
+      const ejercicio = principalEjercicio ? String(principalEjercicio.value || "").trim() : "";
+      const enteId = String((row && row.ente_id) || "").trim();
+      const oficio = String((row && row.oficio) || "").trim();
+      if (!ejercicio || !enteId || !oficio) {
+        showWizardToast("No se puede eliminar: faltan ejercicio, ente u oficio.", "error");
+        return;
+      }
+      const tipoAuditoria = resolveGaboOficioScopeTipo(row);
+      const total = Number.parseInt(String((row && row.total) || "0"), 10) || 0;
+      const scopeLabel = tipoAuditoria ? ` del alcance ${tipoAuditoria}` : "";
+      const confirmed = window.confirm(
+        `¿Eliminar el oficio ${oficio}${scopeLabel}? Se borrarán ${total} observación(es) registradas para ese oficio.`
+      );
+      if (!confirmed) {
+        return;
+      }
+      if (triggerButton instanceof HTMLButtonElement) {
+        triggerButton.disabled = true;
+        triggerButton.textContent = "Eliminando...";
+      }
+      try {
+        const scope = { ejercicio, ente_id: enteId, oficio };
+        if (tipoAuditoria) {
+          scope.tipo_auditoria = tipoAuditoria;
+        }
+        const response = await fetch("/carga/observaciones-admin/borrar-todo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(scope),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload || !payload.ok) {
+          throw new Error((payload && payload.error) || "No se pudo eliminar el oficio.");
+        }
+        showWizardToast(`Oficio eliminado: ${payload.deleted || 0} observación(es).`, "success");
+        await loadGaboOficiosResumen();
+      } catch (error) {
+        showWizardToast(error instanceof Error ? error.message : "No se pudo eliminar el oficio.", "error");
+      } finally {
+        if (triggerButton instanceof HTMLButtonElement) {
+          triggerButton.disabled = false;
+          triggerButton.textContent = "Eliminar";
+        }
+      }
+    };
+
+    const loadGaboOficiosResumen = async () => {
+      if (!gaboOficiosResumenBody) {
+        return;
+      }
+      const ejercicio = principalEjercicio ? String(principalEjercicio.value || "").trim() : "";
+      if (!ejercicio) {
+        renderGaboOficiosResumen([], {}, "Selecciona un ejercicio para consultar los oficios registrados.");
+        return;
+      }
+      const requestId = ++gaboOficiosResumenFetchId;
+      renderGaboOficiosResumen([], {}, "Consultando oficios registrados...");
+      const params = new URLSearchParams({ ejercicio });
+      const enteId = principalEnte ? String(principalEnte.value || "").trim() : "";
+      if (enteId) {
+        params.set("ente_id", enteId);
+      }
+      try {
+        const response = await fetch(`/carga/oficios-resumen?${params.toString()}`);
+        if (!response.ok) {
+          throw new Error("No se pudo consultar el resumen por oficio.");
+        }
+        const payload = await response.json();
+        if (requestId !== gaboOficiosResumenFetchId) {
+          return;
+        }
+        renderGaboOficiosResumen(
+          Array.isArray(payload.rows) ? payload.rows : [],
+          payload && typeof payload.totals === "object" && payload.totals ? payload.totals : {},
+        );
+      } catch (_error) {
+        if (requestId === gaboOficiosResumenFetchId) {
+          renderGaboOficiosResumen([], {}, "No se pudo consultar el resumen por oficio.");
+        }
+      }
+    };
+
+    const scheduleGaboOficiosResumenLoad = () => {
+      if (!gaboOficiosResumenBody) {
+        return;
+      }
+      if (gaboOficiosResumenTimer) {
+        window.clearTimeout(gaboOficiosResumenTimer);
+      }
+      gaboOficiosResumenTimer = window.setTimeout(() => {
+        gaboOficiosResumenTimer = null;
+        loadGaboOficiosResumen();
+      }, 150);
     };
 
     const parseMoneyInput = (rawValue) => {
@@ -2003,12 +2279,34 @@
       });
     };
 
+    const normalizePeriodComparison = (value) => (
+      String(value || "").replace(/\s+/g, " ").trim().toLowerCase()
+    );
+
+    const syncTitularAdminPeriodoToggle = ({ infer = false } = {}) => {
+      if (!titularPeriodoAdminMismo || !titularPeriodoInforme || !titularPeriodoAdministrativo) {
+        return;
+      }
+      if (infer) {
+        const informe = normalizePeriodComparison(titularPeriodoInforme.value);
+        const administrativo = normalizePeriodComparison(titularPeriodoAdministrativo.value);
+        titularPeriodoAdminMismo.checked = Boolean(informe && administrativo && informe === administrativo);
+      }
+      if (titularPeriodoAdminMismo.checked) {
+        titularPeriodoAdministrativo.value = titularPeriodoInforme.value;
+        titularPeriodoAdministrativo.readOnly = true;
+        return;
+      }
+      titularPeriodoAdministrativo.readOnly = false;
+    };
+
     const applyWizardDraftPayload = (payload) => {
       if (!payload || typeof payload !== "object") {
         return;
       }
       applyNamedFields(payload.manual_form);
       applyNamedFields(payload.titular_form);
+      syncTitularAdminPeriodoToggle({ infer: true });
       if (Array.isArray(payload.fuentes_detalle) && manualFuentesDetalleJson) {
         manualFuentesDetalleJson.value = JSON.stringify(payload.fuentes_detalle);
         fuentesDetalleState = parseFuentesDetalleState();
@@ -2135,6 +2433,7 @@
       updateContextSummary();
       isSyncingContextFields = false;
       updateWizardModeAvailability();
+      scheduleGaboOficiosResumenLoad();
     };
 
     const syncManualContextToPrincipal = () => {
@@ -2653,6 +2952,9 @@
             const pefcf = Math.max(0, Number.parseInt(String(item.cantidad_pefcf || 0), 10) || 0);
             const totalItem = sa + pdp + pras + r + pefcf;
             const periodoItem = String(item.periodo || "").trim();
+            const modalidadItem = String(item.modalidad || "Fuente").trim() === "Convenio" ? "Convenio" : "Fuente";
+            const convenioNombre = String(item.convenio_nombre || "").trim();
+            const convenioEnte = String(item.convenio_ente_nombre || "").trim();
             const periodoMatch = normalizePeriodoMatchValue(periodoItem);
             const isActive = Number.isInteger(editingFuenteIndex) && editingFuenteIndex >= 0
               ? idx === editingFuenteIndex
@@ -2666,6 +2968,9 @@
               `<div class="loader-source-card-head">` +
               `<div>` +
               `<strong>#${idx + 1} · ${escapeHtml(item.fuente_nombre)}</strong>` +
+              `${modalidadItem === "Convenio" ? `<span class="loader-source-card-type is-convenio">Convenio</span>` : ""}` +
+              `${convenioNombre ? `<span class="loader-source-card-convenio">${escapeHtml(convenioNombre)}</span>` : ""}` +
+              `${convenioEnte ? `<span class="loader-source-card-periodo">Ente hijo: ${escapeHtml(convenioEnte)}</span>` : ""}` +
               `<span class="loader-source-card-periodo">${escapeHtml(periodoItem || "-")}</span>` +
               `<span class="loader-source-card-type">${escapeHtml(item.tipo_auditoria)}</span>` +
               `</div>` +
@@ -2724,6 +3029,17 @@
         }
         return String(a || "").localeCompare(String(b || ""), "es", { sensitivity: "base" });
       });
+    };
+
+    const resolveResumenScopeTipo = (values) => {
+      const tipos = getOrderedResumenTipos(values);
+      const keys = new Set(tipos.map((tipo) => normalizeResumenTipo(tipo)));
+      const hasFinanciera = keys.has("financiera");
+      const hasObra = keys.has("obra pública") || keys.has("obra publica");
+      if (hasFinanciera && hasObra) {
+        return MIXED_TIPO_AUDITORIA;
+      }
+      return tipos.length === 1 ? tipos[0] : "";
     };
 
     const parseResumenCountValue = (rawValue) => (
@@ -2872,6 +3188,8 @@
         row.tipo_auditoria = allowedTipos.includes(targetTipo) ? targetTipo : (allowedTipos[0] || "Financiera");
       } else if (field === "fuente_nombre") {
         row.fuente_nombre = normalizeInlineText(rawValue);
+      } else if (field === "convenio_nombre") {
+        row.convenio_nombre = normalizeInlineText(rawValue);
       } else if (field === "periodo") {
         row.periodo = normalizeResumenPeriodoForStore(rawValue);
       } else if (field === "cantidad_sa" || field === "cantidad_pdp" || field === "cantidad_pras" || field === "cantidad_pefcf" || field === "cantidad_r") {
@@ -3132,21 +3450,64 @@
       const periodOptionsHtml = periodCatalog
         .map((periodoLabel) => `<option value="${escapeHtml(periodoLabel)}"></option>`)
         .join("");
-      const groupedByTipo = new Map();
       const allowedTipos = getAllowedSourceTipos();
       const resolveTipoWithinScope = (value) => {
         const pool = allowedTipos.length ? allowedTipos : ["Financiera", "Obra Pública"];
         const normalized = String(value || "").trim();
         return pool.includes(normalized) ? normalized : pool[0];
       };
-      fuentesDetalleState.forEach((row, rowIndex) => {
-        const tipoKey = resolveTipoWithinScope(row && row.tipo_auditoria);
-        if (!groupedByTipo.has(tipoKey)) {
-          groupedByTipo.set(tipoKey, []);
+      const isResumenConvenioRow = (row) => (
+        String((row && row.modalidad) || "Fuente").trim().toLowerCase() === "convenio"
+      );
+      const resolveResumenSectionKey = (row) => {
+        if (isResumenConvenioRow(row)) {
+          return "convenios";
         }
-        groupedByTipo.get(tipoKey).push(rowIndex);
+        const tipoKey = resolveTipoWithinScope(row && row.tipo_auditoria);
+        return `tipo:${tipoKey}`;
+      };
+      const resolveResumenSectionRank = (section) => {
+        if (section.kind === "convenios") return 2;
+        const key = normalizeResumenTipo(section.tipo);
+        if (key === "financiera") return 0;
+        if (key === "obra pública" || key === "obra publica") return 1;
+        return 3;
+      };
+      const formatResumenSectionLabel = (section, fallbackIndex) => {
+        if (section.kind === "convenios") {
+          return "C) Convenios";
+        }
+        const key = normalizeResumenTipo(section.tipo);
+        if (key === "financiera") {
+          return "A) Auditoría Financiera";
+        }
+        if (key === "obra pública" || key === "obra publica") {
+          return "B) Auditoría de Obra Pública";
+        }
+        return formatResumenTipoLabel(section.tipo, fallbackIndex);
+      };
+      const groupedSections = new Map();
+      fuentesDetalleState.forEach((row, rowIndex) => {
+        const sectionKey = resolveResumenSectionKey(row);
+        if (!groupedSections.has(sectionKey)) {
+          const isConvenio = isResumenConvenioRow(row);
+          const tipoKey = isConvenio ? "Convenios" : resolveTipoWithinScope(row && row.tipo_auditoria);
+          groupedSections.set(sectionKey, {
+            key: sectionKey,
+            kind: isConvenio ? "convenios" : "tipo",
+            tipo: tipoKey,
+            rowIndexes: [],
+          });
+        }
+        groupedSections.get(sectionKey).rowIndexes.push(rowIndex);
       });
-      const orderedTipos = getOrderedResumenTipos(Array.from(groupedByTipo.keys()));
+      const orderedSections = Array.from(groupedSections.values()).sort((a, b) => {
+        const rankDiff = resolveResumenSectionRank(a) - resolveResumenSectionRank(b);
+        if (rankDiff !== 0) {
+          return rankDiff;
+        }
+        return String(a.tipo || "").localeCompare(String(b.tipo || ""), "es", { sensitivity: "base" });
+      });
       const grandTotals = { sa: 0, pdp: 0, monto_pdp_emitido: 0, pras: 0, pefcf: 0, r: 0, total: 0 };
       const tipoOptionsHtml = (selectedTipo) => {
         const pool = allowedTipos.length ? allowedTipos : ["Financiera", "Obra Pública"];
@@ -3155,13 +3516,16 @@
           .map((tipo) => `<option value="${escapeHtml(tipo)}"${tipo === normalizedSelected ? " selected" : ""}>${escapeHtml(tipo)}</option>`)
           .join("");
       };
-      const sectionsHtml = orderedTipos.map((tipoKey, index) => {
-        const rowIndexes = groupedByTipo.get(tipoKey) || [];
-        const tipoLabel = formatResumenTipoLabel(tipoKey, index);
+      const sectionsHtml = orderedSections.map((section, index) => {
+        const rowIndexes = section.rowIndexes || [];
+        const isConvenioSection = section.kind === "convenios";
+        const tipoLabel = formatResumenSectionLabel(section, index);
         const tipoTotals = { sa: 0, pdp: 0, pras: 0, pefcf: 0, r: 0, total: 0, monto_pdp_emitido: 0 };
         const rowsHtml = rowIndexes.map((rowIndex) => {
           const row = fuentesDetalleState[rowIndex] || {};
           const fuenteNombre = String(row.fuente_nombre || "").trim();
+          const convenioNombre = String(row.convenio_nombre || "").trim();
+          const convenioEnte = String(row.convenio_ente_nombre || "").trim();
           const periodo = String(row.periodo || "").trim();
           const sa = parseResumenCountValue(row.cantidad_sa);
           const pdp = parseResumenCountValue(row.cantidad_pdp);
@@ -3192,13 +3556,26 @@
           grandTotals.r += r;
           grandTotals.total += rowTotal;
           grandTotals.monto_pdp_emitido += rowMontoPdpEmitido;
+          const convenioCellHtml = isConvenioSection
+            ? (
+              `<td class="manual-resumen-cell-convenio">` +
+              `<input type="text" data-row-field="convenio_nombre" data-row-index="${rowIndex}" value="${escapeHtml(convenioNombre)}" placeholder="Nombre del convenio">` +
+              `<small class="manual-resumen-inline-help">Nombre del convenio como aparece en el oficio.</small>` +
+              `${convenioEnte ? `<small class="manual-resumen-inline-help">Ente hijo: ${escapeHtml(convenioEnte)}</small>` : ""}` +
+              `</td>`
+            )
+            : "";
+          const tipoControlHtml = isConvenioSection
+            ? `<small class="manual-resumen-inline-help">Convenio de Obra Pública.</small>`
+            : `<select data-row-field="tipo_auditoria" data-row-index="${rowIndex}" class="manual-resumen-tipo-select">${tipoOptionsHtml(resolveTipoWithinScope(row.tipo_auditoria))}</select>`;
           return (
             `<tr data-row-index="${rowIndex}">` +
             `<td class="manual-resumen-cell-fuente">` +
             `<input type="text" list="manual_resumen_fuentes_options" data-row-field="fuente_nombre" data-row-index="${rowIndex}" value="${escapeHtml(fuenteNombre)}" placeholder="Selecciona o escribe fuente">` +
             `<small class="manual-resumen-inline-help">Selecciona fuente del catálogo o escribe una nueva.</small>` +
-            `<select data-row-field="tipo_auditoria" data-row-index="${rowIndex}" class="manual-resumen-tipo-select">${tipoOptionsHtml(resolveTipoWithinScope(row.tipo_auditoria))}</select>` +
+            tipoControlHtml +
             `</td>` +
+            convenioCellHtml +
             `<td class="manual-resumen-cell-periodo">` +
             `<input type="text" list="manual_resumen_periodos_options" data-row-field="periodo" data-row-index="${rowIndex}" value="${escapeHtml(periodo)}" placeholder="Periodo">` +
             `<small class="manual-resumen-inline-help">Elige un periodo cargado o escribe uno nuevo.</small>` +
@@ -3219,7 +3596,7 @@
         }).join("");
         const subtotalRowHtml = (
           `<tr class="manual-resumen-subtotal">` +
-          `<th colspan="2">Subtotal ${escapeHtml(tipoLabel)}</th>` +
+          `<th colspan="${isConvenioSection ? 3 : 2}">Subtotal ${escapeHtml(tipoLabel)}</th>` +
           `<th>${tipoTotals.sa}</th>` +
           `<th>${tipoTotals.pdp}</th>` +
           `<th>${tipoTotals.pras}</th>` +
@@ -3232,20 +3609,21 @@
           `</tr>`
         );
         return (
-          `<div class="manual-resumen-section">` +
+          `<div class="manual-resumen-section${isConvenioSection ? " is-convenios" : ""}">` +
           `<h4>${escapeHtml(tipoLabel)}</h4>` +
           `<div class="manual-resumen-table-wrapper">` +
-          `<table>` +
+          `<table${isConvenioSection ? ' class="manual-resumen-convenios-table"' : ""}>` +
           `<thead>` +
           `<tr>` +
           `<th class="manual-resumen-col-fuente">Nombre de la Fuente de Financiamiento</th>` +
+          `${isConvenioSection ? '<th class="manual-resumen-col-convenio">Nombre del Convenio</th>' : ""}` +
           `<th class="manual-resumen-col-periodo">Periodo</th>` +
           `<th>SA</th>` +
           `<th>PDP</th>` +
           `<th>PRAS</th>` +
           `<th>PEFCF</th>` +
           `<th>R</th>` +
-          `<th>Total</th>` +
+          `<th>${isConvenioSection ? "Total de Obs. Emitidas" : "Total"}</th>` +
           `<th>Total monto PDP emitido</th>` +
           `<th>Detalle PDP</th>` +
           `<th>Acciones</th>` +
@@ -3402,9 +3780,14 @@
       let insertedCount = 0;
       let updatedCount = 0;
       const applyPayloadForPeriodo = (targetPeriodo) => {
+        const existingScope = isEditingExisting ? (fuentesDetalleState[editingFuenteIndex] || {}) : {};
         const payload = {
           tipo_auditoria: tipo,
           fuente_nombre: fuenteNombre,
+          modalidad: existingScope.modalidad || "Fuente",
+          convenio_nombre: existingScope.convenio_nombre || "",
+          convenio_ente_nombre: existingScope.convenio_ente_nombre || "",
+          convenio_ente_id: existingScope.convenio_ente_id || "",
           periodo: targetPeriodo,
           cantidad_sa: cantidadSa,
           cantidad_pdp: cantidadPdp,
@@ -3412,7 +3795,7 @@
           cantidad_pefcf: cantidadPefcf,
           cantidad_r: cantidadR,
         };
-        const existingIndex = findFuenteDetalleIndex(tipo, fuenteNombre, targetPeriodo);
+        const existingIndex = findFuenteDetalleIndex(tipo, fuenteNombre, targetPeriodo, payload);
         const canEditSingle = isEditingExisting && !partitionEnabled && periodTargets.length === 1;
         if (canEditSingle) {
           if (existingIndex >= 0 && existingIndex !== editingFuenteIndex) {
@@ -3464,15 +3847,26 @@
       return true;
     };
 
-    const findFuenteDetalleIndex = (tipo, fuenteNombre, periodo = "") => {
+    const findFuenteDetalleIndex = (tipo, fuenteNombre, periodo = "", scope = null) => {
       const normalizedTipo = String(tipo || "").trim().toLowerCase();
       const normalizedFuente = String(fuenteNombre || "").trim().toLowerCase();
       const normalizedPeriodo = normalizePeriodoMatchValue(periodo || "");
+      const hasScope = scope && typeof scope === "object";
+      const normalizedModalidad = hasScope ? String(scope.modalidad || "Fuente").trim().toLowerCase() : "";
+      const normalizedConvenio = hasScope ? String(scope.convenio_nombre || "").trim().toLowerCase() : "";
       return fuentesDetalleState.findIndex((row) => {
         const rowTipo = String((row && row.tipo_auditoria) || "").trim().toLowerCase();
         const rowFuente = String((row && row.fuente_nombre) || "").trim().toLowerCase();
         const rowPeriodo = normalizePeriodoMatchValue((row && row.periodo) || "");
-        return rowTipo === normalizedTipo && rowFuente === normalizedFuente && rowPeriodo === normalizedPeriodo;
+        if (rowTipo !== normalizedTipo || rowFuente !== normalizedFuente || rowPeriodo !== normalizedPeriodo) {
+          return false;
+        }
+        if (!hasScope) {
+          return true;
+        }
+        const rowModalidad = String((row && row.modalidad) || "Fuente").trim().toLowerCase();
+        const rowConvenio = String((row && row.convenio_nombre) || "").trim().toLowerCase();
+        return rowModalidad === normalizedModalidad && rowConvenio === normalizedConvenio;
       });
     };
 
@@ -3552,10 +3946,10 @@
       }
 
       const existingIndex = periodTargets.length === 1
-        ? findFuenteDetalleIndex(tipo, fuenteNombre, periodTargets[0])
+        ? findFuenteDetalleIndex(tipo, fuenteNombre, periodTargets[0], isEditingExisting ? fuentesDetalleState[editingFuenteIndex] : null)
         : -1;
       const hasExistingTarget = periodTargets.some((periodo) => (
-        findFuenteDetalleIndex(tipo, fuenteNombre, periodo) >= 0
+        findFuenteDetalleIndex(tipo, fuenteNombre, periodo, isEditingExisting ? fuentesDetalleState[editingFuenteIndex] : null) >= 0
       ));
       if (!allowCreate && !isEditingExisting && !hasExistingTarget) {
         if (showFeedback && manualFuentesDetalleFeedback) {
@@ -3567,9 +3961,14 @@
       let insertedCount = 0;
       let updatedCount = 0;
       const applyPayloadForPeriodo = (targetPeriodo) => {
+        const existingScope = isEditingExisting ? (fuentesDetalleState[editingFuenteIndex] || {}) : {};
         const payload = {
           tipo_auditoria: tipo,
           fuente_nombre: fuenteNombre,
+          modalidad: existingScope.modalidad || "Fuente",
+          convenio_nombre: existingScope.convenio_nombre || "",
+          convenio_ente_nombre: existingScope.convenio_ente_nombre || "",
+          convenio_ente_id: existingScope.convenio_ente_id || "",
           periodo: targetPeriodo,
           cantidad_sa: cantidadSa,
           cantidad_pdp: cantidadPdp,
@@ -3577,7 +3976,7 @@
           cantidad_pefcf: cantidadPefcf,
           cantidad_r: cantidadR,
         };
-        const targetIndex = findFuenteDetalleIndex(tipo, fuenteNombre, targetPeriodo);
+        const targetIndex = findFuenteDetalleIndex(tipo, fuenteNombre, targetPeriodo, payload);
         const canEditSingle = isEditingExisting && !partitionEnabled && periodTargets.length === 1;
         if (canEditSingle) {
           if (targetIndex >= 0 && targetIndex !== editingFuenteIndex) {
@@ -3843,9 +4242,14 @@
       };
 
       const pushRow = (row) => {
+        const modalidad = normalizeInlineText(row.modalidad || "Fuente") === "Convenio" ? "Convenio" : "Fuente";
         const safeRow = {
           tipo_auditoria: normalizeTipoAuditoriaImportValue(row.tipo_auditoria) || fallbackTipo,
           fuente_nombre: normalizeInlineText(row.fuente_nombre),
+          modalidad,
+          convenio_nombre: modalidad === "Convenio" ? normalizeInlineText(row.convenio_nombre) : "",
+          convenio_ente_nombre: modalidad === "Convenio" ? normalizeInlineText(row.convenio_ente_nombre) : "",
+          convenio_ente_id: modalidad === "Convenio" ? normalizeInlineText(row.convenio_ente_id) : "",
           periodo: normalizeResumenPeriodoForStore(row.periodo),
           cantidad_sa: Math.max(0, Number.parseInt(String(row.cantidad_sa || 0), 10) || 0),
           cantidad_pdp: Math.max(0, Number.parseInt(String(row.cantidad_pdp || 0), 10) || 0),
@@ -3858,6 +4262,9 @@
           + safeRow.cantidad_pras
           + safeRow.cantidad_pefcf
           + safeRow.cantidad_r;
+        if (safeRow.modalidad === "Convenio" && !safeRow.convenio_nombre) {
+          return;
+        }
         if (!safeRow.fuente_nombre || !safeRow.periodo || totalRow <= 0) {
           return;
         }
@@ -3876,6 +4283,10 @@
           pushRow({
             tipo_auditoria: row.tipo_auditoria || row.tipoAuditoria || fallbackTipo,
             fuente_nombre: row.fuente_nombre || row.fuenteNombre || row.nombre || "",
+            modalidad: row.modalidad || "Fuente",
+            convenio_nombre: row.convenio_nombre || row.convenioNombre || "",
+            convenio_ente_nombre: row.convenio_ente_nombre || row.convenioEnteNombre || "",
+            convenio_ente_id: row.convenio_ente_id || row.convenioEnteId || "",
             periodo: row.periodo || "",
             cantidad_sa: row.cantidad_sa ?? row.cantidadSa ?? row.SA ?? 0,
             cantidad_pdp: row.cantidad_pdp ?? row.cantidadPdp ?? row.PDP ?? 0,
@@ -3963,6 +4374,10 @@
             pushRow({
               tipo_auditoria: rowTipo,
               fuente_nombre: fuenteNombre,
+              modalidad: fuenteItem.modalidad || registroItem.modalidad || "Fuente",
+              convenio_nombre: fuenteItem.convenio_nombre || fuenteItem.convenioNombre || registroItem.convenio_nombre || "",
+              convenio_ente_nombre: fuenteItem.convenio_ente_nombre || fuenteItem.convenioEnteNombre || registroItem.convenio_ente_nombre || "",
+              convenio_ente_id: fuenteItem.convenio_ente_id || fuenteItem.convenioEnteId || registroItem.convenio_ente_id || "",
               periodo,
               cantidad_sa: cantidadSa,
               cantidad_pdp: cantidadPdp,
@@ -4001,7 +4416,7 @@
         const tiposImportados = getOrderedResumenTipos(rows.map((row) => row.tipo_auditoria));
         return {
           rows,
-          tipoAuditoria: tiposImportados.length === 1 ? tiposImportados[0] : "",
+          tipoAuditoria: resolveResumenScopeTipo(tiposImportados),
           totalPdp: computedTotals.PDP,
           totalObservaciones: computedTotals.total_emitidas,
           totalsWarning: importWarnings.join(" "),
@@ -4015,7 +4430,7 @@
       const tiposImportados = getOrderedResumenTipos(rows.map((row) => row.tipo_auditoria));
       return {
         rows,
-        tipoAuditoria: tiposImportados.length === 1 ? tiposImportados[0] : "",
+        tipoAuditoria: resolveResumenScopeTipo(tiposImportados),
         totalPdp: computedTotals.PDP,
         totalObservaciones: computedTotals.total_emitidas,
         totalsWarning: importWarnings.join(" "),
@@ -4033,19 +4448,6 @@
         return;
       }
 
-      const currentScopeTipo = principalTipoAuditoria ? String(principalTipoAuditoria.value || "").trim() : "";
-      if (currentScopeTipo && !isMixedScopeTipo(currentScopeTipo)) {
-        const invalidRow = (Array.isArray(importResult.rows) ? importResult.rows : []).find((row) => (
-          String(row && row.tipo_auditoria || "").trim() !== currentScopeTipo
-        ));
-        if (invalidRow) {
-          const message = `El JSON contiene ${invalidRow.tipo_auditoria}, pero el contexto activo está en ${currentScopeTipo}.`;
-          setManualResumenJsonFeedback(message, "error");
-          showWizardToast(message, "error");
-          return;
-        }
-      }
-
       if (Array.isArray(fuentesDetalleState) && fuentesDetalleState.length) {
         const confirmed = window.confirm("La tabla actual se reemplazará con la carga del oficio. ¿Deseas continuar?");
         if (!confirmed) {
@@ -4053,34 +4455,22 @@
         }
       }
 
-      const shouldApplyScopeTipo = !!(
-        importResult.tipoAuditoria
-        && principalTipoAuditoria
-        && !currentScopeTipo
-      );
       fuentesDetalleState = Array.isArray(importResult.rows) ? importResult.rows : [];
       editingFuenteIndex = null;
-      if (shouldApplyScopeTipo && principalTipoAuditoria) {
-        principalTipoAuditoria.value = importResult.tipoAuditoria;
-        syncPrincipalFiltersToForms({ syncTitular: true });
-      }
 
-      /* ── Auto-fill Alcance and Oficio from PDF payload ── */
       if (importResult.tipoAuditoria && principalTipoAuditoria) {
         principalTipoAuditoria.value = importResult.tipoAuditoria;
-        syncPrincipalFiltersToForms({ syncTitular: true });
       }
       const payloadOficio = payload && typeof payload === "object" ? (payload.oficio || "") : "";
       if (payloadOficio && principalNumeroOficioInput) {
         principalNumeroOficioInput.value = payloadOficio;
         syncPrincipalOficioField({ padConsecutive: true });
-        syncPrincipalFiltersToForms({ syncTitular: true });
       }
       const payloadFecha = payload && typeof payload === "object" ? (payload.fecha || "") : "";
       if (payloadFecha && principalFechaNotificacion) {
         principalFechaNotificacion.value = payloadFecha;
-        syncPrincipalFiltersToForms({ syncTitular: true });
       }
+      syncPrincipalFiltersToForms({ syncTitular: true });
 
       pdpDetalleState = normalizePdpDetalleState(importResult.totalPdp || 0, []);
       syncFuentesDetalleState();
@@ -4093,9 +4483,12 @@
       const baseMessage = importResult.totalPdp > 0
         ? `Oficio cargado: ${importResult.rows.length} fila(s) y ${importResult.totalObservaciones} observación(es). Completa ${importResult.totalPdp} detalle(s) PDP para guardar.`
         : `Oficio cargado: ${importResult.rows.length} fila(s) y ${importResult.totalObservaciones} observación(es).`;
+      const alcanceMessage = importResult.tipoAuditoria
+        ? `Alcance detectado: ${importResult.tipoAuditoria}.`
+        : "";
       const feedbackMessage = importResult.totalsWarning
-        ? `${baseMessage} ${importResult.totalsWarning}`
-        : baseMessage;
+        ? `${baseMessage} ${alcanceMessage} ${importResult.totalsWarning}`.trim()
+        : `${baseMessage} ${alcanceMessage}`.trim();
       setManualResumenJsonFeedback(
         feedbackMessage,
         importResult.totalsWarning ? "warning" : "success",
@@ -4107,13 +4500,12 @@
     };
 
     const processOficioPdf = async () => {
-      if (!oficioSelectedFile) return;
-      if (oficioProcessBtn) {
-        oficioProcessBtn.disabled = true;
-        oficioProcessBtn.textContent = "Procesando...";
+      if (!oficioSelectedFile || isOficioPdfProcessing) {
+        return;
       }
+      isOficioPdfProcessing = true;
       if (oficioUploadZone) oficioUploadZone.classList.add("processing");
-      setManualResumenJsonFeedback("", "info");
+      setManualResumenJsonFeedback("Procesando PDF...", "info");
 
       const form = new FormData();
       form.append("file", oficioSelectedFile);
@@ -4133,10 +4525,7 @@
         setManualResumenJsonFeedback(message, "error");
         showWizardToast(message, "error");
       } finally {
-        if (oficioProcessBtn) {
-          oficioProcessBtn.disabled = false;
-          oficioProcessBtn.textContent = "Procesar PDF";
-        }
+        isOficioPdfProcessing = false;
         if (oficioUploadZone) oficioUploadZone.classList.remove("processing");
       }
     };
@@ -4152,9 +4541,8 @@
         oficioFileName.hidden = false;
       }
       if (oficioUploadZone) oficioUploadZone.classList.add("has-file");
-      if (oficioProcessBtn) oficioProcessBtn.disabled = false;
       if (oficioClearBtn) oficioClearBtn.style.display = "";
-      setManualResumenJsonFeedback("", "info");
+      processOficioPdf();
     };
 
     const clearOficioUpload = () => {
@@ -4162,7 +4550,6 @@
       if (oficioPdfInput) oficioPdfInput.value = "";
       if (oficioFileName) oficioFileName.hidden = true;
       if (oficioUploadZone) oficioUploadZone.classList.remove("has-file");
-      if (oficioProcessBtn) oficioProcessBtn.disabled = true;
       if (oficioClearBtn) oficioClearBtn.style.display = "none";
       setManualResumenJsonFeedback("", "info");
     };
@@ -6398,11 +6785,27 @@
         if (oficioPdfInput.files && oficioPdfInput.files[0]) setOficioFile(oficioPdfInput.files[0]);
       });
     }
-    if (oficioProcessBtn) {
-      oficioProcessBtn.addEventListener("click", () => processOficioPdf());
-    }
     if (oficioClearBtn) {
       oficioClearBtn.addEventListener("click", () => clearOficioUpload());
+    }
+    if (gaboOficiosResumenBody) {
+      gaboOficiosResumenBody.addEventListener("click", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) {
+          return;
+        }
+        const deleteButton = target.closest("[data-gabo-oficio-delete]");
+        if (!(deleteButton instanceof HTMLButtonElement)) {
+          return;
+        }
+        const rowIndex = Number.parseInt(String(deleteButton.dataset.gaboOficioDelete || ""), 10);
+        const row = Number.isInteger(rowIndex) ? gaboOficiosResumenRows[rowIndex] : null;
+        if (!row) {
+          showWizardToast("No se encontró el oficio seleccionado. Refresca la tabla.", "error");
+          return;
+        }
+        deleteGaboOficioResumen(row, deleteButton);
+      });
     }
     if (manualAddNewFuenteBtnInline && manualFuente) {
       manualAddNewFuenteBtnInline.addEventListener("click", () => {
@@ -6624,6 +7027,16 @@
         saveWizardDraft({ announce: false });
       });
     }
+    if (titularPeriodoAdminMismo) {
+      titularPeriodoAdminMismo.addEventListener("change", () => {
+        syncTitularAdminPeriodoToggle();
+        scheduleDraftAutosave();
+      });
+    }
+    if (titularPeriodoInforme) {
+      titularPeriodoInforme.addEventListener("input", () => syncTitularAdminPeriodoToggle());
+    }
+    syncTitularAdminPeriodoToggle({ infer: true });
     [manualCaptureForm, titularCaptureForm].forEach((formElement) => {
       if (!formElement) {
         return;
@@ -7031,7 +7444,6 @@
 
       if (principalEjercicio && principalEnte) {
         principalEjercicio.addEventListener("change", () => {
-          syncGaboToolsByEjercicio();
           syncPrincipalOficioField();
           clearManualEditState();
           loadPrincipalEntes("");
@@ -7561,6 +7973,7 @@
       loadFuentesByEnte(manualFuente.value || "");
       toggleNuevaFuente();
       syncManualContextToPrincipal();
+      scheduleGaboOficiosResumenLoad();
       toggleObservacionesCargadas();
       renderPreviewTable();
       updateObsAdminOpenLink();

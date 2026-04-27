@@ -1822,6 +1822,10 @@
         const enteLabel = `${String(row.ente_numero || "").trim()} - ${String(row.ente_nombre || "").trim()}`.trim();
         const auditoriaLabel = String(row.tipo_auditoria || "").trim() || "-";
         const fuenteLabel = String(row.fuente_financiamiento || "").trim() || "-";
+        const modalidadLabel = String(row.modalidad || "Fuente").trim();
+        const convenioLabel = modalidadLabel === "Convenio"
+          ? String(row.convenio_ente_nombre || row.convenio_nombre || "").trim()
+          : "";
         const periodoLabel = String(row.periodo_cedula || "").trim() || "-";
         const oficioLabel = String(row.oficio || "").trim() || "-";
         const createdAtLabel = String(row.created_at || "").trim() || "-";
@@ -1862,6 +1866,7 @@
                 `<span><strong>Periodo:</strong> ${escapeHtml(periodoLabel)}</span>` +
                 `<span><strong>Oficio:</strong> ${escapeHtml(oficioLabel)}</span>` +
                 `<span><strong>Fuente:</strong> ${escapeHtml(fuenteLabel)}</span>` +
+                `${convenioLabel ? `<span><strong>Convenio:</strong> ${escapeHtml(convenioLabel)}</span>` : ""}` +
                 `<span><strong>Cargada:</strong> ${escapeHtml(createdAtLabel)}</span>` +
                 contextoConcepto +
               `</div>` +

@@ -1625,21 +1625,29 @@ def init_db() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 ejercicio TEXT NOT NULL,
                 ente_id TEXT NOT NULL,
+                auditoria TEXT,
                 ente_numero TEXT,
                 ente_numero_sort REAL DEFAULT 0,
                 ente_nombre TEXT NOT NULL,
                 tipo_auditoria TEXT NOT NULL,
+                modalidad TEXT NOT NULL DEFAULT 'Fuente',
                 fuente_financiamiento TEXT NOT NULL,
+                convenio_nombre TEXT,
+                convenio_ente_nombre TEXT,
+                convenio_ente_id TEXT,
                 ramo_33 TEXT NOT NULL,
                 ramo_28 TEXT NOT NULL DEFAULT 'No',
                 periodo_cedula TEXT,
                 periodo_titular TEXT,
+                periodo TEXT,
                 oficio TEXT,
                 fecha_notificacion TEXT,
                 tipo_anexo TEXT NOT NULL,
                 numero_observacion INTEGER NOT NULL,
                 estado TEXT NOT NULL,
+                estatus TEXT,
                 reclasificada INTEGER NOT NULL DEFAULT 0,
+                monto REAL,
                 monto_pdp_emitido REAL,
                 monto_pdp_solventado REAL,
                 monto_pdp_pendiente REAL,
@@ -1666,6 +1674,10 @@ def init_db() -> None:
                 ejercicio TEXT NOT NULL,
                 fuente_id INTEGER NOT NULL,
                 fuente_nombre TEXT,
+                modalidad TEXT NOT NULL DEFAULT 'Fuente',
+                convenio_nombre TEXT,
+                convenio_ente_nombre TEXT,
+                convenio_ente_id TEXT,
                 periodo TEXT NOT NULL,
                 periodo_titular TEXT,
                 fecha_notificacion TEXT,
@@ -1807,6 +1819,21 @@ def init_db() -> None:
             conn.execute("ALTER TABLE cargas_manuales ADD COLUMN fuente_detalle_json TEXT")
         if "pdp_detalle_json" not in cargas_manuales_columns:
             conn.execute("ALTER TABLE cargas_manuales ADD COLUMN pdp_detalle_json TEXT")
+        if "modalidad" not in cargas_manuales_columns:
+            conn.execute("ALTER TABLE cargas_manuales ADD COLUMN modalidad TEXT NOT NULL DEFAULT 'Fuente'")
+        if "convenio_nombre" not in cargas_manuales_columns:
+            conn.execute("ALTER TABLE cargas_manuales ADD COLUMN convenio_nombre TEXT")
+        if "convenio_ente_nombre" not in cargas_manuales_columns:
+            conn.execute("ALTER TABLE cargas_manuales ADD COLUMN convenio_ente_nombre TEXT")
+        if "convenio_ente_id" not in cargas_manuales_columns:
+            conn.execute("ALTER TABLE cargas_manuales ADD COLUMN convenio_ente_id TEXT")
+        conn.execute(
+            """
+            UPDATE cargas_manuales
+            SET modalidad = 'Fuente'
+            WHERE TRIM(COALESCE(modalidad, '')) = ''
+            """
+        )
         if "tipo_anexo_origen" not in existing_columns:
             conn.execute(
                 "ALTER TABLE registros ADD COLUMN tipo_anexo_origen TEXT"
@@ -1902,10 +1929,27 @@ def init_db() -> None:
                 WHERE ente_nombre IS NULL
                 """
             )
+        if "auditoria" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN auditoria TEXT")
         if "tipo_auditoria" not in observaciones_columns:
             conn.execute("ALTER TABLE observaciones ADD COLUMN tipo_auditoria TEXT")
         if "fuente_financiamiento" not in observaciones_columns:
             conn.execute("ALTER TABLE observaciones ADD COLUMN fuente_financiamiento TEXT")
+        if "modalidad" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN modalidad TEXT NOT NULL DEFAULT 'Fuente'")
+        if "convenio_nombre" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN convenio_nombre TEXT")
+        if "convenio_ente_nombre" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN convenio_ente_nombre TEXT")
+        if "convenio_ente_id" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN convenio_ente_id TEXT")
+        conn.execute(
+            """
+            UPDATE observaciones
+            SET modalidad = 'Fuente'
+            WHERE TRIM(COALESCE(modalidad, '')) = ''
+            """
+        )
         if "ramo_33" not in observaciones_columns:
             conn.execute("ALTER TABLE observaciones ADD COLUMN ramo_33 TEXT")
         if "ramo_28" not in observaciones_columns:
@@ -1921,6 +1965,8 @@ def init_db() -> None:
             conn.execute("ALTER TABLE observaciones ADD COLUMN periodo_cedula TEXT")
         if "periodo_titular" not in observaciones_columns:
             conn.execute("ALTER TABLE observaciones ADD COLUMN periodo_titular TEXT")
+        if "periodo" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN periodo TEXT")
         if "oficio" not in observaciones_columns:
             conn.execute("ALTER TABLE observaciones ADD COLUMN oficio TEXT")
         if "fecha_notificacion" not in observaciones_columns:
@@ -1939,10 +1985,14 @@ def init_db() -> None:
                     WHERE estado IS NULL AND estatus IS NOT NULL
                     """
                 )
+        if "estatus" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN estatus TEXT")
         if "reclasificada" not in observaciones_columns:
             conn.execute(
                 "ALTER TABLE observaciones ADD COLUMN reclasificada INTEGER NOT NULL DEFAULT 0"
             )
+        if "monto" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN monto REAL")
         if "monto_pdp_emitido" not in observaciones_columns:
             conn.execute("ALTER TABLE observaciones ADD COLUMN monto_pdp_emitido REAL")
         if "monto_pdp_solventado" not in observaciones_columns:
@@ -2032,6 +2082,21 @@ def init_db() -> None:
                 fuente_financiamiento,
                 ramo_33,
                 ramo_28,
+                periodo_cedula
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_obs_ejercicio_convenios
+            ON observaciones (
+                ejercicio,
+                ente_id,
+                tipo_auditoria,
+                modalidad,
+                convenio_ente_id,
+                convenio_nombre,
+                fuente_financiamiento,
                 periodo_cedula
             )
             """

@@ -20,6 +20,8 @@ def register_luis_routes(app, deps):
         "tipo_anexo",
         "estado",
         "fuente_financiamiento",
+        "modalidad",
+        "convenio_ente_nombre",
         "origen_fuente",
         "ramo_33",
         "ramo_28",
@@ -32,6 +34,8 @@ def register_luis_routes(app, deps):
         "tipo_anexo": "Tipo de anexo",
         "estado": "Estado",
         "fuente_financiamiento": "Fuente de financiamiento",
+        "modalidad": "Modalidad",
+        "convenio_ente_nombre": "Ente hijo / convenio",
         "origen_fuente": "Del Ejercicio / Remanentes",
         "ramo_33": "Ramo 33",
         "ramo_28": "Ramo 28",
@@ -82,6 +86,8 @@ def register_luis_routes(app, deps):
             "tipo_anexo": parse_multi_values("tipo_anexo"),
             "estado": parse_multi_values("estado"),
             "fuente_financiamiento": parse_multi_values("fuente_financiamiento"),
+            "modalidad": parse_multi_values("modalidad"),
+            "convenio_ente_nombre": parse_multi_values("convenio_ente_nombre"),
             "origen_fuente": parse_multi_values("origen_fuente", normalize_origen_fuente),
             "ramo_33": parse_multi_values("ramo_33"),
             "ramo_28": parse_multi_values("ramo_28"),
@@ -144,6 +150,8 @@ def register_luis_routes(app, deps):
             "tipo_anexo": "tipo_anexo",
             "estado": "estado",
             "fuente_financiamiento": "fuente_financiamiento",
+            "modalidad": "modalidad",
+            "convenio_ente_nombre": "convenio_ente_nombre",
             "ramo_33": "ramo_33",
             "ramo_28": "ramo_28",
             "periodo_cedula": "periodo_cedula",
@@ -1789,6 +1797,8 @@ def register_luis_routes(app, deps):
             "tipo_auditoria": [row[0] for row in query_distinct("tipo_auditoria", "tipo_auditoria")],
             "estado": [row[0] for row in query_distinct("estado", "estado")],
             "fuente_financiamiento": [row[0] for row in query_distinct("fuente_financiamiento", "fuente_financiamiento")],
+            "modalidad": [row[0] for row in query_distinct("modalidad", "modalidad")],
+            "convenios": [row[0] for row in query_distinct("convenio_ente_nombre", "convenio_ente_nombre")],
             "origen_fuente": [row[0] for row in query_distinct("origen_fuente", "origen_fuente")],
             "ramo_33": [row[0] for row in query_distinct("ramo_33", "ramo_33")],
             "ramo_28": [row[0] for row in query_distinct("ramo_28", "ramo_28")],
@@ -1875,6 +1885,8 @@ def register_luis_routes(app, deps):
                     observaciones.ente_nombre LIKE ?
                     OR observaciones.oficio LIKE ?
                     OR observaciones.fuente_financiamiento LIKE ?
+                    OR observaciones.convenio_nombre LIKE ?
+                    OR observaciones.convenio_ente_nombre LIKE ?
                     OR observaciones.pdp_concepto_irregularidad LIKE ?
                     OR observaciones.pdp_subconcepto_irregularidad LIKE ?
                     OR CAST(observaciones.numero_observacion AS TEXT) LIKE ?
@@ -1882,7 +1894,7 @@ def register_luis_routes(app, deps):
                 """
             )
             search_term = f"%{search}%"
-            params.extend([search_term] * 6)
+            params.extend([search_term] * 8)
     
         filter_sql = ""
         if filter_clauses:
@@ -1914,6 +1926,10 @@ def register_luis_routes(app, deps):
                     observaciones.ente_nombre,
                     observaciones.tipo_auditoria,
                     observaciones.fuente_financiamiento,
+                    observaciones.modalidad,
+                    observaciones.convenio_nombre,
+                    observaciones.convenio_ente_nombre,
+                    observaciones.convenio_ente_id,
                     observaciones.ramo_33,
                     observaciones.ramo_28,
                     observaciones.periodo_cedula,
@@ -1989,6 +2005,10 @@ def register_luis_routes(app, deps):
                     observaciones.ente_nombre,
                     observaciones.tipo_auditoria,
                     observaciones.fuente_financiamiento,
+                    observaciones.modalidad,
+                    observaciones.convenio_nombre,
+                    observaciones.convenio_ente_nombre,
+                    observaciones.convenio_ente_id,
                     observaciones.ramo_33,
                     observaciones.ramo_28,
                     observaciones.periodo_cedula,
@@ -2061,6 +2081,8 @@ def register_luis_routes(app, deps):
         tipos = query_distinct("tipo_anexo", "tipo_anexo")
         estados = query_distinct("estado", "estado")
         fuentes = query_distinct("fuente_financiamiento", "fuente_financiamiento")
+        modalidades = query_distinct("modalidad", "modalidad")
+        convenios = query_distinct("convenio_ente_nombre", "convenio_ente_nombre")
         origenes = query_distinct("origen_fuente", "origen_fuente")
         ramos = query_distinct("ramo_33", "ramo_33")
         ramos_28 = query_distinct("ramo_28", "ramo_28")
@@ -2225,6 +2247,8 @@ def register_luis_routes(app, deps):
         filtros["entes"] = [dict(row) for row in entes]
         filtros["estado"] = [row[0] for row in estados]
         filtros["fuente_financiamiento"] = [row[0] for row in fuentes]
+        filtros["modalidad"] = [row[0] for row in modalidades]
+        filtros["convenios"] = [row[0] for row in convenios]
         filtros["origen_fuente"] = [row[0] for row in origenes]
         filtros["ramo_33"] = [row[0] for row in ramos]
         filtros["ramo_28"] = [row[0] for row in ramos_28]
@@ -3034,6 +3058,9 @@ def register_luis_routes(app, deps):
                 observaciones.estado,
                 observaciones.fecha_notificacion,
                 observaciones.fuente_financiamiento,
+                observaciones.modalidad,
+                observaciones.convenio_nombre,
+                observaciones.convenio_ente_nombre,
                 observaciones.pdp_concepto_irregularidad,
                 observaciones.monto_pdp_emitido,
                 observaciones.monto_pdp_solventado,
@@ -3080,6 +3107,7 @@ def register_luis_routes(app, deps):
             "Estado",
             "Fecha",
             "Fuente",
+            "Convenio",
             "Concepto de Irregularidad",
             "Monto emitido",
             "Monto solventado",
@@ -3126,6 +3154,11 @@ def register_luis_routes(app, deps):
                     row["estado"] or "—",
                     row["fecha_notificacion"] or "—",
                     row["fuente_financiamiento"] or "—",
+                    (
+                        row["convenio_ente_nombre"]
+                        or row["convenio_nombre"]
+                        or "—"
+                    ) if (row["modalidad"] or "") == "Convenio" else "—",
                     row["pdp_concepto_irregularidad"] or "—",
                     monto_emitido if (row["tipo_anexo"] or "") == "PDP" else 0,
                     monto_solventado if (row["tipo_anexo"] or "") == "PDP" else 0,
@@ -3135,28 +3168,28 @@ def register_luis_routes(app, deps):
 
         last_data_row = sheet.max_row
         for row_idx in range(2, last_data_row + 1):
-            for col_idx in range(1, 12):
+            for col_idx in range(1, 13):
                 cell = sheet.cell(row=row_idx, column=col_idx)
                 cell.border = thin_border
                 if row_idx % 2 == 0:
                     cell.fill = zebra_fill
-                if col_idx in (1, 2, 6, 8):
+                if col_idx in (1, 2, 6, 8, 9):
                     cell.alignment = left_alignment
-                elif col_idx in (9, 10, 11):
+                elif col_idx in (10, 11, 12):
                     cell.alignment = right_alignment
                 else:
                     cell.alignment = center_alignment
-            for col in (9, 10, 11):
+            for col in (10, 11, 12):
                 sheet.cell(row=row_idx, column=col).number_format = "#,##0.00"
-        sheet.auto_filter.ref = f"A1:K{max(last_data_row, 1)}"
+        sheet.auto_filter.ref = f"A1:L{max(last_data_row, 1)}"
 
         summary_start = sheet.max_row + 2
-        sheet.merge_cells(start_row=summary_start, start_column=1, end_row=summary_start, end_column=11)
+        sheet.merge_cells(start_row=summary_start, start_column=1, end_row=summary_start, end_column=12)
         summary_header = sheet.cell(row=summary_start, column=1, value="Subtotal / Resumen")
         summary_header.font = white_bold_font
         summary_header.alignment = left_alignment
         summary_header.fill = header_primary_fill
-        for col_idx in range(1, 12):
+        for col_idx in range(1, 13):
             cell = sheet.cell(row=summary_start, column=col_idx)
             cell.border = thin_border
             cell.fill = header_primary_fill
@@ -3176,7 +3209,7 @@ def register_luis_routes(app, deps):
             label_cell.font = Font(bold=True)
             label_cell.alignment = left_alignment
             value_cell.alignment = right_alignment
-            for col_idx in range(1, 12):
+            for col_idx in range(1, 13):
                 cell = sheet.cell(row=current_row, column=col_idx)
                 cell.border = thin_border
                 cell.fill = total_fill
@@ -3191,12 +3224,13 @@ def register_luis_routes(app, deps):
             5: 14,
             6: 18,
             7: 22,
-            8: 30,
-            9: 16,
+            8: 34,
+            9: 30,
             10: 16,
             11: 16,
+            12: 16,
         }
-        for col_idx in range(1, 12):
+        for col_idx in range(1, 13):
             max_len = 0
             for row_idx in range(1, sheet.max_row + 1):
                 val = sheet.cell(row=row_idx, column=col_idx).value

@@ -416,7 +416,7 @@ def register_gabo_routes(app, deps):
         if not ejercicio:
             return []
         rows = db.execute(
-            """
+            f"""
             SELECT
                 TRIM(COALESCE(ente_id, '')) AS ente_id,
                 TRIM(COALESCE(ente_numero, '')) AS ente_numero,
@@ -424,7 +424,7 @@ def register_gabo_routes(app, deps):
             FROM entes_detalle
             WHERE TRIM(COALESCE(ejercicio, '')) = ?
               AND TRIM(COALESCE(ente_id, '')) != ''
-            ORDER BY CAST(COALESCE(NULLIF(ente_numero, ''), '0') AS REAL), ente_numero, ente_nombre
+            ORDER BY {ente_numero_sort_sql('ente_numero')}, ente_numero, ente_nombre
             """,
             (ejercicio,),
         ).fetchall()
@@ -515,13 +515,13 @@ def register_gabo_routes(app, deps):
                     THEN 0
                     ELSE 1
                   END,
-                  CAST(COALESCE(NULLIF(ed2.ente_numero, ''), '0') AS REAL),
+                  {ente_numero_sort_sql('ed2.ente_numero')},
                   ed2.id
                 LIMIT 1
               )
             WHERE {where_sql}
             ORDER BY
-              CAST(COALESCE(NULLIF(ed.ente_numero, ''), '0') AS REAL) ASC,
+              {ente_numero_sort_sql('ed.ente_numero')} ASC,
               ed.ente_numero ASC,
               ente_nombre ASC,
               h.tipo_auditoria ASC,
@@ -1158,6 +1158,41 @@ def register_gabo_routes(app, deps):
             parsed.append(amount)
         return parsed
 
+    def normalize_convenio_text(value: str) -> str:
+        clean = " ".join((value or "").split())
+        clean = re.sub(r"\bCONVENI\s+O\b", "CONVENIO", clean, flags=re.IGNORECASE)
+        return clean
+
+    def normalize_observacion_modalidad(value: str) -> str:
+        clean = " ".join((value or "").split()).lower()
+        return "Convenio" if clean == "convenio" else "Fuente"
+
+    def _convenio_match_key(value: str) -> str:
+        clean = unicodedata.normalize("NFD", value or "")
+        clean = "".join(ch for ch in clean if unicodedata.category(ch) != "Mn")
+        clean = re.sub(r"[^a-z0-9]+", " ", clean.lower())
+        return " ".join(clean.split())
+
+    def resolve_convenio_ente_id(db, ejercicio: str, convenio_ente_nombre: str) -> str:
+        target = _convenio_match_key(convenio_ente_nombre)
+        if not target:
+            return ""
+        rows = db.execute(
+            """
+            SELECT
+                TRIM(COALESCE(ente_id, '')) AS ente_id,
+                TRIM(COALESCE(ente_nombre, '')) AS ente_nombre
+            FROM entes_detalle
+            WHERE TRIM(COALESCE(ejercicio, '')) = ?
+            """,
+            (ejercicio,),
+        ).fetchall()
+        for row in rows:
+            name_key = _convenio_match_key(row["ente_nombre"] or "")
+            if target == name_key or target in name_key or name_key in target:
+                return normalize_ente_id(row["ente_id"] or "")
+        return ""
+
     def materialize_observaciones_from_manual(
         db,
         *,
@@ -1168,6 +1203,7 @@ def register_gabo_routes(app, deps):
         tipo_auditoria: str,
         fuente_nombre: str,
         ramo_33: str,
+        ramo_28: str,
         estado: str,
         periodo_cedula: str,
         periodo_titular: str,
@@ -1181,11 +1217,19 @@ def register_gabo_routes(app, deps):
         monto_pdp_solventado: float,
         monto_pdp_pendiente: float,
         pdp_amounts: list[float],
+        modalidad: str = "Fuente",
+        convenio_nombre: str = "",
+        convenio_ente_nombre: str = "",
+        convenio_ente_id: str = "",
         pdp_details: list[dict] | None = None,
         solventacion_totales_by_anexo: dict[str, dict] | None = None,
         replace_scope: bool = False,
     ) -> None:
         fuente_nombre = normalize_fuente_financiamiento(fuente_nombre)
+        modalidad = normalize_observacion_modalidad(modalidad)
+        convenio_nombre = normalize_convenio_text(convenio_nombre) if modalidad == "Convenio" else ""
+        convenio_ente_nombre = normalize_convenio_text(convenio_ente_nombre) if modalidad == "Convenio" else ""
+        convenio_ente_id = normalize_ente_id(convenio_ente_id) if modalidad == "Convenio" else ""
         if replace_scope:
             db.execute(
                 """
@@ -1195,9 +1239,20 @@ def register_gabo_routes(app, deps):
                   AND TRIM(COALESCE(tipo_auditoria, '')) = TRIM(COALESCE(?, ''))
                   AND LOWER(TRIM(COALESCE(oficio, ''))) = LOWER(TRIM(COALESCE(?, '')))
                   AND LOWER(TRIM(COALESCE(fuente_financiamiento, ''))) = LOWER(TRIM(COALESCE(?, '')))
+                  AND TRIM(COALESCE(modalidad, 'Fuente')) = TRIM(COALESCE(?, 'Fuente'))
+                  AND LOWER(TRIM(COALESCE(convenio_nombre, ''))) = LOWER(TRIM(COALESCE(?, '')))
                   AND LOWER(TRIM(COALESCE(periodo_cedula, ''))) = LOWER(TRIM(COALESCE(?, '')))
                 """,
-                (ejercicio, ente_id, tipo_auditoria, oficio, fuente_nombre, periodo_cedula),
+                (
+                    ejercicio,
+                    ente_id,
+                    tipo_auditoria,
+                    oficio,
+                    fuente_nombre,
+                    modalidad,
+                    convenio_nombre,
+                    periodo_cedula,
+                ),
             )
 
         counts = {
@@ -1258,8 +1313,13 @@ def register_gabo_routes(app, deps):
                         ente_numero_sort,
                         ente_nombre,
                         tipo_auditoria,
+                        modalidad,
                         fuente_financiamiento,
+                        convenio_nombre,
+                        convenio_ente_nombre,
+                        convenio_ente_id,
                         ramo_33,
+                        ramo_28,
                         periodo,
                         periodo_cedula,
                         periodo_titular,
@@ -1277,7 +1337,7 @@ def register_gabo_routes(app, deps):
                         pdp_subconcepto_irregularidad,
                         created_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         ejercicio,
@@ -1287,8 +1347,13 @@ def register_gabo_routes(app, deps):
                         parse_ente_numero_sort(ente_numero),
                         ente_nombre,
                         tipo_auditoria,
+                        modalidad,
                         fuente_row_nombre,
+                        convenio_nombre,
+                        convenio_ente_nombre,
+                        convenio_ente_id,
                         ramo_33,
+                        ramo_28,
                         periodo_cedula,
                         periodo_cedula,
                         periodo_titular or periodo_cedula,
@@ -1353,10 +1418,19 @@ def register_gabo_routes(app, deps):
         cantidad_pras: int,
         cantidad_pefcf: int,
         cantidad_r: int,
+        modalidad: str = "Fuente",
+        convenio_nombre: str = "",
+        convenio_ente_nombre: str = "",
+        convenio_ente_id: str = "",
     ) -> dict[str, object]:
+        modalidad = normalize_observacion_modalidad(modalidad)
         return {
             "tipo_auditoria": tipo_auditoria,
             "fuente_nombre": normalize_fuente_financiamiento(fuente_nombre),
+            "modalidad": modalidad,
+            "convenio_nombre": normalize_convenio_text(convenio_nombre) if modalidad == "Convenio" else "",
+            "convenio_ente_nombre": normalize_convenio_text(convenio_ente_nombre) if modalidad == "Convenio" else "",
+            "convenio_ente_id": normalize_ente_id(convenio_ente_id) if modalidad == "Convenio" else "",
             "cantidad_sa": int(cantidad_sa),
             "cantidad_pdp": int(cantidad_pdp),
             "cantidad_pras": int(cantidad_pras),
@@ -1373,7 +1447,11 @@ def register_gabo_routes(app, deps):
         oficio: str,
         fuente_nombre: str,
         periodo_cedula: str,
+        modalidad: str = "Fuente",
+        convenio_nombre: str = "",
     ) -> int:
+        modalidad = normalize_observacion_modalidad(modalidad)
+        convenio_nombre = normalize_convenio_text(convenio_nombre) if modalidad == "Convenio" else ""
         row = db.execute(
             """
             SELECT COUNT(*) AS total
@@ -1383,9 +1461,20 @@ def register_gabo_routes(app, deps):
               AND TRIM(COALESCE(tipo_auditoria, '')) = TRIM(COALESCE(?, ''))
               AND LOWER(TRIM(COALESCE(oficio, ''))) = LOWER(TRIM(COALESCE(?, '')))
               AND LOWER(TRIM(COALESCE(fuente_financiamiento, ''))) = LOWER(TRIM(COALESCE(?, '')))
+              AND TRIM(COALESCE(modalidad, 'Fuente')) = TRIM(COALESCE(?, 'Fuente'))
+              AND LOWER(TRIM(COALESCE(convenio_nombre, ''))) = LOWER(TRIM(COALESCE(?, '')))
               AND LOWER(TRIM(COALESCE(periodo_cedula, ''))) = LOWER(TRIM(COALESCE(?, '')))
             """,
-            (ejercicio, ente_id, tipo_auditoria, oficio, fuente_nombre, periodo_cedula),
+            (
+                ejercicio,
+                ente_id,
+                tipo_auditoria,
+                oficio,
+                fuente_nombre,
+                modalidad,
+                convenio_nombre,
+                periodo_cedula,
+            ),
         ).fetchone()
         return int(row["total"] or 0) if row else 0
 
@@ -1462,6 +1551,8 @@ def register_gabo_routes(app, deps):
                 oficio=(row["numero_oficio"] or "").strip(),
                 fuente_nombre=fuente_nombre,
                 periodo_cedula=" ".join((row["periodo"] or "").split()),
+                modalidad=(row["modalidad"] or "Fuente").strip(),
+                convenio_nombre=(row["convenio_nombre"] or "").strip(),
             )
             if existing_total == expected_total:
                 continue
@@ -1483,6 +1574,7 @@ def register_gabo_routes(app, deps):
                 tipo_auditoria=(row["tipo_auditoria"] or "").strip(),
                 fuente_nombre=fuente_nombre,
                 ramo_33=(row["ramo_33"] or "").strip() or "No",
+                ramo_28=(row["ramo_28"] or "").strip() or "No",
                 estado=(row["estado"] or "").strip() or infer_manual_estado(fuente_nombre),
                 periodo_cedula=" ".join((row["periodo"] or "").split()),
                 periodo_titular=" ".join((row["periodo_titular"] or "").split()),
@@ -1496,6 +1588,10 @@ def register_gabo_routes(app, deps):
                 monto_pdp_solventado=float(row["monto_pdp_solventado"] or 0.0),
                 monto_pdp_pendiente=float(row["monto_pdp_pendiente"] or 0.0),
                 pdp_amounts=pdp_amounts,
+                modalidad=(row["modalidad"] or "Fuente").strip(),
+                convenio_nombre=(row["convenio_nombre"] or "").strip(),
+                convenio_ente_nombre=(row["convenio_ente_nombre"] or "").strip(),
+                convenio_ente_id=(row["convenio_ente_id"] or "").strip(),
                 pdp_details=pdp_details,
                 solventacion_totales_by_anexo={},
                 replace_scope=True,
@@ -1579,6 +1675,16 @@ def register_gabo_routes(app, deps):
                 continue
             if tipo_auditoria not in {"Financiera", "Obra Pública"}:
                 tipo_auditoria = "Financiera"
+            modalidad = normalize_observacion_modalidad(str(item.get("modalidad") or "Fuente"))
+            convenio_nombre = normalize_convenio_text(str(item.get("convenio_nombre") or ""))
+            convenio_ente_nombre = normalize_convenio_text(str(item.get("convenio_ente_nombre") or ""))
+            convenio_ente_id = normalize_ente_id(str(item.get("convenio_ente_id") or ""))
+            if modalidad != "Convenio":
+                convenio_nombre = ""
+                convenio_ente_nombre = ""
+                convenio_ente_id = ""
+            elif not convenio_nombre:
+                continue
             cantidad_sa = parse_non_negative_int(str(item.get("cantidad_sa", "0")), "Cantidad SA")
             cantidad_pdp = parse_non_negative_int(str(item.get("cantidad_pdp", "0")), "Cantidad PDP")
             cantidad_pras = parse_non_negative_int(str(item.get("cantidad_pras", "0")), "Cantidad PRAS")
@@ -1593,6 +1699,10 @@ def register_gabo_routes(app, deps):
                 {
                     "fuente_nombre": fuente_nombre,
                     "tipo_auditoria": tipo_auditoria,
+                    "modalidad": modalidad,
+                    "convenio_nombre": convenio_nombre,
+                    "convenio_ente_nombre": convenio_ente_nombre,
+                    "convenio_ente_id": convenio_ente_id,
                     "periodo": periodo,
                     "cantidad_sa": cantidad_sa,
                     "cantidad_pdp": cantidad_pdp,
@@ -2336,7 +2446,7 @@ def register_gabo_routes(app, deps):
 
         db = get_db()
         rows = db.execute(
-            """
+            f"""
             SELECT
                 TRIM(COALESCE(ente_id, '')) AS ente_id,
                 TRIM(COALESCE(ente_numero, '')) AS ente_numero,
@@ -2344,7 +2454,7 @@ def register_gabo_routes(app, deps):
             FROM entes_detalle
             WHERE TRIM(COALESCE(ejercicio, '')) = ?
               AND TRIM(COALESCE(ente_id, '')) != ''
-            ORDER BY CAST(COALESCE(NULLIF(ente_numero, ''), '0') AS REAL), ente_numero, ente_nombre
+            ORDER BY {ente_numero_sort_sql('ente_numero')}, ente_numero, ente_nombre
             """,
             (ejercicio,),
         ).fetchall()
@@ -2420,6 +2530,161 @@ def register_gabo_routes(app, deps):
                 "deferred_save": True,
             }
         )
+
+    @app.get("/carga/oficios-resumen")
+    @gabo_required
+    def carga_oficios_resumen():
+        ejercicio = (request.args.get("ejercicio") or "").strip()
+        ente_id = normalize_ente_id(request.args.get("ente_id", ""))
+        tipo_auditoria = (request.args.get("tipo_auditoria") or "").strip()
+        if not ejercicio:
+            return jsonify({"rows": [], "totals": {}})
+
+        params: list[str] = [ejercicio]
+        where_extra: list[str] = []
+        if ente_id:
+            where_extra.append(f"{normalize_ente_id_sql('ente_id')} = ?")
+            params.append(ente_id)
+        if tipo_auditoria:
+            tipo_options = _tipo_auditoria_options(tipo_auditoria)
+            if not tipo_options:
+                tipo_options = [tipo_auditoria]
+            tipo_placeholders = ", ".join(["?"] * len(tipo_options))
+            where_extra.append(
+                f"TRIM(COALESCE(tipo_auditoria, '')) IN ({tipo_placeholders})"
+            )
+            params.extend(tipo_options)
+
+        where_sql = ""
+        if where_extra:
+            where_sql = " AND " + " AND ".join(where_extra)
+
+        db = get_db()
+        repair_where = [
+            "TRIM(COALESCE(cm.ejercicio, '')) = ?",
+            "TRIM(COALESCE(cm.asunto, '')) = 'Notificación de Cédula de Resultados'",
+            """(
+                COALESCE(cm.cantidad_sa, 0)
+                + COALESCE(cm.cantidad_pdp, 0)
+                + COALESCE(cm.cantidad_pras, 0)
+                + COALESCE(cm.cantidad_pefcf, 0)
+                + COALESCE(cm.cantidad_r, 0)
+            ) > 0""",
+        ]
+        repair_params: list[object] = [ejercicio]
+        if ente_id:
+            repair_where.append(f"{normalize_ente_id_sql('cm.ente_id')} = ?")
+            repair_params.append(ente_id)
+        if tipo_auditoria:
+            tipo_options = _tipo_auditoria_options(tipo_auditoria)
+            if not tipo_options:
+                tipo_options = [tipo_auditoria]
+            tipo_placeholders = ", ".join(["?"] * len(tipo_options))
+            repair_where.append(
+                f"TRIM(COALESCE(cm.tipo_auditoria, '')) IN ({tipo_placeholders})"
+            )
+            repair_params.extend(tipo_options)
+        repair_rows = db.execute(
+            f"""
+            SELECT cm.id
+            FROM cargas_manuales AS cm
+            WHERE {" AND ".join(repair_where)}
+            ORDER BY cm.id ASC
+            """,
+            repair_params,
+        ).fetchall()
+        if repair_rows:
+            repair_result = repair_missing_observaciones_from_cargas(
+                db,
+                carga_ids=[int(row["id"]) for row in repair_rows],
+            )
+            if int(repair_result.get("repaired") or 0) > 0:
+                db.commit()
+
+        rows = db.execute(
+            f"""
+            SELECT
+                {normalize_ente_id_sql('ente_id')} AS ente_id,
+                MIN(COALESCE(ente_numero_sort, 0)) AS ente_numero_sort,
+                MIN(TRIM(COALESCE(ente_numero, ''))) AS ente_numero,
+                MIN(TRIM(COALESCE(ente_nombre, ''))) AS ente_nombre,
+                MIN(TRIM(COALESCE(oficio, ''))) AS oficio,
+                TRIM(COALESCE(tipo_auditoria, '')) AS tipos_auditoria,
+                MIN(NULLIF(TRIM(COALESCE(fecha_notificacion, '')), '')) AS fecha_notificacion,
+                SUM(CASE WHEN UPPER(TRIM(COALESCE(tipo_anexo, ''))) = 'SA' THEN 1 ELSE 0 END) AS sa,
+                SUM(CASE WHEN UPPER(TRIM(COALESCE(tipo_anexo, ''))) = 'PDP' THEN 1 ELSE 0 END) AS pdp,
+                SUM(CASE WHEN UPPER(TRIM(COALESCE(tipo_anexo, ''))) = 'PRAS' THEN 1 ELSE 0 END) AS pras,
+                SUM(CASE WHEN UPPER(TRIM(COALESCE(tipo_anexo, ''))) = 'R' THEN 1 ELSE 0 END) AS r,
+                SUM(CASE WHEN UPPER(TRIM(COALESCE(tipo_anexo, ''))) = 'PEFCF' THEN 1 ELSE 0 END) AS pefcf,
+                COUNT(*) AS total,
+                SUM(CASE
+                    WHEN UPPER(TRIM(COALESCE(tipo_anexo, ''))) = 'PDP'
+                    THEN COALESCE(monto_pdp_emitido, 0)
+                    ELSE 0
+                END) AS monto_emitido,
+                SUM(CASE
+                    WHEN UPPER(TRIM(COALESCE(tipo_anexo, ''))) = 'PDP'
+                    THEN COALESCE(monto_pdp_solventado, 0)
+                    ELSE 0
+                END) AS monto_solventado,
+                SUM(CASE
+                    WHEN UPPER(TRIM(COALESCE(tipo_anexo, ''))) = 'PDP'
+                    THEN COALESCE(monto_pdp_pendiente, 0)
+                    ELSE 0
+                END) AS monto_pendiente
+            FROM observaciones
+            WHERE TRIM(COALESCE(ejercicio, '')) = ?
+              AND TRIM(COALESCE(oficio, '')) != ''
+              {where_sql}
+            GROUP BY
+              {normalize_ente_id_sql('ente_id')},
+              LOWER(TRIM(COALESCE(oficio, ''))),
+              TRIM(COALESCE(tipo_auditoria, ''))
+            ORDER BY
+              MIN(COALESCE(ente_numero_sort, 0)) ASC,
+              MIN(TRIM(COALESCE(ente_numero, ''))) ASC,
+              MIN(TRIM(COALESCE(ente_nombre, ''))) ASC,
+              LOWER(TRIM(COALESCE(oficio, ''))) ASC,
+              CASE TRIM(COALESCE(tipo_auditoria, ''))
+                WHEN 'Financiera' THEN 0
+                WHEN 'Obra Pública' THEN 1
+                ELSE 2
+              END ASC,
+              TRIM(COALESCE(tipo_auditoria, '')) ASC
+            LIMIT 500
+            """,
+            params,
+        ).fetchall()
+
+        payload_rows = []
+        totals = {
+            "sa": 0,
+            "pdp": 0,
+            "pras": 0,
+            "r": 0,
+            "pefcf": 0,
+            "total": 0,
+            "monto_emitido": 0.0,
+            "monto_solventado": 0.0,
+            "monto_pendiente": 0.0,
+        }
+        for row in rows:
+            item = dict(row)
+            tipos = [
+                " ".join(tipo.split())
+                for tipo in str(item.get("tipos_auditoria") or "").split(",")
+                if " ".join(tipo.split())
+            ]
+            item["tipos_auditoria"] = ", ".join(tipos)
+            for key in ("sa", "pdp", "pras", "r", "pefcf", "total"):
+                item[key] = int(item.get(key) or 0)
+                totals[key] += item[key]
+            for key in ("monto_emitido", "monto_solventado", "monto_pendiente"):
+                item[key] = float(item.get(key) or 0.0)
+                totals[key] += item[key]
+            payload_rows.append(item)
+
+        return jsonify({"rows": payload_rows, "totals": totals})
 
     @app.get("/carga/pdp-catalogo")
     @gabo_required
@@ -2508,6 +2773,10 @@ def register_gabo_routes(app, deps):
                 COALESCE(reclasificada, 0) AS reclasificada,
                 TRIM(COALESCE(tipo_auditoria, '')) AS tipo_auditoria,
                 TRIM(COALESCE(fuente_financiamiento, '')) AS fuente_financiamiento,
+                TRIM(COALESCE(modalidad, 'Fuente')) AS modalidad,
+                TRIM(COALESCE(convenio_nombre, '')) AS convenio_nombre,
+                TRIM(COALESCE(convenio_ente_nombre, '')) AS convenio_ente_nombre,
+                TRIM(COALESCE(convenio_ente_id, '')) AS convenio_ente_id,
                 monto_pdp_emitido,
                 monto_pdp_solventado,
                 monto_pdp_pendiente,
@@ -3303,6 +3572,10 @@ def register_gabo_routes(app, deps):
                 TRIM(COALESCE(ente_nombre, '')) AS ente_nombre,
                 TRIM(COALESCE(tipo_auditoria, '')) AS tipo_auditoria,
                 TRIM(COALESCE(fuente_financiamiento, '')) AS fuente_financiamiento,
+                TRIM(COALESCE(modalidad, 'Fuente')) AS modalidad,
+                TRIM(COALESCE(convenio_nombre, '')) AS convenio_nombre,
+                TRIM(COALESCE(convenio_ente_nombre, '')) AS convenio_ente_nombre,
+                TRIM(COALESCE(convenio_ente_id, '')) AS convenio_ente_id,
                 TRIM(COALESCE(periodo_cedula, '')) AS periodo_cedula,
                 TRIM(COALESCE(oficio, '')) AS oficio,
                 TRIM(COALESCE(fecha_notificacion, '')) AS fecha_notificacion,
@@ -3689,6 +3962,7 @@ def register_gabo_routes(app, deps):
             "manual_periodo": "",
             "manual_periodo_titular": "",
             "manual_ramo_33": "No",
+            "manual_ramo_28": "No",
             "manual_estado": "Emitido",
             "manual_fecha_notificacion": "",
             "manual_cantidad_sa": "0",
@@ -3742,6 +4016,7 @@ def register_gabo_routes(app, deps):
                     "manual_periodo": (request.form.get("manual_periodo") or "").strip(),
                     "manual_periodo_titular": (request.form.get("manual_periodo_titular") or "").strip(),
                     "manual_ramo_33": (request.form.get("manual_ramo_33") or "").strip() or "No",
+                    "manual_ramo_28": (request.form.get("manual_ramo_28") or "").strip() or "No",
                     "manual_estado": _normalize_observacion_estado(manual_estado_raw) or "Emitido",
                     "manual_fecha_notificacion": (request.form.get("manual_fecha_notificacion") or "").strip(),
                     "manual_cantidad_sa": (request.form.get("manual_cantidad_sa") or "").strip() or "0",
@@ -3791,11 +4066,16 @@ def register_gabo_routes(app, deps):
                     periodo = raw_periodo if user and user.get("username") == "gabo" else " ".join(raw_periodo.split())
                     periodo_titular = form_data["manual_periodo_titular"]
                     ramo_33 = "No"
+                    ramo_28 = "No"
                     estado = "Emitido"
                     fecha_notificacion = form_data["manual_fecha_notificacion"]
                     raw_montos_pdp = form_data["manual_montos_pdp"]
                     raw_pdp_detalle_json = form_data["manual_pdp_detalle_json"]
                     fuentes_detalle_rows = parse_manual_fuentes_detalle(form_data["manual_fuentes_detalle_json"])
+                    modalidad = "Fuente"
+                    convenio_nombre = ""
+                    convenio_ente_nombre = ""
+                    convenio_ente_id = ""
                     usa_fuentes_detalle = (
                         asunto == "Notificación de Cédula de Resultados"
                         and len(fuentes_detalle_rows) > 0
@@ -3964,6 +4244,16 @@ def register_gabo_routes(app, deps):
                         if usa_fuentes_detalle:
                             first_row = fuentes_detalle_rows[0]
                             tipo_auditoria = str(first_row["tipo_auditoria"])
+                            modalidad = first_row.get("modalidad") or "Fuente"
+                            convenio_nombre = first_row.get("convenio_nombre") or ""
+                            convenio_ente_nombre = first_row.get("convenio_ente_nombre") or ""
+                            convenio_ente_id = first_row.get("convenio_ente_id") or ""
+                            if modalidad == "Convenio" and not convenio_ente_id:
+                                convenio_ente_id = resolve_convenio_ente_id(
+                                    db,
+                                    ejercicio,
+                                    convenio_ente_nombre,
+                                )
                             form_data["manual_tipo_auditoria"] = tipo_auditoria
                             periodo_fuente = " ".join((first_row.get("periodo") or "").split())
                             if not periodo_fuente:
@@ -4029,6 +4319,10 @@ def register_gabo_routes(app, deps):
                         cantidad_pras=cantidad_pras,
                         cantidad_pefcf=cantidad_pefcf,
                         cantidad_r=cantidad_r,
+                        modalidad=modalidad,
+                        convenio_nombre=convenio_nombre,
+                        convenio_ente_nombre=convenio_ente_nombre,
+                        convenio_ente_id=convenio_ente_id,
                     )
                     fuente_detalle_json = serialize_manual_snapshot(fuente_detalle_snapshot)
                     pdp_detalle_json = serialize_manual_snapshot(pdp_details if cantidad_pdp > 0 else [])
@@ -4062,6 +4356,8 @@ def register_gabo_routes(app, deps):
                                   AND asunto = ?
                                   AND ejercicio = ?
                                   AND fuente_id = ?
+                                  AND TRIM(COALESCE(modalidad, 'Fuente')) = TRIM(COALESCE(?, 'Fuente'))
+                                  AND LOWER(TRIM(COALESCE(convenio_nombre, ''))) = LOWER(TRIM(COALESCE(?, '')))
                                   AND LOWER(TRIM(periodo)) = LOWER(TRIM(?))
                                   AND tipo_auditoria = ?
                                 ORDER BY id DESC
@@ -4074,6 +4370,8 @@ def register_gabo_routes(app, deps):
                                     asunto,
                                     ejercicio,
                                     fuente_id,
+                                    modalidad,
+                                    convenio_nombre,
                                     periodo,
                                     tipo_item,
                                 ),
@@ -4088,6 +4386,8 @@ def register_gabo_routes(app, deps):
                                   AND asunto = ?
                                   AND ejercicio = ?
                                   AND fuente_id = ?
+                                  AND TRIM(COALESCE(modalidad, 'Fuente')) = TRIM(COALESCE(?, 'Fuente'))
+                                  AND LOWER(TRIM(COALESCE(convenio_nombre, ''))) = LOWER(TRIM(COALESCE(?, '')))
                                   AND LOWER(TRIM(periodo)) = LOWER(TRIM(?))
                                   AND tipo_auditoria = ?
                                 ORDER BY id DESC
@@ -4099,6 +4399,8 @@ def register_gabo_routes(app, deps):
                                     asunto,
                                     ejercicio,
                                     fuente_id,
+                                    modalidad,
+                                    convenio_nombre,
                                     periodo,
                                     tipo_item,
                                 ),
@@ -4153,10 +4455,15 @@ def register_gabo_routes(app, deps):
                                         ejercicio = ?,
                                         fuente_id = ?,
                                         fuente_nombre = ?,
+                                        modalidad = ?,
+                                        convenio_nombre = ?,
+                                        convenio_ente_nombre = ?,
+                                        convenio_ente_id = ?,
                                         periodo = ?,
                                         periodo_titular = ?,
                                         fecha_notificacion = ?,
                                         ramo_33 = ?,
+                                        ramo_28 = ?,
                                         estado = ?,
                                         cantidad_sa = ?,
                                         cantidad_pdp = ?,
@@ -4183,10 +4490,15 @@ def register_gabo_routes(app, deps):
                                         ejercicio,
                                         fuente_id,
                                         fuente_nombre,
+                                        modalidad,
+                                        convenio_nombre,
+                                        convenio_ente_nombre,
+                                        convenio_ente_id,
                                         periodo,
                                         periodo_titular,
                                         fecha_notificacion,
                                         ramo_33,
+                                        ramo_28,
                                         estado,
                                         cantidad_sa,
                                         cantidad_pdp,
@@ -4220,6 +4532,7 @@ def register_gabo_routes(app, deps):
                                     tipo_auditoria=tipos_auditoria[0],
                                     fuente_nombre=fuente_nombre,
                                     ramo_33=ramo_33,
+                                    ramo_28=ramo_28,
                                     estado=estado,
                                     periodo_cedula=periodo,
                                     periodo_titular=periodo_titular,
@@ -4233,6 +4546,10 @@ def register_gabo_routes(app, deps):
                                     monto_pdp_solventado=monto_pdp_solventado,
                                     monto_pdp_pendiente=monto_pdp_pendiente,
                                     pdp_amounts=pdp_amounts,
+                                    modalidad=modalidad,
+                                    convenio_nombre=convenio_nombre,
+                                    convenio_ente_nombre=convenio_ente_nombre,
+                                    convenio_ente_id=convenio_ente_id,
                                     pdp_details=pdp_details,
                                     solventacion_totales_by_anexo=solventacion_totales_by_anexo,
                                     replace_scope=True,
@@ -4307,10 +4624,15 @@ def register_gabo_routes(app, deps):
                                             ejercicio,
                                             fuente_id,
                                             fuente_nombre,
+                                            modalidad,
+                                            convenio_nombre,
+                                            convenio_ente_nombre,
+                                            convenio_ente_id,
                                             periodo,
                                             periodo_titular,
                                             fecha_notificacion,
                                             ramo_33,
+                                            ramo_28,
                                             estado,
                                             cantidad_sa,
                                             cantidad_pdp,
@@ -4325,7 +4647,7 @@ def register_gabo_routes(app, deps):
                                             created_by,
                                             created_at
                                         )
-                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                         """,
                                         (
                                             manual_ente_id,
@@ -4339,10 +4661,15 @@ def register_gabo_routes(app, deps):
                                             ejercicio,
                                             fuente_id,
                                             fuente_nombre,
+                                            modalidad,
+                                            convenio_nombre,
+                                            convenio_ente_nombre,
+                                            convenio_ente_id,
                                             periodo,
                                             periodo_titular,
                                             fecha_notificacion,
                                             ramo_33,
+                                            ramo_28,
                                             estado,
                                             cantidad_sa,
                                             cantidad_pdp,
@@ -4368,6 +4695,7 @@ def register_gabo_routes(app, deps):
                                         tipo_auditoria=tipo_item,
                                         fuente_nombre=fuente_nombre,
                                         ramo_33=ramo_33,
+                                        ramo_28=ramo_28,
                                         estado=estado,
                                         periodo_cedula=periodo,
                                         periodo_titular=periodo_titular,
@@ -4381,6 +4709,10 @@ def register_gabo_routes(app, deps):
                                         monto_pdp_solventado=monto_pdp_solventado,
                                         monto_pdp_pendiente=monto_pdp_pendiente,
                                         pdp_amounts=pdp_amounts_tipo_item,
+                                        modalidad=modalidad,
+                                        convenio_nombre=convenio_nombre,
+                                        convenio_ente_nombre=convenio_ente_nombre,
+                                        convenio_ente_id=convenio_ente_id,
                                         pdp_details=pdp_details_tipo_item,
                                         solventacion_totales_by_anexo=solventacion_totales_by_anexo,
                                         replace_scope=False,
@@ -4391,6 +4723,21 @@ def register_gabo_routes(app, deps):
                                 )
                                 if repair_result["repaired"] > 0:
                                     db.commit()
+                                _save_summary = {
+                                    "ente": (ente_row["ente_nombre"] or "").strip(),
+                                    "oficio": numero_oficio,
+                                    "ejercicio": ejercicio,
+                                    "fuente": fuente_nombre,
+                                    "periodo": periodo,
+                                    "sa": cantidad_sa,
+                                    "pdp": cantidad_pdp,
+                                    "pras": cantidad_pras,
+                                    "pefcf": cantidad_pefcf,
+                                    "r": cantidad_r,
+                                    "monto_emitido": monto_pdp_emitido,
+                                    "monto_solventado": monto_pdp_solventado,
+                                    "monto_pendiente": monto_pdp_pendiente,
+                                }
                                 if existing_rows:
                                     existentes = ", ".join(sorted(tipos_existentes))
                                     insertados = ", ".join(tipos_por_insertar)
@@ -4401,6 +4748,7 @@ def register_gabo_routes(app, deps):
                                             f"Registro manual guardado para: {insertados}. "
                                             f"Ya existían: {existentes}."
                                         ),
+                                        "summary": _save_summary,
                                     }
                                     form_data["manual_id"] = ""
                                 else:
@@ -4409,11 +4757,11 @@ def register_gabo_routes(app, deps):
                                         "ok": True,
                                         "level": "success",
                                         "message": (
-                                            "Registro manual guardado correctamente. "
-                                            "Puedes editar los campos y volver a guardar."
+                                            "Registro manual guardado correctamente."
                                             if len(inserted_ids) == 1
                                             else "Registros manuales guardados correctamente."
                                         ),
+                                        "summary": _save_summary,
                                     }
                                 if (
                                     action == "manual_save"
@@ -4457,6 +4805,16 @@ def register_gabo_routes(app, deps):
                                             if extra_fuente_id is None:
                                                 continue
                                         extra_tipo = extra_row["tipo_auditoria"]
+                                        extra_modalidad = extra_row.get("modalidad") or "Fuente"
+                                        extra_convenio_nombre = extra_row.get("convenio_nombre") or ""
+                                        extra_convenio_ente_nombre = extra_row.get("convenio_ente_nombre") or ""
+                                        extra_convenio_ente_id = extra_row.get("convenio_ente_id") or ""
+                                        if extra_modalidad == "Convenio" and not extra_convenio_ente_id:
+                                            extra_convenio_ente_id = resolve_convenio_ente_id(
+                                                db,
+                                                ejercicio,
+                                                extra_convenio_ente_nombre,
+                                            )
                                         extra_tipos = [extra_tipo]
                                         for extra_tipo_item in extra_tipos:
                                             register_fuente_for_ente(
@@ -4476,6 +4834,8 @@ def register_gabo_routes(app, deps):
                                                   AND asunto = ?
                                                   AND ejercicio = ?
                                                   AND fuente_id = ?
+                                                  AND TRIM(COALESCE(modalidad, 'Fuente')) = TRIM(COALESCE(?, 'Fuente'))
+                                                  AND LOWER(TRIM(COALESCE(convenio_nombre, ''))) = LOWER(TRIM(COALESCE(?, '')))
                                                   AND LOWER(TRIM(periodo)) = LOWER(TRIM(?))
                                                   AND tipo_auditoria = ?
                                                 LIMIT 1
@@ -4486,6 +4846,8 @@ def register_gabo_routes(app, deps):
                                                     asunto,
                                                     ejercicio,
                                                     extra_fuente_id,
+                                                    extra_modalidad,
+                                                    extra_convenio_nombre,
                                                     extra_periodo,
                                                     extra_tipo_item,
                                                 ),
@@ -4516,6 +4878,10 @@ def register_gabo_routes(app, deps):
                                                     cantidad_pras=cantidad_pras_extra,
                                                     cantidad_pefcf=cantidad_pefcf_extra,
                                                     cantidad_r=cantidad_r_extra,
+                                                    modalidad=extra_modalidad,
+                                                    convenio_nombre=extra_convenio_nombre,
+                                                    convenio_ente_nombre=extra_convenio_ente_nombre,
+                                                    convenio_ente_id=extra_convenio_ente_id,
                                                 )
                                             )
                                             extra_pdp_detalle_json = serialize_manual_snapshot(
@@ -4535,10 +4901,15 @@ def register_gabo_routes(app, deps):
                                                     ejercicio,
                                                     fuente_id,
                                                     fuente_nombre,
+                                                    modalidad,
+                                                    convenio_nombre,
+                                                    convenio_ente_nombre,
+                                                    convenio_ente_id,
                                                     periodo,
                                                     periodo_titular,
                                                     fecha_notificacion,
                                                     ramo_33,
+                                                    ramo_28,
                                                     estado,
                                                     cantidad_sa,
                                                     cantidad_pdp,
@@ -4553,7 +4924,7 @@ def register_gabo_routes(app, deps):
                                                     created_by,
                                                     created_at
                                                 )
-                                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                                 """,
                                                 (
                                                     manual_ente_id,
@@ -4567,10 +4938,15 @@ def register_gabo_routes(app, deps):
                                                     ejercicio,
                                                     extra_fuente_id,
                                                     extra_fuente_nombre,
+                                                    extra_modalidad,
+                                                    extra_convenio_nombre,
+                                                    extra_convenio_ente_nombre,
+                                                    extra_convenio_ente_id,
                                                     extra_periodo,
                                                     extra_periodo,
                                                     fecha_notificacion,
                                                     ramo_33,
+                                                    ramo_28,
                                                     estado,
                                                     cantidad_sa_extra,
                                                     cantidad_pdp_extra,
@@ -4596,6 +4972,7 @@ def register_gabo_routes(app, deps):
                                                 tipo_auditoria=extra_tipo_item,
                                                 fuente_nombre=extra_fuente_nombre,
                                                 ramo_33=ramo_33,
+                                                ramo_28=ramo_28,
                                                 estado=estado,
                                                 periodo_cedula=extra_periodo,
                                                 periodo_titular=extra_periodo,
@@ -4609,6 +4986,10 @@ def register_gabo_routes(app, deps):
                                                 monto_pdp_solventado=0.0,
                                                 monto_pdp_pendiente=0.0,
                                                 pdp_amounts=pdp_amounts_extra,
+                                                modalidad=extra_modalidad,
+                                                convenio_nombre=extra_convenio_nombre,
+                                                convenio_ente_nombre=extra_convenio_ente_nombre,
+                                                convenio_ente_id=extra_convenio_ente_id,
                                                 pdp_details=pdp_details_extra,
                                                 solventacion_totales_by_anexo={},
                                                 replace_scope=False,
@@ -4633,6 +5014,25 @@ def register_gabo_routes(app, deps):
                         manual_result["message"] = (
                             f"{manual_result.get('message', '').strip()} Respaldo: {backup_path}."
                         ).strip()
+                    if action == "manual_save" and manual_result and manual_result.get("ok"):
+                        kept_ejercicio = form_data["manual_ejercicio"]
+                        for key in list(form_data):
+                            if key.startswith("manual_"):
+                                form_data[key] = ""
+                        form_data["manual_ejercicio"] = kept_ejercicio
+                        form_data["manual_asunto"] = "Notificación de Cédula de Resultados"
+                        form_data["manual_tipo_responsable"] = "Titular"
+                        form_data["manual_ramo_33"] = "No"
+                        form_data["manual_ramo_28"] = "No"
+                        form_data["manual_estado"] = "Emitido"
+                        form_data["manual_cantidad_sa"] = "0"
+                        form_data["manual_cantidad_pdp"] = "0"
+                        form_data["manual_cantidad_pras"] = "0"
+                        form_data["manual_cantidad_pefcf"] = "0"
+                        form_data["manual_cantidad_r"] = "0"
+                        form_data["manual_monto_pdp_emitido"] = "0"
+                        form_data["manual_monto_pdp_solventado"] = "0"
+                        form_data["manual_monto_pdp_pendiente"] = "0"
                 else:
                     command = [sys.executable]
                     if action == "template_generate":
@@ -4760,7 +5160,7 @@ def register_gabo_routes(app, deps):
             initial_loader_mode = "manual"
     
         titular_entes_rows = db.execute(
-            """
+            f"""
             SELECT
                 TRIM(COALESCE(ente_id, '')) AS ente_id,
                 TRIM(COALESCE(ente_numero, '')) AS ente_numero,
@@ -4768,7 +5168,7 @@ def register_gabo_routes(app, deps):
             FROM entes_detalle
             WHERE TRIM(COALESCE(ejercicio, '')) = ?
               AND TRIM(COALESCE(ente_id, '')) != ''
-            ORDER BY CAST(COALESCE(NULLIF(ente_numero, ''), '0') AS REAL), ente_numero, ente_nombre
+            ORDER BY {ente_numero_sort_sql('ente_numero')}, ente_numero, ente_nombre
             """,
             (form_data["titular_ejercicio"],),
         ).fetchall()
@@ -4783,7 +5183,7 @@ def register_gabo_routes(app, deps):
         fuentes = [dict(row) for row in fuentes_rows]
         manual_ente_id_norm = normalize_ente_id(form_data["manual_ente_id"])
         manual_entes_rows = db.execute(
-            """
+            f"""
             SELECT
                 TRIM(COALESCE(ente_id, '')) AS ente_id,
                 TRIM(COALESCE(ente_numero, '')) AS ente_numero,
@@ -4791,7 +5191,7 @@ def register_gabo_routes(app, deps):
             FROM entes_detalle
             WHERE TRIM(COALESCE(ejercicio, '')) = ?
               AND TRIM(COALESCE(ente_id, '')) != ''
-            ORDER BY CAST(COALESCE(NULLIF(ente_numero, ''), '0') AS REAL), ente_numero, ente_nombre
+            ORDER BY {ente_numero_sort_sql('ente_numero')}, ente_numero, ente_nombre
             """,
             (form_data["manual_ejercicio"],),
         ).fetchall()
