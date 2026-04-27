@@ -264,6 +264,19 @@ def normalize_ente_id_sql(column: str) -> str:
     return f"RTRIM(TRIM(COALESCE({column}, '')), '.')"
 
 
+def ente_numero_sort_sql(column: str) -> str:
+    clean = f"TRIM(COALESCE({column}, ''))"
+    return (
+        "CASE "
+        f"WHEN {clean} = '' THEN 0 "
+        f"WHEN INSTR({clean}, '.') > 0 THEN "
+        f"CAST(SUBSTR({clean}, 1, INSTR({clean}, '.') - 1) AS REAL) * 1000 "
+        f"+ CAST(SUBSTR({clean}, INSTR({clean}, '.') + 1) AS REAL) "
+        f"ELSE CAST({clean} AS REAL) * 1000 "
+        "END"
+    )
+
+
 def normalize_text_key(value: str) -> str:
     clean = (value or "").strip().lower()
     if not clean:
@@ -1171,11 +1184,13 @@ def parse_ente_numero_sort(value: str) -> float:
     raw = (value or "").strip()
     if not raw:
         return 0.0
-    match = re.search(r"-?\d+(?:\.\d+)?", raw.replace(",", ""))
+    match = re.search(r"(-?\d+)(?:\.(\d+))?", raw.replace(",", ""))
     if not match:
         return 0.0
     try:
-        return float(match.group(0))
+        major = int(match.group(1))
+        minor = int(match.group(2) or "0")
+        return float((major * 1000) + minor)
     except ValueError:
         return 0.0
 
@@ -1540,6 +1555,7 @@ def init_db() -> None:
                 responsable TEXT NOT NULL,
                 clasificacion TEXT NOT NULL,
                 ramo33 TEXT NOT NULL,
+                ramo28 TEXT NOT NULL DEFAULT 'No',
                 created_at TEXT NOT NULL,
                 UNIQUE(ente_id, ejercicio)
             )
@@ -1615,6 +1631,7 @@ def init_db() -> None:
                 tipo_auditoria TEXT NOT NULL,
                 fuente_financiamiento TEXT NOT NULL,
                 ramo_33 TEXT NOT NULL,
+                ramo_28 TEXT NOT NULL DEFAULT 'No',
                 periodo_cedula TEXT,
                 periodo_titular TEXT,
                 oficio TEXT,
@@ -1653,6 +1670,7 @@ def init_db() -> None:
                 periodo_titular TEXT,
                 fecha_notificacion TEXT,
                 ramo_33 TEXT NOT NULL DEFAULT 'No',
+                ramo_28 TEXT NOT NULL DEFAULT 'No',
                 estado TEXT NOT NULL DEFAULT 'E',
                 cantidad_sa INTEGER NOT NULL DEFAULT 0,
                 cantidad_pdp INTEGER NOT NULL DEFAULT 0,
@@ -1760,11 +1778,20 @@ def init_db() -> None:
             )
         if "ramo_33" not in cargas_manuales_columns:
             conn.execute("ALTER TABLE cargas_manuales ADD COLUMN ramo_33 TEXT NOT NULL DEFAULT 'No'")
+        if "ramo_28" not in cargas_manuales_columns:
+            conn.execute("ALTER TABLE cargas_manuales ADD COLUMN ramo_28 TEXT NOT NULL DEFAULT 'No'")
         conn.execute(
             """
             UPDATE cargas_manuales
             SET ramo_33 = 'No'
             WHERE TRIM(COALESCE(ramo_33, '')) = ''
+            """
+        )
+        conn.execute(
+            """
+            UPDATE cargas_manuales
+            SET ramo_28 = 'No'
+            WHERE TRIM(COALESCE(ramo_28, '')) = ''
             """
         )
         if "estado" not in cargas_manuales_columns:
@@ -1857,11 +1884,13 @@ def init_db() -> None:
             conn.execute("ALTER TABLE observaciones ADD COLUMN ente_numero TEXT")
         if "ente_numero_sort" not in observaciones_columns:
             conn.execute("ALTER TABLE observaciones ADD COLUMN ente_numero_sort REAL DEFAULT 0")
+        ente_sort_expr = ente_numero_sort_sql("ente_numero")
         conn.execute(
-            """
+            f"""
             UPDATE observaciones
-            SET ente_numero_sort = COALESCE(CAST(NULLIF(TRIM(ente_numero), '') AS REAL), 0)
-            WHERE ente_numero_sort IS NULL OR ente_numero_sort = 0
+            SET ente_numero_sort = {ente_sort_expr}
+            WHERE ente_numero_sort IS NULL
+               OR ABS(COALESCE(ente_numero_sort, 0) - ({ente_sort_expr})) > 0.001
             """
         )
         if "ente_nombre" not in observaciones_columns:
@@ -1879,6 +1908,15 @@ def init_db() -> None:
             conn.execute("ALTER TABLE observaciones ADD COLUMN fuente_financiamiento TEXT")
         if "ramo_33" not in observaciones_columns:
             conn.execute("ALTER TABLE observaciones ADD COLUMN ramo_33 TEXT")
+        if "ramo_28" not in observaciones_columns:
+            conn.execute("ALTER TABLE observaciones ADD COLUMN ramo_28 TEXT NOT NULL DEFAULT 'No'")
+        conn.execute(
+            """
+            UPDATE observaciones
+            SET ramo_28 = 'No'
+            WHERE TRIM(COALESCE(ramo_28, '')) = ''
+            """
+        )
         if "periodo_cedula" not in observaciones_columns:
             conn.execute("ALTER TABLE observaciones ADD COLUMN periodo_cedula TEXT")
         if "periodo_titular" not in observaciones_columns:
@@ -1929,6 +1967,15 @@ def init_db() -> None:
         }
         if "ente_uid" not in entes_detalle_columns:
             conn.execute("ALTER TABLE entes_detalle ADD COLUMN ente_uid TEXT")
+        if "ramo28" not in entes_detalle_columns:
+            conn.execute("ALTER TABLE entes_detalle ADD COLUMN ramo28 TEXT NOT NULL DEFAULT 'No'")
+        conn.execute(
+            """
+            UPDATE entes_detalle
+            SET ramo28 = 'No'
+            WHERE TRIM(COALESCE(ramo28, '')) = ''
+            """
+        )
         missing_uid = conn.execute(
             "SELECT COUNT(*) FROM entes_detalle WHERE ente_uid IS NULL"
         ).fetchone()[0]
@@ -1969,6 +2016,12 @@ def init_db() -> None:
         )
         conn.execute(
             """
+            CREATE INDEX IF NOT EXISTS idx_obs_ejercicio_filtros_ramo28
+            ON observaciones (ejercicio, fuente_financiamiento, ramo_33, ramo_28, periodo_cedula)
+            """
+        )
+        conn.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_obs_ejercicio_full_scope
             ON observaciones (
                 ejercicio,
@@ -1978,6 +2031,7 @@ def init_db() -> None:
                 estado,
                 fuente_financiamiento,
                 ramo_33,
+                ramo_28,
                 periodo_cedula
             )
             """
@@ -2176,6 +2230,7 @@ ROUTE_DEPS = {
     "normalize_tipo_auditoria": normalize_tipo_auditoria,
     "is_remanente_fuente": is_remanente_fuente,
     "periodo_sql": periodo_sql,
+    "ente_numero_sort_sql": ente_numero_sort_sql,
     "parse_periodo_cedula": parse_periodo_cedula,
     "parse_historial_date": parse_historial_date,
     "get_ente_aliases_by_uid": get_ente_aliases_by_uid,

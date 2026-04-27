@@ -36,6 +36,30 @@
       <a class="mode-switch-link" href="{{ url_for('comparativo_anual') }}">Comparativo anual</a>
     </nav>
 
+    <section class="panel tools-panel" aria-labelledby="toolsPanelTitle">
+      <div class="panel-header panel-header-compact">
+        <h2 id="toolsPanelTitle">Herramientas</h2>
+        <p>Acciones rápidas para control del ejercicio activo.</p>
+      </div>
+      <div class="tools-actions">
+        <button
+          class="panel-action-btn"
+          type="button"
+          id="fuentes_export"
+          data-base-href="{{ url_for('fuentes_financiamiento_exportar') }}"
+        >
+          <span class="floating-clear-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 4v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M8 10l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M5 18h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <span>Exportar fuentes de financiamiento</span>
+        </button>
+      </div>
+    </section>
+
     <section class="panel filter-panel">
       <div class="panel-header">
         <h2>Filtros</h2>
@@ -98,6 +122,14 @@
           <div class="field">
             <label for="obs_ramo">Ramo 33</label>
             <select id="obs_ramo" name="obs_ramo" title="Filtra por pertenencia a Ramo 33.">
+              <option value="">Todos</option>
+              <option value="Si">Si</option>
+              <option value="No">No</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="obs_ramo_28">Ramo 28</label>
+            <select id="obs_ramo_28" name="obs_ramo_28" title="Filtra por pertenencia a Ramo 28.">
               <option value="">Todos</option>
               <option value="Si">Si</option>
               <option value="No">No</option>
@@ -207,10 +239,29 @@
       <section class="panel pendientes-panel" id="pendientesPeriodoPanel">
         <div class="panel-header">
           <h2>Pendientes por periodo</h2>
-          <p>Detalle de pendientes y numerales no solventadas por cédula para el ente seleccionado.</p>
+          <p id="pendientesPeriodoDescription">Detalle de pendientes y numerales no solventadas por cédula para el ente seleccionado.</p>
         </div>
         <div class="table-wrap" id="pendientesPeriodoWrap">
-          <table class="table-compact pendientes-periodo-table">
+          <table class="table-compact pendientes-periodo-table" aria-describedby="pendientesPeriodoDescription">
+            <colgroup>
+              <col class="pendientes-col-numero">
+              <col class="pendientes-col-ente">
+              <col class="pendientes-col-tipo">
+              <col class="pendientes-col-periodo">
+              <col class="pendientes-col-periodo">
+              <col class="pendientes-col-count">
+              <col class="pendientes-col-count">
+              <col class="pendientes-col-count">
+              <col class="pendientes-col-count">
+              <col class="pendientes-col-count">
+              <col class="pendientes-col-total">
+              <col class="pendientes-col-monto">
+              <col class="pendientes-col-numeral">
+              <col class="pendientes-col-numeral">
+              <col class="pendientes-col-numeral">
+              <col class="pendientes-col-numeral">
+              <col class="pendientes-col-numeral">
+            </colgroup>
             <thead>
               <tr>
                 <th rowspan="2">No.</th>
@@ -444,6 +495,7 @@
     const obsFuente = document.getElementById("obs_fuente");
     const obsOrigenFuente = document.getElementById("obs_origen_fuente");
     const obsRamo = document.getElementById("obs_ramo");
+    const obsRamo28 = document.getElementById("obs_ramo_28");
     const obsConceptoIrregularidad = document.getElementById("obs_concepto_irregularidad");
     const obsConceptoField = document.getElementById("obs_concepto_field");
     const cedulaResultados = document.getElementById("cedula_resultados");
@@ -451,6 +503,7 @@
     const obsResponsablesBody = document.getElementById("obsResponsablesBody");
     const obsClearFab = document.getElementById("obs_clear_fab");
     const activeFiltersToggle = document.getElementById("activeFiltersToggle");
+    const fuentesExport = document.getElementById("fuentes_export");
     const obsExport = document.getElementById("obs_export");
     const pendientesPeriodoExport = document.getElementById("pendientes_periodo_export");
     const responsablesPeriodoExportWrap = document.getElementById("responsablesPeriodoExportWrap");
@@ -776,6 +829,7 @@
         fuente_financiamiento: getSelectedValues(obsFuente),
         origen_fuente: getSelectedValues(obsOrigenFuente),
         ramo_33: getSelectedValues(obsRamo),
+        ramo_28: getSelectedValues(obsRamo28),
         concepto_irregularidad: getSelectedValues(obsConceptoIrregularidad),
         periodo_cedula: getSelectedValues(cedulaResultados),
         quick_search: obsQuickSearch ? obsQuickSearch.value.trim() : "",
@@ -790,6 +844,7 @@
           fuente_financiamiento: obsFuente,
           origen_fuente: obsOrigenFuente,
           ramo_33: obsRamo,
+          ramo_28: obsRamo28,
           concepto_irregularidad: obsConceptoIrregularidad,
           periodo_cedula: cedulaResultados,
         };
@@ -832,6 +887,7 @@
           fuente_financiamiento: "Fuente",
           origen_fuente: "Del Ejercicio / Remanentes",
           ramo_33: "Ramo 33",
+          ramo_28: "Ramo 28",
           concepto_irregularidad: "Concepto",
           periodo_cedula: "Cédula",
         };
@@ -874,6 +930,7 @@
           fuente_financiamiento: readMany("fuente_financiamiento"),
           origen_fuente: readMany("origen_fuente"),
           ramo_33: readMany("ramo_33"),
+          ramo_28: readMany("ramo_28"),
           concepto_irregularidad: readMany("concepto_irregularidad"),
           periodo_cedula: readMany("periodo_cedula"),
           quick_search: (params.get("quick_search") || "").trim(),
@@ -898,6 +955,7 @@
           pendingUrlFilters.fuente_financiamiento,
           pendingUrlFilters.origen_fuente,
           pendingUrlFilters.ramo_33,
+          pendingUrlFilters.ramo_28,
           pendingUrlFilters.concepto_irregularidad,
           pendingUrlFilters.periodo_cedula,
         ].some((values) => Array.isArray(values) && values.length > 0)
@@ -913,6 +971,7 @@
         setSelectedValues(obsFuente, pendingUrlFilters.fuente_financiamiento);
         setSelectedValues(obsOrigenFuente, pendingUrlFilters.origen_fuente);
         setSelectedValues(obsRamo, pendingUrlFilters.ramo_33);
+        setSelectedValues(obsRamo28, pendingUrlFilters.ramo_28);
         setSelectedValues(obsConceptoIrregularidad, pendingUrlFilters.concepto_irregularidad);
         setSelectedValues(cedulaResultados, pendingUrlFilters.periodo_cedula);
         if (obsQuickSearch && pendingUrlFilters.quick_search) {
@@ -931,6 +990,7 @@
           obsFuente,
           obsOrigenFuente,
           obsRamo,
+          obsRamo28,
           obsConceptoIrregularidad,
           cedulaResultados,
           obsExport,
@@ -945,6 +1005,9 @@
             syncMultiSelectDisabledState(el);
           }
         });
+        if (fuentesExport) {
+          fuentesExport.disabled = !enabled;
+        }
         if (obsClearFab) {
           obsClearFab.disabled = !enabled;
         }
@@ -1152,6 +1215,34 @@
             <td${spanAttr} class="obs-responsables-monto">${wrapValue(formatMetricMonto(metrics))}</td>
           `;
         };
+        const buildEmptyMetrics = () => ({
+          R: 0,
+          SA: 0,
+          PDP: 0,
+          PRAS: 0,
+          PEFCF: 0,
+          total: 0,
+          monto_dano: 0,
+        });
+        const addMetrics = (target, source) => {
+          ["R", "SA", "PDP", "PRAS", "PEFCF", "total"].forEach((key) => {
+            target[key] += Number(source?.[key] || 0);
+          });
+          target.monto_dano += Number(source?.monto_dano || 0);
+        };
+        const buildGeneralTotals = (groupsToSum) => {
+          const totals = {
+            emitidas: buildEmptyMetrics(),
+            solventadas: buildEmptyMetrics(),
+            pendientes: buildEmptyMetrics(),
+          };
+          (Array.isArray(groupsToSum) ? groupsToSum : []).forEach((group) => {
+            addMetrics(totals.emitidas, group?.totals?.emitidas);
+            addMetrics(totals.solventadas, group?.totals?.solventadas);
+            addMetrics(totals.pendientes, group?.totals?.pendientes);
+          });
+          return totals;
+        };
         const safeGroups = Array.isArray(groups) ? groups : [];
         const enteKeyCounts = safeGroups.reduce((acc, group) => {
           const key = [
@@ -1187,7 +1278,7 @@
         if (obsResponsablesHead) {
           obsResponsablesHead.innerHTML = buildHeadHtml();
         }
-        obsResponsablesBody.innerHTML = safeGroups
+        const groupsHtml = safeGroups
           .map((group, groupIndex) => {
             const rows = Array.isArray(group?.rows) ? group.rows : [];
             const groupNo = escapeHtml(group?.ente_numero || group?.ente_id || `${groupIndex + 1}`);
@@ -1268,6 +1359,16 @@
             `;
           })
           .join("");
+        const generalTotals = buildGeneralTotals(safeGroups);
+        const totalGeneralHtml = safeGroups.length > 1 ? `
+          <tr class="obs-responsables-grand-total-row">
+            <td colspan="7" class="obs-responsables-cell obs-responsables-cell--subtotal-label"><strong>TOTAL GENERAL</strong></td>
+            ${renderMetricCells(generalTotals.emitidas, 1, true)}
+            ${renderMetricCells(generalTotals.solventadas, 1, true)}
+            ${renderMetricCells(generalTotals.pendientes, 1, true)}
+          </tr>
+        ` : "";
+        obsResponsablesBody.innerHTML = `${groupsHtml}${totalGeneralHtml}`;
       };
 
       const formatMonto = (value) => {
@@ -1743,6 +1844,7 @@
         const currentFuente = getSelectedValues(obsFuente);
         const currentOrigenFuente = getSelectedValues(obsOrigenFuente);
         const currentRamo = getSelectedValues(obsRamo);
+        const currentRamo28 = getSelectedValues(obsRamo28);
         const currentCedula = getSelectedValues(cedulaResultados);
         const currentConcepto = getSelectedValues(obsConceptoIrregularidad);
         const currentAuditoria = getSelectedValues(mainTipoAuditoria);
@@ -1753,6 +1855,7 @@
         const fuentes = safeFiltros.fuente_financiamiento || [];
         const origenesFuente = safeFiltros.origen_fuente || [];
         const ramos = (safeFiltros.ramo_33 || []).filter((item) => item === "Si" || item === "No");
+        const ramos28 = (safeFiltros.ramo_28 || []).filter((item) => item === "Si" || item === "No");
         const cedulas = safeFiltros.cedulas || [];
         const conceptos = safeFiltros.conceptos_irregularidad || [];
         const auditorias = safeFiltros.tipo_auditoria || [];
@@ -1793,6 +1896,13 @@
           "Todos",
           currentRamo,
           shouldEnableMultiFilter(ramos),
+        );
+        fillSelectFromValues(
+          obsRamo28,
+          ramos28,
+          "Todos",
+          currentRamo28,
+          shouldEnableMultiFilter(ramos28),
         );
         fillSelectFromValues(
           cedulaResultados,
@@ -2033,23 +2143,23 @@
               const montoRow = Number(pendientes.monto_dano || 0);
               return `
                 <tr>
-                  ${index === 0 ? `<td rowspan="${periodos.length}">${escapeHtml(group.ente_numero || group.ente_id || "—")}</td>` : ""}
-                  ${index === 0 ? `<td rowspan="${periodos.length}">${escapeHtml(group.ente_nombre || "—")}</td>` : ""}
-                  ${index === 0 ? `<td rowspan="${periodos.length}">${escapeHtml(group.tipo_auditoria || "—")}</td>` : ""}
-                  <td>${escapeHtml(periodo.periodo_cedula || "—")}</td>
-                  <td>${escapeHtml(periodo.periodo_titular || "—")}</td>
-                  <td>${Number(pendientes.R || 0)}</td>
-                  <td>${Number(pendientes.SA || 0)}</td>
-                  <td>${Number(pendientes.PDP || 0)}</td>
-                  <td>${Number(pendientes.PRAS || 0)}</td>
-                  <td>${Number(pendientes.PEFCF || 0)}</td>
-                  <td><strong>${Number(pendientes.total || 0)}</strong></td>
-                  <td>${montoRow > 0 ? formatMonto(montoRow) : "-"}</td>
-                  <td>${escapeHtml(numerales.SA || "-")}</td>
-                  <td>${escapeHtml(numerales.PDP || "-")}</td>
-                  <td>${escapeHtml(numerales.PRAS || "-")}</td>
-                  <td>${escapeHtml(numerales.PEFCF || "-")}</td>
-                  <td>${escapeHtml(numerales.R || "-")}</td>
+                  ${index === 0 ? `<td class="pendientes-periodo-id" rowspan="${periodos.length}">${escapeHtml(group.ente_numero || group.ente_id || "—")}</td>` : ""}
+                  ${index === 0 ? `<td class="pendientes-periodo-ente" rowspan="${periodos.length}">${escapeHtml(group.ente_nombre || "—")}</td>` : ""}
+                  ${index === 0 ? `<td class="pendientes-periodo-tipo" rowspan="${periodos.length}">${escapeHtml(group.tipo_auditoria || "—")}</td>` : ""}
+                  <td class="pendientes-periodo-text">${escapeHtml(periodo.periodo_cedula || "—")}</td>
+                  <td class="pendientes-periodo-text">${escapeHtml(periodo.periodo_titular || "—")}</td>
+                  <td class="pendientes-periodo-number">${Number(pendientes.R || 0)}</td>
+                  <td class="pendientes-periodo-number">${Number(pendientes.SA || 0)}</td>
+                  <td class="pendientes-periodo-number">${Number(pendientes.PDP || 0)}</td>
+                  <td class="pendientes-periodo-number">${Number(pendientes.PRAS || 0)}</td>
+                  <td class="pendientes-periodo-number">${Number(pendientes.PEFCF || 0)}</td>
+                  <td class="pendientes-periodo-number pendientes-periodo-strong"><strong>${Number(pendientes.total || 0)}</strong></td>
+                  <td class="pendientes-periodo-monto">${montoRow > 0 ? formatMonto(montoRow) : "-"}</td>
+                  <td class="pendientes-periodo-numeral">${escapeHtml(numerales.SA || "-")}</td>
+                  <td class="pendientes-periodo-numeral">${escapeHtml(numerales.PDP || "-")}</td>
+                  <td class="pendientes-periodo-numeral">${escapeHtml(numerales.PRAS || "-")}</td>
+                  <td class="pendientes-periodo-numeral">${escapeHtml(numerales.PEFCF || "-")}</td>
+                  <td class="pendientes-periodo-numeral">${escapeHtml(numerales.R || "-")}</td>
                 </tr>
               `;
             }).join("");
@@ -2059,23 +2169,15 @@
             return `
               ${rowsHtml}
               <tr class="pendientes-total-row">
-                <td></td>
-                <td><strong>TOTAL</strong></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td><strong>${Number(totales.R || 0)}</strong></td>
-                <td><strong>${Number(totales.SA || 0)}</strong></td>
-                <td><strong>${Number(totales.PDP || 0)}</strong></td>
-                <td><strong>${Number(totales.PRAS || 0)}</strong></td>
-                <td><strong>${Number(totales.PEFCF || 0)}</strong></td>
-                <td><strong>${Number(totales.total || 0)}</strong></td>
-                <td><strong>${montoTotal > 0 ? formatMonto(montoTotal) : "-"}</strong></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
+                <td colspan="5" class="pendientes-total-label"><strong>TOTAL</strong></td>
+                <td class="pendientes-periodo-number"><strong>${Number(totales.R || 0)}</strong></td>
+                <td class="pendientes-periodo-number"><strong>${Number(totales.SA || 0)}</strong></td>
+                <td class="pendientes-periodo-number"><strong>${Number(totales.PDP || 0)}</strong></td>
+                <td class="pendientes-periodo-number"><strong>${Number(totales.PRAS || 0)}</strong></td>
+                <td class="pendientes-periodo-number"><strong>${Number(totales.PEFCF || 0)}</strong></td>
+                <td class="pendientes-periodo-number"><strong>${Number(totales.total || 0)}</strong></td>
+                <td class="pendientes-periodo-monto"><strong>${montoTotal > 0 ? formatMonto(montoTotal) : "-"}</strong></td>
+                <td colspan="5" class="pendientes-total-empty"></td>
               </tr>
             `;
           }).join("");
@@ -2252,6 +2354,7 @@
         appendValuesToParams(params, "fuente_financiamiento", getSelectedValues(obsFuente));
         appendValuesToParams(params, "origen_fuente", getSelectedValues(obsOrigenFuente));
         appendValuesToParams(params, "ramo_33", getSelectedValues(obsRamo));
+        appendValuesToParams(params, "ramo_28", getSelectedValues(obsRamo28));
         if (!selectedTipoAnexo.length || selectedTipoAnexo.includes("PDP")) {
           appendValuesToParams(params, "concepto_irregularidad", getSelectedValues(obsConceptoIrregularidad));
         }
@@ -2344,6 +2447,7 @@
         appendValuesToParams(params, "fuente_financiamiento", getSelectedValues(obsFuente));
         appendValuesToParams(params, "origen_fuente", getSelectedValues(obsOrigenFuente));
         appendValuesToParams(params, "ramo_33", getSelectedValues(obsRamo));
+        appendValuesToParams(params, "ramo_28", getSelectedValues(obsRamo28));
         if (!selectedTipoAnexo.length || selectedTipoAnexo.includes("PDP")) {
           appendValuesToParams(params, "concepto_irregularidad", getSelectedValues(obsConceptoIrregularidad));
         }
@@ -2371,6 +2475,19 @@
         }
       };
 
+      const exportFuentesFinanciamiento = () => {
+        if (!fuentesExport) {
+          return;
+        }
+        const ejercicio = mainEjercicio.value;
+        if (!ejercicio) {
+          return;
+        }
+        const baseHref = fuentesExport.dataset.baseHref || "/fuentes-financiamiento-exportar";
+        const params = new URLSearchParams({ ejercicio });
+        window.location.href = `${baseHref}${params.toString() ? `?${params.toString()}` : ""}`;
+      };
+
       const exportObservaciones = () => {
         const ejercicio = mainEjercicio.value;
         if (!ejercicio) {
@@ -2385,6 +2502,7 @@
         appendValuesToParams(params, "fuente_financiamiento", getSelectedValues(obsFuente));
         appendValuesToParams(params, "origen_fuente", getSelectedValues(obsOrigenFuente));
         appendValuesToParams(params, "ramo_33", getSelectedValues(obsRamo));
+        appendValuesToParams(params, "ramo_28", getSelectedValues(obsRamo28));
         if (!selectedTipoAnexo.length || selectedTipoAnexo.includes("PDP")) {
           appendValuesToParams(params, "concepto_irregularidad", getSelectedValues(obsConceptoIrregularidad));
         }
@@ -2410,6 +2528,7 @@
         appendValuesToParams(params, "fuente_financiamiento", getSelectedValues(obsFuente));
         appendValuesToParams(params, "origen_fuente", getSelectedValues(obsOrigenFuente));
         appendValuesToParams(params, "ramo_33", getSelectedValues(obsRamo));
+        appendValuesToParams(params, "ramo_28", getSelectedValues(obsRamo28));
         if (!selectedTipoAnexo.length || selectedTipoAnexo.includes("PDP")) {
           appendValuesToParams(params, "concepto_irregularidad", getSelectedValues(obsConceptoIrregularidad));
         }
@@ -2432,6 +2551,7 @@
         appendValuesToParams(params, "fuente_financiamiento", getSelectedValues(obsFuente));
         appendValuesToParams(params, "origen_fuente", getSelectedValues(obsOrigenFuente));
         appendValuesToParams(params, "ramo_33", getSelectedValues(obsRamo));
+        appendValuesToParams(params, "ramo_28", getSelectedValues(obsRamo28));
         if (!selectedTipoAnexo.length || selectedTipoAnexo.includes("PDP")) {
           appendValuesToParams(params, "concepto_irregularidad", getSelectedValues(obsConceptoIrregularidad));
         }
@@ -2525,6 +2645,7 @@
         clearSelectSelection(obsFuente);
         clearSelectSelection(obsOrigenFuente);
         clearSelectSelection(obsRamo);
+        clearSelectSelection(obsRamo28);
         clearSelectSelection(obsConceptoIrregularidad);
         clearSelectSelection(cedulaResultados);
         if (obsQuickSearch && !pendingUrlFilters) {
@@ -2567,6 +2688,7 @@
         obsFuente,
         obsOrigenFuente,
         obsRamo,
+        obsRamo28,
         obsConceptoIrregularidad,
         cedulaResultados,
       ].forEach((select) => {
@@ -2588,6 +2710,7 @@
         clearSelectSelection(obsFuente);
         clearSelectSelection(obsOrigenFuente);
         clearSelectSelection(obsRamo);
+        clearSelectSelection(obsRamo28);
         clearSelectSelection(obsConceptoIrregularidad);
         clearSelectSelection(cedulaResultados);
         if (obsQuickSearch) {
@@ -2600,6 +2723,9 @@
 
       if (obsClearFab) {
         obsClearFab.addEventListener("click", clearObservacionesFilters);
+      }
+      if (fuentesExport) {
+        fuentesExport.addEventListener("click", exportFuentesFinanciamiento);
       }
       if (obsExport) {
         obsExport.addEventListener("click", exportObservaciones);
@@ -2649,6 +2775,7 @@
             fuente_financiamiento: () => { clearSelectSelection(obsFuente); },
             origen_fuente: () => { clearSelectSelection(obsOrigenFuente); },
             ramo_33: () => { clearSelectSelection(obsRamo); },
+            ramo_28: () => { clearSelectSelection(obsRamo28); },
             concepto_irregularidad: () => { clearSelectSelection(obsConceptoIrregularidad); },
             periodo_cedula: () => { clearSelectSelection(cedulaResultados); },
             quick_search: () => { if (obsQuickSearch) obsQuickSearch.value = ""; },
@@ -2687,6 +2814,7 @@
           filtersFromUrl.fuente_financiamiento,
           filtersFromUrl.origen_fuente,
           filtersFromUrl.ramo_33,
+          filtersFromUrl.ramo_28,
           filtersFromUrl.concepto_irregularidad,
           filtersFromUrl.periodo_cedula,
         ].some((values) => Array.isArray(values) && values.length > 0)

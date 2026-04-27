@@ -39,6 +39,30 @@
 
   <main class="page-content loader-content">
     {% set principal_tipo = form_data.manual_tipo_auditoria or form_data.titular_tipo_auditoria %}
+    <section class="panel tools-panel" aria-labelledby="loaderToolsPanelTitle">
+      <div class="panel-header panel-header-compact">
+        <h2 id="loaderToolsPanelTitle">Herramientas</h2>
+        <p>Acciones rápidas para control del ejercicio activo.</p>
+      </div>
+      <div class="tools-actions">
+        <button
+          class="panel-action-btn"
+          type="button"
+          id="gabo_fuentes_export"
+          data-base-href="{{ url_for('fuentes_financiamiento_exportar') }}"
+        >
+          <span class="floating-clear-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 4v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M8 10l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M5 18h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <span>Exportar fuentes de financiamiento</span>
+        </button>
+      </div>
+    </section>
+
     <section class="panel loader-mode-panel loader-expediente-panel">
       <div class="panel-header panel-header-compact">
         <h2>Contexto de captura</h2>
@@ -685,6 +709,7 @@
     const loaderOpenObsAdminBtn = document.getElementById("loaderOpenObsAdminBtn");
     const loaderOpenBulkUploadBtn = document.getElementById("loaderOpenBulkUploadBtn");
     const gaboLogoutForm = document.getElementById("gaboLogoutForm");
+    const gaboFuentesExport = document.getElementById("gabo_fuentes_export");
 
     const principalEjercicio = document.getElementById("principal_ejercicio");
     const principalEnte = document.getElementById("principal_ente_id");
@@ -701,6 +726,26 @@
     const principalNumeroOficio = document.getElementById("principal_numero_oficio");
     const principalFechaNotificacion = document.getElementById("principal_fecha_notificacion");
     const principalScopeInfo = document.getElementById("principal_scope_info");
+    const syncGaboToolsByEjercicio = () => {
+      if (gaboFuentesExport) {
+        gaboFuentesExport.disabled = !(principalEjercicio && principalEjercicio.value);
+      }
+    };
+    const exportGaboFuentesFinanciamiento = () => {
+      if (!gaboFuentesExport) {
+        return;
+      }
+      if (!(principalEjercicio && principalEjercicio.value)) {
+        return;
+      }
+      const baseHref = gaboFuentesExport.dataset.baseHref || "/fuentes-financiamiento-exportar";
+      const params = new URLSearchParams({ ejercicio: principalEjercicio.value });
+      window.location.href = `${baseHref}${params.toString() ? `?${params.toString()}` : ""}`;
+    };
+    if (gaboFuentesExport) {
+      syncGaboToolsByEjercicio();
+      gaboFuentesExport.addEventListener("click", exportGaboFuentesFinanciamiento);
+    }
     const manualAsunto = document.getElementById("manual_asunto");
     const manualEjercicio = document.getElementById("manual_ejercicio");
     const manualEnte = document.getElementById("manual_ente_id");
@@ -6986,6 +7031,7 @@
 
       if (principalEjercicio && principalEnte) {
         principalEjercicio.addEventListener("change", () => {
+          syncGaboToolsByEjercicio();
           syncPrincipalOficioField();
           clearManualEditState();
           loadPrincipalEntes("");

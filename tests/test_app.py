@@ -53,6 +53,23 @@ def test_login_with_invalid_credentials(client):
     assert r.status_code == 200
 
 
+def test_fuentes_export_requires_and_uses_ejercicio(client):
+    """La exportación de fuentes debe estar acotada a un ejercicio."""
+    with client.session_transaction() as session_data:
+        session_data["user"] = "luis"
+        session_data["role"] = "viewer"
+
+    missing = client.get("/fuentes-financiamiento-exportar")
+    assert missing.status_code == 400
+
+    response = client.get("/fuentes-financiamiento-exportar?ejercicio=2025")
+    assert response.status_code == 200
+    assert response.headers["Content-Type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert "fuentes_financiamiento_2025_" in response.headers["Content-Disposition"]
+
+
 def test_auth_users_from_catalog():
     """_build_users() debe leer credenciales del catálogo compartido."""
     from app import _build_users

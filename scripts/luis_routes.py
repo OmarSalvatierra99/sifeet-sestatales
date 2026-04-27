@@ -22,6 +22,7 @@ def register_luis_routes(app, deps):
         "fuente_financiamiento",
         "origen_fuente",
         "ramo_33",
+        "ramo_28",
         "concepto_irregularidad",
         "periodo_cedula",
     )
@@ -33,6 +34,7 @@ def register_luis_routes(app, deps):
         "fuente_financiamiento": "Fuente de financiamiento",
         "origen_fuente": "Del Ejercicio / Remanentes",
         "ramo_33": "Ramo 33",
+        "ramo_28": "Ramo 28",
         "concepto_irregularidad": "Concepto de irregularidad",
         "periodo_cedula": "Cedula de resultados",
     }
@@ -44,6 +46,7 @@ def register_luis_routes(app, deps):
         "fuente_financiamiento",
         "origen_fuente",
         "ramo_33",
+        "ramo_28",
     )
     comparison_filter_labels = {
         "ente_uid": "Ente",
@@ -53,6 +56,7 @@ def register_luis_routes(app, deps):
         "fuente_financiamiento": "Fuente de financiamiento",
         "origen_fuente": "Del Ejercicio / Remanentes",
         "ramo_33": "Ramo 33",
+        "ramo_28": "Ramo 28",
     }
 
     def parse_multi_values(param_name: str, normalizer=None):
@@ -80,6 +84,7 @@ def register_luis_routes(app, deps):
             "fuente_financiamiento": parse_multi_values("fuente_financiamiento"),
             "origen_fuente": parse_multi_values("origen_fuente", normalize_origen_fuente),
             "ramo_33": parse_multi_values("ramo_33"),
+            "ramo_28": parse_multi_values("ramo_28"),
             "concepto_irregularidad": parse_multi_values("concepto_irregularidad"),
             "periodo_cedula": parse_multi_values("periodo_cedula"),
         }
@@ -140,6 +145,7 @@ def register_luis_routes(app, deps):
             "estado": "estado",
             "fuente_financiamiento": "fuente_financiamiento",
             "ramo_33": "ramo_33",
+            "ramo_28": "ramo_28",
             "periodo_cedula": "periodo_cedula",
         }
         column = key_to_column.get(key)
@@ -311,6 +317,7 @@ def register_luis_routes(app, deps):
             "fuente_financiamiento": parse_multi_values("fuente_financiamiento"),
             "origen_fuente": parse_multi_values("origen_fuente", normalize_origen_fuente),
             "ramo_33": parse_multi_values("ramo_33"),
+            "ramo_28": parse_multi_values("ramo_28"),
             "universo": (
                 "complete"
                 if (request.args.get("universo", "").strip().lower() in {"common", "complete", "presentes"})
@@ -333,6 +340,7 @@ def register_luis_routes(app, deps):
                     '' AS fuente_financiamiento,
                     '' AS origen_fuente,
                     '' AS ramo_33,
+                    '' AS ramo_28,
                     0 AS monto_pdp_emitido,
                     0 AS monto_pdp_solventado,
                     0 AS monto_pdp_pendiente
@@ -371,6 +379,7 @@ def register_luis_routes(app, deps):
                 TRIM(COALESCE(o.fuente_financiamiento, '')) AS fuente_financiamiento,
                 {origen_fuente_sql("o")} AS origen_fuente,
                 TRIM(COALESCE(o.ramo_33, '')) AS ramo_33,
+                TRIM(COALESCE(o.ramo_28, '')) AS ramo_28,
                 COALESCE(o.monto_pdp_emitido, 0) AS monto_pdp_emitido,
                 COALESCE(o.monto_pdp_solventado, 0) AS monto_pdp_solventado,
                 COALESCE(o.monto_pdp_pendiente, 0) AS monto_pdp_pendiente
@@ -398,6 +407,7 @@ def register_luis_routes(app, deps):
             tuple(selected_filters.get("fuente_financiamiento", []) or []),
             tuple(selected_filters.get("origen_fuente", []) or []),
             tuple(selected_filters.get("ramo_33", []) or []),
+            tuple(selected_filters.get("ramo_28", []) or []),
         )
 
     def fetch_comparison_base_rows(db, selected_years: list[str]) -> list[dict]:
@@ -697,6 +707,7 @@ def register_luis_routes(app, deps):
             "fuente_financiamiento": "fuente_financiamiento",
             "origen_fuente": "origen_fuente",
             "ramo_33": "ramo_33",
+            "ramo_28": "ramo_28",
         }
         column = column_map.get(key)
         if not column:
@@ -1055,10 +1066,7 @@ def register_luis_routes(app, deps):
             return raw
 
         def numero_sort_key(value: str):
-            try:
-                return (0, int(value))
-            except (TypeError, ValueError):
-                return (1, value)
+            return (parse_ente_numero_sort(value), value or "")
 
         pendientes_rows = db.execute(
             f"""
@@ -1252,6 +1260,7 @@ def register_luis_routes(app, deps):
             responsable = request.form.get("ente_responsable", "").strip()
             clasificacion = request.form.get("ente_clasificacion", "").strip()
             ramo33 = request.form.get("ente_ramo33", "").strip()
+            ramo28 = request.form.get("ente_ramo28", "").strip() or "No"
     
             if not all([ejercicio, ente_id, ente_numero, ente_nombre]):
                 return redirect(url_for("index", notice="ente_error"))
@@ -1262,16 +1271,17 @@ def register_luis_routes(app, deps):
                 """
                 INSERT INTO entes_detalle (
                     ente_uid, ente_id, ejercicio, ente_numero, ente_nombre,
-                    responsable, clasificacion, ramo33, created_at
+                    responsable, clasificacion, ramo33, ramo28, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(ente_id, ejercicio) DO UPDATE SET
                     ente_uid = COALESCE(entes_detalle.ente_uid, excluded.ente_uid),
                     ente_numero = excluded.ente_numero,
                     ente_nombre = excluded.ente_nombre,
                     responsable = excluded.responsable,
                     clasificacion = excluded.clasificacion,
-                    ramo33 = excluded.ramo33
+                    ramo33 = excluded.ramo33,
+                    ramo28 = excluded.ramo28
                 """,
                 (
                     ente_uid,
@@ -1282,6 +1292,7 @@ def register_luis_routes(app, deps):
                     responsable or "",
                     clasificacion or "",
                     ramo33 or "",
+                    ramo28,
                     datetime.now().strftime("%Y-%m-%d %H:%M"),
                 ),
             )
@@ -1294,11 +1305,11 @@ def register_luis_routes(app, deps):
     
         db = get_db()
         rows = db.execute(
-            """
-            SELECT ente_id, ente_numero, ente_nombre, responsable, clasificacion, ramo33
+            f"""
+            SELECT ente_id, ente_numero, ente_nombre, responsable, clasificacion, ramo33, ramo28
             FROM entes_detalle
             WHERE ejercicio = ?
-            ORDER BY CAST(ente_numero AS REAL) ASC, ente_numero ASC
+            ORDER BY {ente_numero_sort_sql('ente_numero')} ASC, ente_numero ASC
             """,
             (ejercicio,),
         ).fetchall()
@@ -1631,6 +1642,7 @@ def register_luis_routes(app, deps):
                 tipo_auditoria,
                 fuente_financiamiento,
                 ramo_33,
+                ramo_28,
                 periodo_cedula,
                 periodo_titular,
                 oficio,
@@ -1779,6 +1791,7 @@ def register_luis_routes(app, deps):
             "fuente_financiamiento": [row[0] for row in query_distinct("fuente_financiamiento", "fuente_financiamiento")],
             "origen_fuente": [row[0] for row in query_distinct("origen_fuente", "origen_fuente")],
             "ramo_33": [row[0] for row in query_distinct("ramo_33", "ramo_33")],
+            "ramo_28": [row[0] for row in query_distinct("ramo_28", "ramo_28")],
             "cedulas": [row[0] for row in query_distinct("periodo_cedula", "periodo_cedula")],
             "conceptos_irregularidad": [row[0] for row in conceptos],
             "entes": [dict(row) for row in entes],
@@ -1902,6 +1915,7 @@ def register_luis_routes(app, deps):
                     observaciones.tipo_auditoria,
                     observaciones.fuente_financiamiento,
                     observaciones.ramo_33,
+                    observaciones.ramo_28,
                     observaciones.periodo_cedula,
                     observaciones.periodo_titular,
                     observaciones.oficio,
@@ -1976,6 +1990,7 @@ def register_luis_routes(app, deps):
                     observaciones.tipo_auditoria,
                     observaciones.fuente_financiamiento,
                     observaciones.ramo_33,
+                    observaciones.ramo_28,
                     observaciones.periodo_cedula,
                     observaciones.periodo_titular,
                     observaciones.oficio,
@@ -2048,6 +2063,7 @@ def register_luis_routes(app, deps):
         fuentes = query_distinct("fuente_financiamiento", "fuente_financiamiento")
         origenes = query_distinct("origen_fuente", "origen_fuente")
         ramos = query_distinct("ramo_33", "ramo_33")
+        ramos_28 = query_distinct("ramo_28", "ramo_28")
         cedulas = query_distinct("periodo_cedula", "periodo_cedula")
         concepto_where, concepto_params = build_observaciones_scope(
             ejercicio,
@@ -2211,6 +2227,7 @@ def register_luis_routes(app, deps):
         filtros["fuente_financiamiento"] = [row[0] for row in fuentes]
         filtros["origen_fuente"] = [row[0] for row in origenes]
         filtros["ramo_33"] = [row[0] for row in ramos]
+        filtros["ramo_28"] = [row[0] for row in ramos_28]
         filtros["conceptos_irregularidad"] = [row[0] for row in conceptos]
         filtros["periodo_informe"] = [row[0] for row in periodos_informe]
         filtros["titulares"] = [row[0] for row in titulares]
@@ -2686,6 +2703,84 @@ def register_luis_routes(app, deps):
                 ]
             )
             ente_key_counts[ente_key] = ente_key_counts.get(ente_key, 0) + 1
+        general_totals = {
+            "emitidas": build_status_metrics(),
+            "solventadas": build_status_metrics(),
+            "pendientes": build_status_metrics(),
+        }
+
+        def add_metric_totals(target: dict, source: dict) -> None:
+            for anexo in anexos_orden:
+                target[anexo] += int((source or {}).get(anexo) or 0)
+            target["total"] += int((source or {}).get("total") or 0)
+            target["monto_dano"] += float((source or {}).get("monto_dano") or 0)
+
+        def totals_export_values(label: str, totals: dict) -> list:
+            return [
+                label,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                int((totals.get("emitidas") or {}).get("R") or 0),
+                int((totals.get("emitidas") or {}).get("SA") or 0),
+                int((totals.get("emitidas") or {}).get("PDP") or 0),
+                int((totals.get("emitidas") or {}).get("PRAS") or 0),
+                int((totals.get("emitidas") or {}).get("PEFCF") or 0),
+                int((totals.get("emitidas") or {}).get("total") or 0),
+                (
+                    float((totals.get("emitidas") or {}).get("monto_dano") or 0)
+                    if float((totals.get("emitidas") or {}).get("monto_dano") or 0) > 0
+                    else "-"
+                ),
+                int((totals.get("solventadas") or {}).get("R") or 0),
+                int((totals.get("solventadas") or {}).get("SA") or 0),
+                int((totals.get("solventadas") or {}).get("PDP") or 0),
+                int((totals.get("solventadas") or {}).get("PRAS") or 0),
+                int((totals.get("solventadas") or {}).get("PEFCF") or 0),
+                int((totals.get("solventadas") or {}).get("total") or 0),
+                (
+                    float((totals.get("solventadas") or {}).get("monto_dano") or 0)
+                    if float((totals.get("solventadas") or {}).get("monto_dano") or 0) > 0
+                    else "-"
+                ),
+                int((totals.get("pendientes") or {}).get("R") or 0),
+                int((totals.get("pendientes") or {}).get("SA") or 0),
+                int((totals.get("pendientes") or {}).get("PDP") or 0),
+                int((totals.get("pendientes") or {}).get("PRAS") or 0),
+                int((totals.get("pendientes") or {}).get("PEFCF") or 0),
+                int((totals.get("pendientes") or {}).get("total") or 0),
+                (
+                    float((totals.get("pendientes") or {}).get("monto_dano") or 0)
+                    if float((totals.get("pendientes") or {}).get("monto_dano") or 0) > 0
+                    else "-"
+                ),
+            ]
+
+        def style_totals_export_row(row_idx: int, *, fill: PatternFill, label_alignment) -> None:
+            sheet.merge_cells(
+                start_row=row_idx,
+                start_column=1,
+                end_row=row_idx,
+                end_column=7,
+            )
+            for col_idx in range(1, 29):
+                cell = sheet.cell(row=row_idx, column=col_idx)
+                cell.font = Font(bold=True)
+                cell.fill = fill
+                cell.border = thin_border
+                if col_idx == 1:
+                    cell.alignment = label_alignment
+                elif col_idx in (14, 21, 28):
+                    cell.alignment = right_alignment
+                else:
+                    cell.alignment = center_alignment
+            for amount_col in (14, 21, 28):
+                amount_cell = sheet.cell(row=row_idx, column=amount_col)
+                if isinstance(amount_cell.value, (int, float)):
+                    amount_cell.number_format = "#,##0.00"
 
         if not groups:
             sheet.append(["Sin resultados para los filtros seleccionados."])
@@ -2839,60 +2934,21 @@ def register_luis_routes(app, deps):
                         )
 
                 totals = group.get("totals", {}) or {}
-                sheet.append(
-                    [
-                        "SUBTOTAL",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        int((totals.get("emitidas") or {}).get("R") or 0),
-                        int((totals.get("emitidas") or {}).get("SA") or 0),
-                        int((totals.get("emitidas") or {}).get("PDP") or 0),
-                        int((totals.get("emitidas") or {}).get("PRAS") or 0),
-                        int((totals.get("emitidas") or {}).get("PEFCF") or 0),
-                        int((totals.get("emitidas") or {}).get("total") or 0),
-                        float((totals.get("emitidas") or {}).get("monto_dano") or 0) if float((totals.get("emitidas") or {}).get("monto_dano") or 0) > 0 else "-",
-                        int((totals.get("solventadas") or {}).get("R") or 0),
-                        int((totals.get("solventadas") or {}).get("SA") or 0),
-                        int((totals.get("solventadas") or {}).get("PDP") or 0),
-                        int((totals.get("solventadas") or {}).get("PRAS") or 0),
-                        int((totals.get("solventadas") or {}).get("PEFCF") or 0),
-                        int((totals.get("solventadas") or {}).get("total") or 0),
-                        float((totals.get("solventadas") or {}).get("monto_dano") or 0) if float((totals.get("solventadas") or {}).get("monto_dano") or 0) > 0 else "-",
-                        int((totals.get("pendientes") or {}).get("R") or 0),
-                        int((totals.get("pendientes") or {}).get("SA") or 0),
-                        int((totals.get("pendientes") or {}).get("PDP") or 0),
-                        int((totals.get("pendientes") or {}).get("PRAS") or 0),
-                        int((totals.get("pendientes") or {}).get("PEFCF") or 0),
-                        int((totals.get("pendientes") or {}).get("total") or 0),
-                        float((totals.get("pendientes") or {}).get("monto_dano") or 0) if float((totals.get("pendientes") or {}).get("monto_dano") or 0) > 0 else "-",
-                    ]
-                )
+                for status_key in ("emitidas", "solventadas", "pendientes"):
+                    add_metric_totals(general_totals[status_key], (totals.get(status_key) or {}))
+                sheet.append(totals_export_values("SUBTOTAL", totals))
                 subtotal_row_idx = sheet.max_row
-                sheet.merge_cells(
-                    start_row=subtotal_row_idx,
-                    start_column=1,
-                    end_row=subtotal_row_idx,
-                    end_column=7,
+                style_totals_export_row(subtotal_row_idx, fill=total_fill, label_alignment=right_alignment)
+
+            if len(groups) > 1:
+                grand_total_fill = PatternFill("solid", fgColor="DFECE5")
+                sheet.append(totals_export_values("TOTAL GENERAL", general_totals))
+                grand_total_row_idx = sheet.max_row
+                style_totals_export_row(
+                    grand_total_row_idx,
+                    fill=grand_total_fill,
+                    label_alignment=right_alignment,
                 )
-                for col_idx in range(1, 29):
-                    cell = sheet.cell(row=subtotal_row_idx, column=col_idx)
-                    cell.font = Font(bold=True)
-                    cell.fill = total_fill
-                    cell.border = thin_border
-                    if col_idx == 1:
-                        cell.alignment = right_alignment
-                    elif col_idx in (14, 21, 28):
-                        cell.alignment = right_alignment
-                    else:
-                        cell.alignment = center_alignment
-                for amount_col in (14, 21, 28):
-                    amount_cell = sheet.cell(row=subtotal_row_idx, column=amount_col)
-                    if isinstance(amount_cell.value, (int, float)):
-                        amount_cell.number_format = "#,##0.00"
 
         base_widths = {
             1: 10,
@@ -2990,7 +3046,7 @@ def register_luis_routes(app, deps):
             WHERE observaciones.ejercicio = ?
             {filter_sql}
             ORDER BY
-                CAST(entes_detalle.ente_numero AS REAL) ASC,
+                {ente_numero_sort_sql('entes_detalle.ente_numero')} ASC,
                 entes_detalle.ente_numero ASC,
                 observaciones.ente_id ASC,
                 observaciones.tipo_anexo ASC,
@@ -3154,6 +3210,100 @@ def register_luis_routes(app, deps):
         workbook.save(stream)
         stream.seek(0)
         filename = f"observaciones_{ejercicio}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        return send_file(
+            stream,
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+
+    @app.get("/fuentes-financiamiento-exportar")
+    def fuentes_financiamiento_exportar():
+        user = get_current_user()
+        if user is None:
+            return redirect(url_for("login", next=request.path))
+        if user.get("username") not in {"luis", "gabo"}:
+            return redirect(url_for(home_endpoint_for_user(user), notice="no_permission"))
+
+        ejercicio = " ".join((request.args.get("ejercicio") or "").split())
+        if not ejercicio:
+            return jsonify({"error": "ejercicio requerido"}), 400
+
+        db = get_db()
+        raw_rows = db.execute(
+            """
+            SELECT ff.nombre AS fuente
+            FROM entes_fuentes AS ef
+            JOIN fuentes_financiamiento AS ff
+              ON ff.id = ef.fuente_id
+            WHERE TRIM(COALESCE(ef.ejercicio, '')) = ?
+            UNION
+            SELECT fuente_financiamiento AS fuente
+            FROM observaciones
+            WHERE TRIM(COALESCE(ejercicio, '')) = ?
+            UNION
+            SELECT COALESCE(NULLIF(TRIM(cm.fuente_nombre), ''), ff.nombre) AS fuente
+            FROM cargas_manuales AS cm
+            LEFT JOIN fuentes_financiamiento AS ff
+              ON ff.id = cm.fuente_id
+            WHERE TRIM(COALESCE(cm.ejercicio, '')) = ?
+            """,
+            (ejercicio, ejercicio, ejercicio),
+        ).fetchall()
+
+        seen = set()
+        fuentes = []
+        for row in raw_rows:
+            fuente = normalize_fuente_financiamiento(" ".join((row["fuente"] or "").split()))
+            if not fuente:
+                continue
+            key = fuente.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            fuentes.append(fuente)
+        fuentes.sort(key=lambda value: value.casefold())
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Fuentes"
+        thin_border = Border(
+            left=Side(style="thin", color="D7DFD9"),
+            right=Side(style="thin", color="D7DFD9"),
+            top=Side(style="thin", color="D7DFD9"),
+            bottom=Side(style="thin", color="D7DFD9"),
+        )
+        header_fill = PatternFill("solid", fgColor="1F3B2C")
+        zebra_fill = PatternFill("solid", fgColor="F8FAF7")
+        header_font = Font(bold=True, color="FFFFFF")
+        left_alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+        sheet.append(["Fuente de financiamiento"])
+        header_cell = sheet.cell(row=1, column=1)
+        header_cell.font = header_font
+        header_cell.fill = header_fill
+        header_cell.border = thin_border
+        header_cell.alignment = left_alignment
+        for fuente in fuentes:
+            sheet.append([fuente])
+        for row_idx in range(2, sheet.max_row + 1):
+            cell = sheet.cell(row=row_idx, column=1)
+            cell.border = thin_border
+            cell.alignment = left_alignment
+            if row_idx % 2 == 0:
+                cell.fill = zebra_fill
+        sheet.freeze_panes = "A2"
+        sheet.auto_filter.ref = f"A1:A{max(sheet.max_row, 1)}"
+        max_len = max(
+            (len(str(sheet.cell(row=row_idx, column=1).value or "")) for row_idx in range(1, sheet.max_row + 1)),
+            default=24,
+        )
+        sheet.column_dimensions["A"].width = max(28, min(max_len + 2, 90))
+
+        stream = BytesIO()
+        workbook.save(stream)
+        stream.seek(0)
+        filename = f"fuentes_financiamiento_{ejercicio}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         return send_file(
             stream,
             as_attachment=True,
@@ -3461,6 +3611,7 @@ def register_luis_routes(app, deps):
             "fuente_financiamiento": selected_filters.get("fuente_financiamiento", []),
             "origen_fuente": selected_filters.get("origen_fuente", []),
             "ramo_33": selected_filters.get("ramo_33", []),
+            "ramo_28": selected_filters.get("ramo_28", []),
             "universo": selected_filters.get("universo", "all"),
         }
 
@@ -3476,6 +3627,7 @@ def register_luis_routes(app, deps):
                 "fuente_financiamiento": [],
                 "origen_fuente": [],
                 "ramo_33": [],
+                "ramo_28": [],
             },
             "summary": {
                 "universo": {
@@ -3584,6 +3736,10 @@ def register_luis_routes(app, deps):
             "ramo_33": collect_comparison_distinct_values(
                 option_rows_for("ramo_33"),
                 "ramo_33",
+            ),
+            "ramo_28": collect_comparison_distinct_values(
+                option_rows_for("ramo_28"),
+                "ramo_28",
             ),
         }
         scope_summary = summarize_comparison_scope(scope_rows, selected_years)
@@ -3791,7 +3947,7 @@ def register_luis_routes(app, deps):
     
         db = get_db()
         rows = db.execute(
-            """
+            f"""
             SELECT
                 entes_detalle.ente_id,
                 entes_detalle.ente_uid,
@@ -3800,6 +3956,7 @@ def register_luis_routes(app, deps):
                 entes_detalle.ejercicio,
                 entes_detalle.clasificacion,
                 entes_detalle.ramo33,
+                entes_detalle.ramo28,
                 entes_detalle.responsable,
                 (
                     SELECT ed.ente_nombre
@@ -3818,7 +3975,7 @@ def register_luis_routes(app, deps):
                 ) AS nombres_distintos
             FROM entes_detalle
             WHERE entes_detalle.ejercicio = ?
-            ORDER BY CAST(entes_detalle.ente_numero AS REAL) ASC, entes_detalle.ente_numero ASC
+            ORDER BY {ente_numero_sort_sql('entes_detalle.ente_numero')} ASC, entes_detalle.ente_numero ASC
             """,
             (ejercicio,),
         ).fetchall()
