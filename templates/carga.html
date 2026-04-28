@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Registro Observaciones · Oficios</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260428-filtros-limpios') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260428-oficio-pdf') }}">
   <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
 </head>
 <body class="loader-page" data-loader-mode="{{ initial_loader_mode }}" data-current-user="{{ user.username }}">
@@ -139,41 +139,27 @@
     </section>
 
     <section class="panel loader-card loader-manual-workspace" id="gaboOficioCaptureWorkspace" data-loader-mode-panel="manual" data-defer-oficio-capture="true" hidden>
-      <div class="record-form filters-form gabo-oficio-capture-context">
-        <div class="form-grid loader-expediente-grid loader-base-grid">
-          <div class="field">
-            <label for="principal_tipo_auditoria">Alcance del oficio</label>
-            <select id="principal_tipo_auditoria" required>
-              <option value="" {% if not principal_tipo %}selected{% endif %}>Selecciona el alcance</option>
-              <option value="Financiera" {% if principal_tipo == "Financiera" %}selected{% endif %}>Financiera</option>
-              <option value="Obra Pública" {% if principal_tipo == "Obra Pública" %}selected{% endif %}>Obra Pública</option>
-              <option value="Financiera y Obra Pública" {% if principal_tipo == "Financiera y Obra Pública" %}selected{% endif %}>Financiera y Obra Pública</option>
-            </select>
-          </div>
-          <div class="field loader-oficio-picker-field">
-            <label for="principal_numero_oficio_input">Oficio</label>
-            <input
-              id="principal_numero_oficio_input"
-              type="text"
-              inputmode="numeric"
-              autocomplete="off"
-              placeholder="OFS/0000/2025"
-              aria-label="Número de oficio"
-              value="{{ form_data.manual_numero_oficio }}"
-              maxlength="13"
-              pattern="^OFS/[0-9]{4}/20[0-9]{2}$"
-              title="Usa el formato OFS/0000/2025"
-              required
-            >
-            <input id="principal_numero_oficio" type="hidden" value="{{ form_data.manual_numero_oficio }}">
-          </div>
-          <div class="field">
-            <label for="principal_fecha_notificacion">Fecha de notificación</label>
-            <div class="loader-date-inline">
-              <input id="principal_fecha_notificacion" type="date" value="{{ form_data.manual_fecha_notificacion }}" required>
-            </div>
-          </div>
-        </div>
+      <div class="loader-context-hidden" hidden aria-hidden="true">
+        <select id="principal_tipo_auditoria" required>
+          <option value="" {% if not principal_tipo %}selected{% endif %}>Selecciona el alcance</option>
+          <option value="Financiera" {% if principal_tipo == "Financiera" %}selected{% endif %}>Financiera</option>
+          <option value="Obra Pública" {% if principal_tipo == "Obra Pública" %}selected{% endif %}>Obra Pública</option>
+          <option value="Financiera y Obra Pública" {% if principal_tipo == "Financiera y Obra Pública" %}selected{% endif %}>Financiera y Obra Pública</option>
+        </select>
+        <input
+          id="principal_numero_oficio_input"
+          type="text"
+          inputmode="numeric"
+          autocomplete="off"
+          placeholder="OFS/0000/2025"
+          aria-label="Número de oficio"
+          value="{{ form_data.manual_numero_oficio }}"
+          maxlength="13"
+          pattern="^OFS/[0-9]{4}/20[0-9]{2}$"
+          title="Usa el formato OFS/0000/2025"
+          required
+        >
+        <input id="principal_numero_oficio" type="hidden" value="{{ form_data.manual_numero_oficio }}">
       </div>
       {% if manual_result %}
         <div id="manualResultMsg" class="status {% if manual_result.level == 'info' %}status-info{% elif manual_result.ok %}status-success{% else %}status-error{% endif %}" style="overflow:visible;">
@@ -268,7 +254,7 @@
               <div class="loader-manual-subsection loader-context-review-card loader-context-review-card-compact">
                 <div class="loader-source-editor-head loader-context-card-head loader-source-editor-head-compact">
                   <div>
-                    <h3 id="manualStep1Title">Contexto activo</h3>
+                    <h3 id="manualStep1Title">Datos detectados del oficio</h3>
                   </div>
                 </div>
               <div class="loader-context-summary-grid">
@@ -283,8 +269,10 @@
                 <article class="loader-context-summary-block">
                   <span class="loader-context-summary-label">Oficio</span>
                   <strong id="manualContextSummaryOficio">-</strong>
-                  <div class="loader-context-inline">
-                    <span>Fecha de notificación <strong id="manualContextSummaryFecha">-</strong></span>
+                  <div class="field loader-context-date-field">
+                    <label for="principal_fecha_notificacion">Fecha de notificación</label>
+                    <input id="principal_fecha_notificacion" type="date" value="{{ form_data.manual_fecha_notificacion }}" required>
+                    <strong id="manualContextSummaryFecha" class="loader-context-date-mirror" aria-hidden="true">-</strong>
                   </div>
                 </article>
                 </div>
@@ -294,12 +282,12 @@
             <section class="loader-manual-subsection loader-summary-card loader-summary-card-compact" id="manualResumenFuentesSection">
               <div class="loader-source-editor-head loader-source-editor-head-compact">
                 <div>
-                  <h3>Resumen de Observaciones</h3>
+                  <h3>Cargar oficio PDF</h3>
                 </div>
                 <div class="loader-source-card-actions" id="manualResumenToolbar" style="display:none;"></div>
               </div>
               <details class="manual-resumen-json-import" id="manualResumenJsonImport" open>
-                <summary>Cargar Oficio</summary>
+                <summary>Subir PDF de la Cédula</summary>
                 <p class="helper">
                   Sube el PDF de la Cédula de Resultados para extraer las observaciones
                   y llenar automáticamente el alcance, oficio y fecha de notificación.
@@ -676,7 +664,7 @@
           manualStep1ChipEl.textContent = "1. Contexto";
         }
         if (manualStep1TitleEl) {
-          manualStep1TitleEl.textContent = "Contexto activo";
+          manualStep1TitleEl.textContent = "Datos detectados del oficio";
         }
         manualStep2Title.textContent = "Resumen de Observaciones";
         manualStep2Help.textContent = "";

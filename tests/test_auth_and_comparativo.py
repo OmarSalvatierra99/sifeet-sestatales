@@ -29,11 +29,20 @@ def _insert_observacion(
     numero_observacion: int,
     estado: str = "Pendiente",
     oficio: str = "OFS/0001/2025",
+    monto_emitido_override: float | None = None,
+    monto_solventado_override: float | None = None,
+    monto_pendiente_override: float | None = None,
 ) -> None:
     now = datetime.now(UTC).isoformat(timespec="seconds")
     monto_emitido = 100.0 if tipo_anexo == "PDP" else 0.0
     monto_solventado = 25.0 if tipo_anexo == "PDP" else 0.0
     monto_pendiente = 75.0 if tipo_anexo == "PDP" else 0.0
+    if monto_emitido_override is not None:
+        monto_emitido = monto_emitido_override
+    if monto_solventado_override is not None:
+        monto_solventado = monto_solventado_override
+    if monto_pendiente_override is not None:
+        monto_pendiente = monto_pendiente_override
     conn.execute(
         """
         INSERT INTO observaciones (
@@ -138,6 +147,50 @@ def test_gabo_oficios_resumen_groups_observaciones_by_oficio(client, monkeypatch
     assert row["monto_emitido"] == 100.0
     assert row["monto_solventado"] == 25.0
     assert row["monto_pendiente"] == 75.0
+
+
+def test_gabo_oficios_resumen_recalculates_pending_amounts(client, monkeypatch, tmp_path):
+    """El pendiente se calcula desde emitido-solventado aunque el dato guardado venga en cero."""
+    import app as app_module
+
+    test_db_path = tmp_path / "oficios_resumen_pendiente_test.db"
+    monkeypatch.setattr(app_module, "DB_PATH", str(test_db_path))
+    app_module.init_db()
+
+    conn = sqlite3.connect(test_db_path)
+    try:
+        _insert_observacion(
+            conn,
+            ejercicio="2025",
+            tipo_anexo="PDP",
+            numero_observacion=1,
+            estado="Pendiente",
+            monto_emitido_override=21996079.74,
+            monto_solventado_override=0.0,
+            monto_pendiente_override=0.0,
+        )
+        _insert_observacion(
+            conn,
+            ejercicio="2025",
+            tipo_anexo="PDP",
+            numero_observacion=2,
+            estado="Solventado",
+            monto_emitido_override=100.0,
+            monto_solventado_override=0.0,
+            monto_pendiente_override=0.0,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    _set_logged_user(client, "gabo", "loader")
+    response = client.get("/carga/oficios-resumen?ejercicio=2025&ente_id=ENTE-001")
+
+    assert response.status_code == 200
+    row = response.get_json()["rows"][0]
+    assert row["monto_emitido"] == pytest.approx(21996179.74)
+    assert row["monto_solventado"] == pytest.approx(100.0)
+    assert row["monto_pendiente"] == pytest.approx(21996079.74)
 
 
 def test_gabo_can_delete_observaciones_by_oficio_scope(client, monkeypatch, tmp_path):

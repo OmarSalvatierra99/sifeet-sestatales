@@ -4119,13 +4119,45 @@ tbody tr:hover td {
 }
 
 #manualResumenFuentesSection {
+  order: -2;
   width: 100%;
   min-width: 0;
+  min-height: auto;
+  margin-top: 0;
   padding-left: 0.4rem;
   padding-right: 0.4rem;
   border: none;
   box-shadow: none;
   background: transparent;
+}
+
+.loader-capture-main > .loader-context-review-card-compact {
+  order: -1;
+  min-height: auto;
+}
+
+.loader-context-date-field {
+  gap: 0.42rem;
+  margin-top: 0.2rem;
+}
+
+.loader-context-date-field label {
+  color: var(--color-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.loader-context-date-field input {
+  width: 100%;
+  min-height: 40px;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.loader-context-date-mirror {
+  display: none;
 }
 
 #manualResumenFuentesBody {

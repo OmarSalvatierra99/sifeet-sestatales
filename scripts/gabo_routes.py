@@ -3370,12 +3370,28 @@ def register_gabo_routes(app, deps):
                 END) AS monto_emitido,
                 SUM(CASE
                     WHEN UPPER(TRIM(COALESCE(tipo_anexo, ''))) = 'PDP'
-                    THEN COALESCE(monto_pdp_solventado, 0)
+                    THEN CASE
+                        WHEN LOWER(TRIM(COALESCE(estado, ''))) IN ('solventado', 'solventada', 's')
+                        THEN COALESCE(monto_pdp_emitido, 0)
+                        WHEN COALESCE(monto_pdp_solventado, 0) > COALESCE(monto_pdp_emitido, 0)
+                        THEN COALESCE(monto_pdp_emitido, 0)
+                        ELSE COALESCE(monto_pdp_solventado, 0)
+                    END
                     ELSE 0
                 END) AS monto_solventado,
                 SUM(CASE
                     WHEN UPPER(TRIM(COALESCE(tipo_anexo, ''))) = 'PDP'
-                    THEN COALESCE(monto_pdp_pendiente, 0)
+                    THEN MAX(
+                        0,
+                        COALESCE(monto_pdp_emitido, 0)
+                        - CASE
+                            WHEN LOWER(TRIM(COALESCE(estado, ''))) IN ('solventado', 'solventada', 's')
+                            THEN COALESCE(monto_pdp_emitido, 0)
+                            WHEN COALESCE(monto_pdp_solventado, 0) > COALESCE(monto_pdp_emitido, 0)
+                            THEN COALESCE(monto_pdp_emitido, 0)
+                            ELSE COALESCE(monto_pdp_solventado, 0)
+                        END
+                    )
                     ELSE 0
                 END) AS monto_pendiente
             FROM observaciones
