@@ -2002,8 +2002,13 @@ table {
   border-top-width: 1px;
 }
 
+.titulares-general-table tbody tr.titulares-ente-end > td {
+  border-bottom: 4px solid #7fa18f;
+}
+
 .titulares-general-table .titulares-cell-ente {
   background: #eef7f2;
+  border-bottom: 4px solid #7fa18f;
   box-shadow: inset 5px 0 0 #174c3a;
   color: #173d2d;
   font-weight: 800;
