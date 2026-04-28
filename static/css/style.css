@@ -1922,6 +1922,45 @@ table {
   background: #fbfdfc;
 }
 
+.loader-principal-form.filters-form {
+  margin-top: 0;
+  padding: 0;
+  gap: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.loader-principal-form .loader-expediente-collection {
+  gap: 0;
+}
+
+.loader-principal-form .loader-expediente-group {
+  padding: 1rem 1.1rem 1.1rem;
+  border: 1px solid #d7e2dc;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.loader-principal-form .loader-expediente-group-head {
+  gap: 0.25rem;
+}
+
+.loader-principal-form .loader-expediente-group-head span {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #174c3a;
+  letter-spacing: 0.08em;
+}
+
+.loader-principal-form .loader-expediente-group-head p {
+  color: #66756d;
+  font-size: 0.84rem;
+}
+
 .loader-principal-form .gabo-oficios-filter-grid {
   grid-template-columns: minmax(9rem, 11rem) minmax(20rem, 1fr) minmax(13rem, 16rem);
   align-items: end;

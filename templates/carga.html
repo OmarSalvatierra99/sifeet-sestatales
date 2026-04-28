@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Registro Observaciones · Oficios</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260428-filtros-limpios') }}">
   <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
 </head>
 <body class="loader-page" data-loader-mode="{{ initial_loader_mode }}" data-current-user="{{ user.username }}">
@@ -46,7 +46,8 @@
         <div class="loader-expediente-collection">
           <section class="loader-expediente-group">
             <div class="loader-expediente-group-head">
-              <span>Filtros</span>
+              <span>FILTROS</span>
+              <p>Usa estos filtros para acotar los resultados.</p>
             </div>
             <div class="form-grid loader-expediente-grid loader-base-grid gabo-oficios-filter-grid">
               <div class="field">
