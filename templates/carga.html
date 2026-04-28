@@ -41,67 +41,64 @@
     {% include "_gabo_module_nav.html" %}
     {% set principal_tipo = form_data.manual_tipo_auditoria or form_data.titular_tipo_auditoria %}
 
-    <section class="panel loader-mode-panel loader-expediente-panel" id="gaboOficioContextPanel">
-      <div class="loader-expediente-shell">
-        <div class="record-form filters-form loader-principal-form">
-          <div class="loader-expediente-collection">
-            <section class="loader-expediente-group">
-              <div class="loader-expediente-group-head">
-                <span>Filtros</span>
-                <p>La captura se abre desde el botón al final de la tabla.</p>
+    <div class="loader-expediente-shell" id="gaboOficioContextPanel">
+      <div class="record-form filters-form loader-principal-form">
+        <div class="loader-expediente-collection">
+          <section class="loader-expediente-group">
+            <div class="loader-expediente-group-head">
+              <span>Filtros</span>
+            </div>
+            <div class="form-grid loader-expediente-grid loader-base-grid gabo-oficios-filter-grid">
+              <div class="field">
+                <label for="principal_ejercicio">Ejercicio</label>
+                <select id="principal_ejercicio">
+                  {% for ejercicio in manual_ejercicios %}
+                    <option value="{{ ejercicio }}" {% if form_data.manual_ejercicio == ejercicio %}selected{% endif %}>
+                      {{ ejercicio }}{% if ejercicio in read_only_ejercicios %} · solo consulta{% endif %}
+                    </option>
+                  {% endfor %}
+                </select>
               </div>
-              <div class="form-grid loader-expediente-grid loader-base-grid gabo-oficios-filter-grid">
-                <div class="field">
-                  <label for="principal_ejercicio">Ejercicio</label>
-                  <select id="principal_ejercicio">
-                    {% for ejercicio in manual_ejercicios %}
-                      <option value="{{ ejercicio }}" {% if form_data.manual_ejercicio == ejercicio %}selected{% endif %}>
-                        {{ ejercicio }}{% if ejercicio in read_only_ejercicios %} · solo consulta{% endif %}
-                      </option>
-                    {% endfor %}
-                  </select>
-                </div>
-                <div class="field ente-search-field">
-                  <label for="principal_ente_id">Ente</label>
-                  <select id="principal_ente_id" data-selected="{{ form_data.manual_ente_id }}" class="ente-search-hidden-select">
-                    <option value="">Selecciona un ente</option>
-                    {% for ente in manual_entes %}
-                      <option value="{{ ente.ente_id }}" {% if form_data.manual_ente_id == ente.ente_id %}selected{% endif %}>
-                        {{ ente.ente_numero }} - {{ ente.ente_nombre }}
-                      </option>
-                    {% endfor %}
-                  </select>
-                  <div class="ente-search-wrapper">
-                    <input type="text" id="ente_search_input" class="ente-search-input" placeholder="Buscar ente..." autocomplete="off">
-                    <button type="button" class="ente-search-clear" id="ente_search_clear" title="Limpiar">&times;</button>
-                    <div class="ente-search-dropdown" id="ente_search_dropdown"></div>
-                  </div>
-                </div>
-                <div class="field">
-                  <label for="gabo_oficios_alcance_filter">Alcance</label>
-                  <select id="gabo_oficios_alcance_filter">
-                    <option value="">Todas las Auditorías</option>
-                    <option value="Financiera">Financiera</option>
-                    <option value="Obra Pública">Obra Pública</option>
-                  </select>
+              <div class="field ente-search-field">
+                <label for="principal_ente_id">Ente</label>
+                <select id="principal_ente_id" data-selected="{{ form_data.manual_ente_id }}" class="ente-search-hidden-select">
+                  <option value="">Selecciona un ente</option>
+                  {% for ente in manual_entes %}
+                    <option value="{{ ente.ente_id }}" {% if form_data.manual_ente_id == ente.ente_id %}selected{% endif %}>
+                      {{ ente.ente_numero }} - {{ ente.ente_nombre }}
+                    </option>
+                  {% endfor %}
+                </select>
+                <div class="ente-search-wrapper">
+                  <input type="text" id="ente_search_input" class="ente-search-input" placeholder="Buscar ente..." autocomplete="off">
+                  <button type="button" class="ente-search-clear" id="ente_search_clear" title="Limpiar">&times;</button>
+                  <div class="ente-search-dropdown" id="ente_search_dropdown"></div>
                 </div>
               </div>
-            </section>
-          </div>
+              <div class="field">
+                <label for="gabo_oficios_alcance_filter">Alcance</label>
+                <select id="gabo_oficios_alcance_filter">
+                  <option value="">Todas las Auditorías</option>
+                  <option value="Financiera">Financiera</option>
+                  <option value="Obra Pública">Obra Pública</option>
+                </select>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
+    </div>
 
-      <div class="loader-context-hidden" hidden aria-hidden="true">
-        <select id="principal_fuente_id" data-selected="__new__">
-          <option value="__new__" selected>Captura libre</option>
-        </select>
-        <div id="principal_fuente_nueva_wrap" style="display:none;">
-          <input id="principal_fuente_nueva" type="text" value="{{ form_data.manual_fuente_nueva }}" placeholder="Fuente de financiamiento">
-        </div>
+    <div class="loader-context-hidden" hidden aria-hidden="true">
+      <select id="principal_fuente_id" data-selected="__new__">
+        <option value="__new__" selected>Captura libre</option>
+      </select>
+      <div id="principal_fuente_nueva_wrap" style="display:none;">
+        <input id="principal_fuente_nueva" type="text" value="{{ form_data.manual_fuente_nueva }}" placeholder="Fuente de financiamiento">
       </div>
+    </div>
 
-      <div class="status status-info" id="wizardToast" hidden></div>
-    </section>
+    <div class="status status-info" id="wizardToast" hidden></div>
 
     <section class="panel loader-oficios-summary-panel" id="gaboOficiosResumenPanel">
       <div class="panel-header panel-header-compact">
@@ -6542,7 +6539,12 @@
           button.title = "Completa los datos del oficio para continuar.";
         });
         loaderModePanels.forEach((panel) => {
-          panel.hidden = true;
+          const panelMode = panel.dataset.loaderModePanel || "";
+          const currentMode = document.body.dataset.loaderMode || "manual";
+          const canShowBlankCapture = captureOpen
+            && panel.dataset.deferOficioCapture === "true"
+            && (panelMode === currentMode || (panelMode === "manual" && currentMode === "solventacion"));
+          panel.hidden = !canShowBlankCapture;
         });
         return;
       }
