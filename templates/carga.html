@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Registro Observaciones · Oficios</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260428-oficio-pdf') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260428-col-anexo-center-fix') }}">
   <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
 </head>
 <body class="loader-page" data-loader-mode="{{ initial_loader_mode }}" data-current-user="{{ user.username }}">
@@ -113,11 +113,11 @@
               <th>Ente</th>
               <th>Alcance</th>
               <th>Fecha</th>
-              <th>SA</th>
-              <th>PDP</th>
-              <th>PRAS</th>
-              <th>R</th>
-              <th>PEFCF</th>
+              <th class="col-anexo">SA</th>
+              <th class="col-anexo">PDP</th>
+              <th class="col-anexo">PRAS</th>
+              <th class="col-anexo">R</th>
+              <th class="col-anexo">PEFCF</th>
               <th>Total</th>
               <th>Monto emitido</th>
               <th>Monto solventado</th>
@@ -173,11 +173,11 @@
                   <th style="padding:0.25rem 0.4rem;">Oficio</th>
                   <th style="padding:0.25rem 0.4rem;">Ej.</th>
                   <th style="padding:0.25rem 0.4rem;">Fuente</th>
-                  <th style="padding:0.25rem 0.4rem;text-align:center;">SA</th>
-                  <th style="padding:0.25rem 0.4rem;text-align:center;">PDP</th>
-                  <th style="padding:0.25rem 0.4rem;text-align:center;">PRAS</th>
-                  <th style="padding:0.25rem 0.4rem;text-align:center;">PEFCF</th>
-                  <th style="padding:0.25rem 0.4rem;text-align:center;">R</th>
+                  <th class="col-anexo" style="padding:0.25rem 0.4rem;text-align:center;">SA</th>
+                  <th class="col-anexo" style="padding:0.25rem 0.4rem;text-align:center;">PDP</th>
+                  <th class="col-anexo" style="padding:0.25rem 0.4rem;text-align:center;">PRAS</th>
+                  <th class="col-anexo" style="padding:0.25rem 0.4rem;text-align:center;">PEFCF</th>
+                  <th class="col-anexo" style="padding:0.25rem 0.4rem;text-align:center;">R</th>
                   <th style="padding:0.25rem 0.4rem;text-align:right;">Emitido</th>
                   <th style="padding:0.25rem 0.4rem;text-align:right;">Solventado</th>
                   <th style="padding:0.25rem 0.4rem;text-align:right;">Pendiente</th>
@@ -189,11 +189,11 @@
                   <td style="padding:0.25rem 0.4rem;">{{ manual_result.summary.oficio }}</td>
                   <td style="padding:0.25rem 0.4rem;">{{ manual_result.summary.ejercicio }}</td>
                   <td style="padding:0.25rem 0.4rem;">{{ manual_result.summary.fuente }}</td>
-                  <td style="padding:0.25rem 0.4rem;text-align:center;">{{ manual_result.summary.sa }}</td>
-                  <td style="padding:0.25rem 0.4rem;text-align:center;">{{ manual_result.summary.pdp }}</td>
-                  <td style="padding:0.25rem 0.4rem;text-align:center;">{{ manual_result.summary.pras }}</td>
-                  <td style="padding:0.25rem 0.4rem;text-align:center;">{{ manual_result.summary.pefcf }}</td>
-                  <td style="padding:0.25rem 0.4rem;text-align:center;">{{ manual_result.summary.r }}</td>
+                  <td class="col-anexo" style="padding:0.25rem 0.4rem;text-align:center;">{{ manual_result.summary.sa }}</td>
+                  <td class="col-anexo" style="padding:0.25rem 0.4rem;text-align:center;">{{ manual_result.summary.pdp }}</td>
+                  <td class="col-anexo" style="padding:0.25rem 0.4rem;text-align:center;">{{ manual_result.summary.pras }}</td>
+                  <td class="col-anexo" style="padding:0.25rem 0.4rem;text-align:center;">{{ manual_result.summary.pefcf }}</td>
+                  <td class="col-anexo" style="padding:0.25rem 0.4rem;text-align:center;">{{ manual_result.summary.r }}</td>
                   <td style="padding:0.25rem 0.4rem;text-align:right;">${{ "{:,.2f}".format(manual_result.summary.monto_emitido) }}</td>
                   <td style="padding:0.25rem 0.4rem;text-align:right;">${{ "{:,.2f}".format(manual_result.summary.monto_solventado) }}</td>
                   <td style="padding:0.25rem 0.4rem;text-align:right;">${{ "{:,.2f}".format(manual_result.summary.monto_pendiente) }}</td>
@@ -1029,11 +1029,11 @@
         ].filter(Boolean).join(" - ") || "-"
       );
       const renderGaboOficiosTotalCells = (target) => (
-        `<th>${toInt(target.sa)}</th>` +
-        `<th>${toInt(target.pdp)}</th>` +
-        `<th>${toInt(target.pras)}</th>` +
-        `<th>${toInt(target.r)}</th>` +
-        `<th>${toInt(target.pefcf)}</th>` +
+        `<th class="col-anexo">${toInt(target.sa)}</th>` +
+        `<th class="col-anexo">${toInt(target.pdp)}</th>` +
+        `<th class="col-anexo">${toInt(target.pras)}</th>` +
+        `<th class="col-anexo">${toInt(target.r)}</th>` +
+        `<th class="col-anexo">${toInt(target.pefcf)}</th>` +
         `<th>${toInt(target.total)}</th>` +
         `<th>${escapeHtml(formatMoney(target.monto_emitido))}</th>` +
         `<th>${escapeHtml(formatMoney(target.monto_solventado))}</th>` +
@@ -1067,11 +1067,11 @@
           `<td>${escapeHtml(ente)}</td>` +
           `<td>${escapeHtml(row.tipos_auditoria || "-")}</td>` +
           `<td>${escapeHtml(formatFechaForSummary(row.fecha_notificacion || ""))}</td>` +
-          `<td>${toInt(row.sa)}</td>` +
-          `<td>${toInt(row.pdp)}</td>` +
-          `<td>${toInt(row.pras)}</td>` +
-          `<td>${toInt(row.r)}</td>` +
-          `<td>${toInt(row.pefcf)}</td>` +
+          `<td class="col-anexo">${toInt(row.sa)}</td>` +
+          `<td class="col-anexo">${toInt(row.pdp)}</td>` +
+          `<td class="col-anexo">${toInt(row.pras)}</td>` +
+          `<td class="col-anexo">${toInt(row.r)}</td>` +
+          `<td class="col-anexo">${toInt(row.pefcf)}</td>` +
           `<td><strong>${toInt(row.total)}</strong></td>` +
           `<td>${escapeHtml(formatMoney(row.monto_emitido))}</td>` +
           `<td>${escapeHtml(formatMoney(row.monto_solventado))}</td>` +
@@ -3737,11 +3737,11 @@
             `<input type="text" list="manual_resumen_periodos_options" data-row-field="periodo" data-row-index="${rowIndex}" value="${escapeHtml(periodo)}" placeholder="Periodo">` +
             `<small class="manual-resumen-inline-help">Elige un periodo cargado o escribe uno nuevo.</small>` +
             `</td>` +
-            `<td><input class="manual-resumen-count-input" type="number" min="0" data-row-field="cantidad_sa" data-row-index="${rowIndex}" value="${sa}"></td>` +
-            `<td><input class="manual-resumen-count-input" type="number" min="0" data-row-field="cantidad_pdp" data-row-index="${rowIndex}" value="${pdp}"></td>` +
-            `<td><input class="manual-resumen-count-input" type="number" min="0" data-row-field="cantidad_pras" data-row-index="${rowIndex}" value="${pras}"></td>` +
-            `<td><input class="manual-resumen-count-input" type="number" min="0" data-row-field="cantidad_pefcf" data-row-index="${rowIndex}" value="${pefcf}"></td>` +
-            `<td><input class="manual-resumen-count-input" type="number" min="0" data-row-field="cantidad_r" data-row-index="${rowIndex}" value="${r}"></td>` +
+            `<td class="col-anexo"><input class="manual-resumen-count-input" type="number" min="0" data-row-field="cantidad_sa" data-row-index="${rowIndex}" value="${sa}"></td>` +
+            `<td class="col-anexo"><input class="manual-resumen-count-input" type="number" min="0" data-row-field="cantidad_pdp" data-row-index="${rowIndex}" value="${pdp}"></td>` +
+            `<td class="col-anexo"><input class="manual-resumen-count-input" type="number" min="0" data-row-field="cantidad_pras" data-row-index="${rowIndex}" value="${pras}"></td>` +
+            `<td class="col-anexo"><input class="manual-resumen-count-input" type="number" min="0" data-row-field="cantidad_pefcf" data-row-index="${rowIndex}" value="${pefcf}"></td>` +
+            `<td class="col-anexo"><input class="manual-resumen-count-input" type="number" min="0" data-row-field="cantidad_r" data-row-index="${rowIndex}" value="${r}"></td>` +
             `<td><strong>${rowTotal}</strong></td>` +
             `<td><strong>${escapeHtml(formatMoney(rowMontoPdpEmitido))}</strong></td>` +
             `<td>${renderPdpInlineEditor(rowIndex, normalizedPdp, scope)}</td>` +
@@ -3754,11 +3754,11 @@
         const subtotalRowHtml = (
           `<tr class="manual-resumen-subtotal">` +
           `<th colspan="${isConvenioSection ? 3 : 2}">Subtotal ${escapeHtml(tipoLabel)}</th>` +
-          `<th>${tipoTotals.sa}</th>` +
-          `<th>${tipoTotals.pdp}</th>` +
-          `<th>${tipoTotals.pras}</th>` +
-          `<th>${tipoTotals.pefcf}</th>` +
-          `<th>${tipoTotals.r}</th>` +
+          `<th class="col-anexo">${tipoTotals.sa}</th>` +
+          `<th class="col-anexo">${tipoTotals.pdp}</th>` +
+          `<th class="col-anexo">${tipoTotals.pras}</th>` +
+          `<th class="col-anexo">${tipoTotals.pefcf}</th>` +
+          `<th class="col-anexo">${tipoTotals.r}</th>` +
           `<th>${tipoTotals.total}</th>` +
           `<th>${escapeHtml(formatMoney(tipoTotals.monto_pdp_emitido))}</th>` +
           `<th></th>` +
@@ -3775,11 +3775,11 @@
           `<th class="manual-resumen-col-fuente">Nombre de la Fuente de Financiamiento</th>` +
           `${isConvenioSection ? '<th class="manual-resumen-col-convenio">Nombre del Convenio</th>' : ""}` +
           `<th class="manual-resumen-col-periodo">Periodo</th>` +
-          `<th>SA</th>` +
-          `<th>PDP</th>` +
-          `<th>PRAS</th>` +
-          `<th>PEFCF</th>` +
-          `<th>R</th>` +
+          `<th class="col-anexo">SA</th>` +
+          `<th class="col-anexo">PDP</th>` +
+          `<th class="col-anexo">PRAS</th>` +
+          `<th class="col-anexo">PEFCF</th>` +
+          `<th class="col-anexo">R</th>` +
           `<th>${isConvenioSection ? "Total de Obs. Emitidas" : "Total"}</th>` +
           `<th>Total monto PDP emitido</th>` +
           `<th>Detalle PDP</th>` +
@@ -3800,11 +3800,11 @@
         `<tbody>` +
         `<tr class="manual-resumen-total">` +
         `<th colspan="2">Total general</th>` +
-        `<th>${grandTotals.sa}</th>` +
-        `<th>${grandTotals.pdp}</th>` +
-        `<th>${grandTotals.pras}</th>` +
-        `<th>${grandTotals.pefcf}</th>` +
-        `<th>${grandTotals.r}</th>` +
+        `<th class="col-anexo">${grandTotals.sa}</th>` +
+        `<th class="col-anexo">${grandTotals.pdp}</th>` +
+        `<th class="col-anexo">${grandTotals.pras}</th>` +
+        `<th class="col-anexo">${grandTotals.pefcf}</th>` +
+        `<th class="col-anexo">${grandTotals.r}</th>` +
         `<th>${grandTotals.total}</th>` +
         `<th>${escapeHtml(formatMoney(grandTotals.monto_pdp_emitido))}</th>` +
         `<th></th>` +

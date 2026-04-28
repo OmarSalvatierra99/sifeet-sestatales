@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Registro Observaciones · Comparativo Anual</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260428-oficio-pdf') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260428-col-anexo-center-fix') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/comparativo_anual.css') }}">
   <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
 </head>
@@ -32,10 +32,8 @@
   </header>
 
   <main class="page-content comparativo-page">
-    <nav class="mode-switch" aria-label="Modos de consulta">
-      <a class="mode-switch-link" href="{{ url_for('index') }}">Consulta operativa</a>
-      <a class="mode-switch-link is-active" href="{{ url_for('comparativo_anual') }}">Comparativo anual</a>
-    </nav>
+    {% set luis_nav_active = 'comparativo' %}
+    {% include "_luis_module_nav.html" %}
 
     <section class="panel comparativo-hero">
       <div class="panel-header">
@@ -105,7 +103,7 @@
             </select>
           </div>
           <div class="field">
-            <label for="comparison_fuente">Fuente</label>
+            <label for="comparison_fuente">Fuente de Financiamiento</label>
             <select id="comparison_fuente" name="comparison_fuente">
               <option value="">Todas</option>
             </select>

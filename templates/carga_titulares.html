@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Registro Observaciones · Titulares</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260428-titulares-tabla') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260428-col-anexo-center-fix') }}">
   <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
 </head>
 <body class="loader-page titulares-standalone-page">
@@ -109,7 +109,7 @@
       </div>
 
       <div class="table-wrap gabo-oficios-table-wrap titulares-table-wrap">
-        <table class="table-compact gabo-oficios-table titulares-general-table">
+        <table class="table-compact gabo-oficios-table titulares-general-table titulares-table">
           <thead>
             <tr>
               <th>Ente</th>
@@ -952,14 +952,14 @@
 
       const rows = buildMergedTitularesTableRows(sourceRows);
       historyTableBody.innerHTML = rows.map((row) => `
-        <tr class="${[row.enteRowspan ? "titulares-ente-start" : "", row.enteEndsGroup ? "titulares-ente-end" : ""].filter(Boolean).join(" ")}">
-          ${row.enteRowspan ? `<td class="titulares-merged-cell titulares-cell-ente" rowspan="${row.enteRowspan}">${escapeHtml(row.ente_label)}</td>` : ""}
+        <tr class="${[row.enteRowspan ? "titulares-ente-start entity-group-start" : "", row.enteEndsGroup ? "titulares-ente-end entity-group-end" : ""].filter(Boolean).join(" ")}">
+          ${row.enteRowspan ? `<td class="titulares-merged-cell titulares-cell-ente ente-cell" rowspan="${row.enteRowspan}">${escapeHtml(row.ente_label)}</td>` : ""}
           ${row.alcanceRowspan ? `<td class="titulares-merged-cell titulares-cell-alcance" rowspan="${row.alcanceRowspan}">${escapeHtml(row.tipo_auditoria || "—")}</td>` : ""}
           ${row.periodRowspan ? `<td class="titulares-merged-cell titulares-cell-periodo" rowspan="${row.periodRowspan}">${escapeHtml(formatPeriodDisplay(row.periodo_informe))}</td>` : ""}
           ${row.titularRowspan ? `<td class="titulares-merged-cell titulares-cell-titular" rowspan="${row.titularRowspan}">${escapeHtml(row.titular || "—")}</td>` : ""}
           ${row.adminPeriodRowspan ? `<td class="titulares-merged-cell titulares-cell-admin-periodo" rowspan="${row.adminPeriodRowspan}">${escapeHtml(formatPeriodDisplay(row.periodo_administrativo))}</td>` : ""}
           ${row.adminNameRowspan ? `<td class="titulares-merged-cell titulares-cell-admin" rowspan="${row.adminNameRowspan}">${escapeHtml(row.administrativo || "—")}</td>` : ""}
-          ${row.cedulaRowspan ? `<td class="titulares-cell-cedula" rowspan="${row.cedulaRowspan}">${escapeHtml(formatPeriodDisplay(row.cedula_resultados))}</td>` : ""}
+          ${row.cedulaRowspan ? `<td class="titulares-merged-cell titulares-cell-cedula" rowspan="${row.cedulaRowspan}">${escapeHtml(formatPeriodDisplay(row.cedula_resultados))}</td>` : ""}
         </tr>
       `).join("");
 

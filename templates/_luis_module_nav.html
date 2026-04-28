@@ -1,0 +1,156 @@
+{% set luis_nav_active = luis_nav_active|default(luis_view|default('consulta')) %}
+{% set luis_current_query = request.query_string.decode('utf-8') if request.query_string else '' %}
+{% macro luis_nav_href(endpoint) -%}{{ url_for(endpoint) }}{% if luis_current_query %}?{{ luis_current_query }}{% endif %}{%- endmacro %}
+
+<nav class="mode-switch luis-module-nav" aria-label="Modos de consulta">
+  <a
+    class="mode-switch-link{% if luis_nav_active == 'consulta' %} is-active{% endif %}"
+    href="{{ luis_nav_href('index') }}"
+    data-luis-nav-link
+    data-base-href="{{ url_for('index') }}"
+    {% if luis_nav_active == 'consulta' %}aria-current="page"{% endif %}
+  >
+    <span class="gabo-module-nav-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M4 19.5H20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M7 16V10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M12 16V6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M17 16V12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <span>Consulta operativa</span>
+  </a>
+  <a
+    class="mode-switch-link{% if luis_nav_active == 'resumen_general' %} is-active{% endif %}"
+    href="{{ luis_nav_href('luis_resumen_general') }}"
+    data-luis-nav-link
+    data-base-href="{{ url_for('luis_resumen_general') }}"
+    {% if luis_nav_active == 'resumen_general' %}aria-current="page"{% endif %}
+  >
+    <span class="gabo-module-nav-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M5 6.5H19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M5 12H19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M5 17.5H19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <span>Resumen general</span>
+  </a>
+  <a
+    class="mode-switch-link{% if luis_nav_active == 'tipo_auditoria' %} is-active{% endif %}"
+    href="{{ luis_nav_href('luis_tipo_auditoria') }}"
+    data-luis-nav-link
+    data-base-href="{{ url_for('luis_tipo_auditoria') }}"
+    {% if luis_nav_active == 'tipo_auditoria' %}aria-current="page"{% endif %}
+  >
+    <span class="gabo-module-nav-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M5 6.5H19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M7 12H17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M9 17.5H15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <span>Tipo de Auditoría</span>
+  </a>
+  <a
+    class="mode-switch-link{% if luis_nav_active == 'fuente_financiamiento' %} is-active{% endif %}"
+    href="{{ luis_nav_href('luis_fuente_financiamiento') }}"
+    data-luis-nav-link
+    data-base-href="{{ url_for('luis_fuente_financiamiento') }}"
+    {% if luis_nav_active == 'fuente_financiamiento' %}aria-current="page"{% endif %}
+  >
+    <span class="gabo-module-nav-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M6 7H18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M6 12H18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M6 17H13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M4.5 5.5V18.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <span>Fuente de Financiamiento</span>
+  </a>
+  <a
+    class="mode-switch-link{% if luis_nav_active == 'pendientes' %} is-active{% endif %}"
+    href="{{ luis_nav_href('luis_pendientes_periodo') }}"
+    data-luis-nav-link
+    data-base-href="{{ url_for('luis_pendientes_periodo') }}"
+    {% if luis_nav_active == 'pendientes' %}aria-current="page"{% endif %}
+  >
+    <span class="gabo-module-nav-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M7 4.5H17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M8 8H16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M9.5 12H14.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M6 20L12 16L18 20V5.5C18 4.7 17.3 4 16.5 4H7.5C6.7 4 6 4.7 6 5.5V20Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      </svg>
+    </span>
+    <span>Pendientes por periodo</span>
+  </a>
+  <a
+    class="mode-switch-link{% if luis_nav_active == 'titulares' %} is-active{% endif %}"
+    href="{{ luis_nav_href('luis_titulares_administrativos') }}"
+    data-luis-nav-link
+    data-base-href="{{ url_for('luis_titulares_administrativos') }}"
+    {% if luis_nav_active == 'titulares' %}aria-current="page"{% endif %}
+  >
+    <span class="gabo-module-nav-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M8 10.5C9.38 10.5 10.5 9.38 10.5 8C10.5 6.62 9.38 5.5 8 5.5C6.62 5.5 5.5 6.62 5.5 8C5.5 9.38 6.62 10.5 8 10.5Z" stroke="currentColor" stroke-width="1.8"/>
+        <path d="M4 18.5C4.4 16.5 5.8 15 8 15C10.2 15 11.6 16.5 12 18.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M14 7H20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M14 12H20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M14 17H18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <span>Titulares y administrativos</span>
+  </a>
+  <a
+    class="mode-switch-link{% if luis_nav_active == 'catalogo' %} is-active{% endif %}"
+    href="{{ luis_nav_href('luis_catalogo') }}"
+    data-luis-nav-link
+    data-base-href="{{ url_for('luis_catalogo') }}"
+    {% if luis_nav_active == 'catalogo' %}aria-current="page"{% endif %}
+  >
+    <span class="gabo-module-nav-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M5.5 5.5H18.5V18.5H5.5V5.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        <path d="M8.5 9H15.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M8.5 12H15.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M8.5 15H13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <span>Catálogo de entes</span>
+  </a>
+  <a
+    class="mode-switch-link{% if luis_nav_active == 'graficas' %} is-active{% endif %}"
+    href="{{ luis_nav_href('luis_graficas') }}"
+    data-luis-nav-link
+    data-base-href="{{ url_for('luis_graficas') }}"
+    {% if luis_nav_active == 'graficas' %}aria-current="page"{% endif %}
+  >
+    <span class="gabo-module-nav-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M5 18V6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M5 18H19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M8 15L11 11.5L14 13.5L18 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </span>
+    <span>Gráficas</span>
+  </a>
+  <a
+    class="mode-switch-link{% if luis_nav_active == 'comparativo' %} is-active{% endif %}"
+    href="{{ url_for('comparativo_anual') }}"
+    data-base-href="{{ url_for('comparativo_anual') }}"
+    {% if luis_nav_active == 'comparativo' %}aria-current="page"{% endif %}
+  >
+    <span class="gabo-module-nav-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M5 18.5V5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M5 18.5H19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M8 14L11 11L14 13L18 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M15 8H18V11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </span>
+    <span>Comparativo anual</span>
+  </a>
+</nav>

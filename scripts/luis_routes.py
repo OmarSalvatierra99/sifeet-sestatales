@@ -35,7 +35,7 @@ def register_luis_routes(app, deps):
         "tipo_auditoria": "Tipo de auditoria",
         "tipo_anexo": "Tipo de anexo",
         "estado": "Estado",
-        "fuente_financiamiento": "Fuente de financiamiento",
+        "fuente_financiamiento": "Fuente de Financiamiento",
         "modalidad": "Modalidad",
         "convenio_ente_nombre": "Ente hijo / convenio",
         "origen_fuente": "Del Ejercicio / Remanentes",
@@ -59,7 +59,7 @@ def register_luis_routes(app, deps):
         "tipo_auditoria": "Tipo de auditoria",
         "tipo_anexo": "Tipo de anexo",
         "estado": "Estado",
-        "fuente_financiamiento": "Fuente de financiamiento",
+        "fuente_financiamiento": "Fuente de Financiamiento",
         "origen_fuente": "Del Ejercicio / Remanentes",
         "ramo_33": "Ramo 33",
         "ramo_28": "Ramo 28",
@@ -2573,6 +2573,427 @@ def register_luis_routes(app, deps):
                 )
         return visual_rows
 
+    def add_status_totals(target: dict, source: dict) -> None:
+        for anexo in anexos_orden:
+            target[anexo] += int((source or {}).get(anexo) or 0)
+        target["total"] += int((source or {}).get("total") or 0)
+        target["monto_dano"] += float((source or {}).get("monto_dano") or 0)
+
+    def build_observaciones_breakdown(
+        db,
+        ejercicio: str,
+        selected_filters: dict[str, list[str]],
+        group_by: str,
+    ) -> dict:
+        group_config = {
+            "general": {
+                "column": "ente_nombre",
+                "label": "Nombre del Ente",
+                "empty": "Sin ente",
+            },
+            "tipo_auditoria": {
+                "column": "tipo_auditoria",
+                "label": "Tipo de Auditoría",
+                "empty": "Sin tipo de auditoría",
+            },
+            "fuente_financiamiento": {
+                "column": "fuente_financiamiento",
+                "label": "Fuente de Financiamiento",
+                "empty": "Sin fuente de financiamiento",
+            },
+        }
+        config = group_config.get(group_by)
+        if not config:
+            group_by = "tipo_auditoria"
+            config = group_config[group_by]
+
+        scope_sql, scope_params = build_observaciones_scope(
+            ejercicio,
+            selected_filters,
+            include_ente=True,
+            alias="o",
+        )
+        rows = db.execute(
+            f"""
+            SELECT
+                o.{config["column"]} AS group_value,
+                o.ente_id,
+                o.ente_numero,
+                o.ente_numero_sort,
+                o.ente_nombre,
+                o.tipo_auditoria,
+                o.fuente_financiamiento,
+                o.periodo_cedula,
+                o.periodo_titular,
+                o.tipo_anexo,
+                o.estado,
+                o.monto_pdp_emitido,
+                o.monto_pdp_solventado,
+                o.monto_pdp_pendiente
+            FROM observaciones AS o
+            WHERE {scope_sql}
+            ORDER BY
+                COALESCE(o.ente_numero_sort, 0) ASC,
+                o.ente_numero ASC,
+                o.ente_id ASC,
+                group_value ASC,
+                o.periodo_cedula ASC,
+                o.periodo_titular ASC,
+                o.tipo_anexo ASC,
+                o.numero_observacion ASC
+            """,
+            scope_params,
+        ).fetchall()
+
+        groups_index: dict[str, dict] = {}
+        general_totals = {
+            "emitidas": build_status_metrics(),
+            "solventadas": build_status_metrics(),
+            "pendientes": build_status_metrics(),
+        }
+        if group_by == "fuente_financiamiento":
+            ente_groups: dict[str, dict] = {}
+            for row in rows:
+                tipo_anexo = normalize_anexo_bucket(row["tipo_anexo"] or "")
+                if tipo_anexo not in anexos_orden:
+                    continue
+                ente_key = (
+                    normalize_ente_id(row["ente_id"] or "")
+                    or f"{row['ente_numero'] or ''}|{row['ente_nombre'] or ''}".casefold()
+                )
+                ente_nombre = " ".join((row["ente_nombre"] or "").split()) or "Sin ente"
+                ente_no = (row["ente_numero"] or row["ente_id"] or "").strip() or "—"
+                if ente_key not in ente_groups:
+                    ente_groups[ente_key] = {
+                        "no": ente_no,
+                        "label": ente_nombre,
+                        "_sort": float(row["ente_numero_sort"] or 0),
+                        "items": {},
+                        "totals": {
+                            "emitidas": build_status_metrics(),
+                            "solventadas": build_status_metrics(),
+                            "pendientes": build_status_metrics(),
+                        },
+                    }
+
+                tipo_auditoria = (
+                    normalize_tipo_auditoria(row["tipo_auditoria"] or "")
+                    or "Sin tipo de auditoría"
+                )
+                fuente = " ".join((row["fuente_financiamiento"] or "").split()) or "Sin fuente de financiamiento"
+                periodo_cedula = " ".join((row["periodo_cedula"] or "").split()) or "—"
+                periodo_titular = " ".join((row["periodo_titular"] or "").split()) or "—"
+                item_key = (
+                    tipo_auditoria.casefold(),
+                    fuente.casefold(),
+                    periodo_cedula.casefold(),
+                    periodo_titular.casefold(),
+                )
+                if item_key not in ente_groups[ente_key]["items"]:
+                    periodo_inicio, periodo_fin = parse_periodo_cedula(ejercicio, periodo_cedula)
+                    ente_groups[ente_key]["items"][item_key] = {
+                        "tipo_auditoria": tipo_auditoria,
+                        "fuente_financiamiento": fuente,
+                        "periodo_cedula": periodo_cedula,
+                        "periodo_titular": periodo_titular,
+                        "_periodo_inicio": periodo_inicio or "9999-12-31",
+                        "_periodo_fin": periodo_fin or "9999-12-31",
+                        "totals": {
+                            "emitidas": build_status_metrics(),
+                            "solventadas": build_status_metrics(),
+                            "pendientes": build_status_metrics(),
+                        },
+                    }
+
+                item_totals = ente_groups[ente_key]["items"][item_key]["totals"]
+                ente_totals = ente_groups[ente_key]["totals"]
+                append_status_metric(item_totals["emitidas"], tipo_anexo, float(row["monto_pdp_emitido"] or 0))
+                append_status_metric(ente_totals["emitidas"], tipo_anexo, float(row["monto_pdp_emitido"] or 0))
+                append_status_metric(general_totals["emitidas"], tipo_anexo, float(row["monto_pdp_emitido"] or 0))
+
+                estado_norm = (row["estado"] or "").strip().lower()
+                if estado_norm.startswith("solvent"):
+                    append_status_metric(item_totals["solventadas"], tipo_anexo, float(row["monto_pdp_solventado"] or 0))
+                    append_status_metric(ente_totals["solventadas"], tipo_anexo, float(row["monto_pdp_solventado"] or 0))
+                    append_status_metric(general_totals["solventadas"], tipo_anexo, float(row["monto_pdp_solventado"] or 0))
+                elif estado_norm.startswith("pendient"):
+                    append_status_metric(item_totals["pendientes"], tipo_anexo, float(row["monto_pdp_pendiente"] or 0))
+                    append_status_metric(ente_totals["pendientes"], tipo_anexo, float(row["monto_pdp_pendiente"] or 0))
+                    append_status_metric(general_totals["pendientes"], tipo_anexo, float(row["monto_pdp_pendiente"] or 0))
+
+            payload_rows = []
+            for ente_group in sorted(
+                ente_groups.values(),
+                key=lambda item: (
+                    float(item.get("_sort") or 0),
+                    str(item.get("no") or ""),
+                    str(item.get("label") or "").casefold(),
+                ),
+            ):
+                source_rows = sorted(
+                    ente_group["items"].values(),
+                    key=lambda item: (
+                        str(item.get("tipo_auditoria") or "").casefold(),
+                        str(item.get("fuente_financiamiento") or "").casefold(),
+                        str(item.get("_periodo_inicio") or "9999-12-31"),
+                        str(item.get("_periodo_fin") or "9999-12-31"),
+                        str(item.get("periodo_cedula") or "").casefold(),
+                        str(item.get("periodo_titular") or "").casefold(),
+                    ),
+                )
+                tipo_rowspans = [0] * len(source_rows)
+                fuente_rowspans = [0] * len(source_rows)
+                cursor = 0
+                while cursor < len(source_rows):
+                    current_tipo = source_rows[cursor].get("tipo_auditoria")
+                    end = cursor + 1
+                    while end < len(source_rows) and source_rows[end].get("tipo_auditoria") == current_tipo:
+                        end += 1
+                    tipo_rowspans[cursor] = end - cursor
+                    cursor = end
+                cursor = 0
+                while cursor < len(source_rows):
+                    current_key = (
+                        source_rows[cursor].get("tipo_auditoria"),
+                        source_rows[cursor].get("fuente_financiamiento"),
+                    )
+                    end = cursor + 1
+                    while end < len(source_rows) and (
+                        source_rows[end].get("tipo_auditoria"),
+                        source_rows[end].get("fuente_financiamiento"),
+                    ) == current_key:
+                        end += 1
+                    fuente_rowspans[cursor] = end - cursor
+                    cursor = end
+                for index, item in enumerate(source_rows):
+                    item.pop("_periodo_inicio", None)
+                    item.pop("_periodo_fin", None)
+                    payload_rows.append(
+                        {
+                            "no": ente_group["no"],
+                            "label": ente_group["label"],
+                            "show_entity": index == 0,
+                            "entity_rowspan": len(source_rows),
+                            "tipo_auditoria": item["tipo_auditoria"],
+                            "show_tipo_auditoria": tipo_rowspans[index] > 0,
+                            "tipo_auditoria_rowspan": tipo_rowspans[index],
+                            "fuente_financiamiento": item["fuente_financiamiento"],
+                            "show_fuente_financiamiento": fuente_rowspans[index] > 0,
+                            "fuente_financiamiento_rowspan": fuente_rowspans[index],
+                            "periodo_cedula": item["periodo_cedula"],
+                            "periodo_titular": item["periodo_titular"],
+                            "totals": item["totals"],
+                        }
+                    )
+                if len(source_rows) > 1:
+                    payload_rows.append(
+                        {
+                            "row_type": "subtotal",
+                            "no": "",
+                            "label": "SUBTOTAL",
+                            "tipo_auditoria": "",
+                            "fuente_financiamiento": "",
+                            "periodo_cedula": "",
+                            "periodo_titular": "",
+                            "totals": ente_group["totals"],
+                        }
+                    )
+            return {
+                "group_by": group_by,
+                "label": "Nombre del Ente",
+                "detail_label": "Fuente de Financiamiento",
+                "rows": payload_rows,
+                "totals": general_totals,
+            }
+
+        if group_by == "tipo_auditoria":
+            ente_groups: dict[str, dict] = {}
+            for row in rows:
+                tipo_anexo = normalize_anexo_bucket(row["tipo_anexo"] or "")
+                if tipo_anexo not in anexos_orden:
+                    continue
+                ente_key = (
+                    normalize_ente_id(row["ente_id"] or "")
+                    or f"{row['ente_numero'] or ''}|{row['ente_nombre'] or ''}".casefold()
+                )
+                ente_nombre = " ".join((row["ente_nombre"] or "").split()) or "Sin ente"
+                ente_no = (row["ente_numero"] or row["ente_id"] or "").strip() or "—"
+                if ente_key not in ente_groups:
+                    ente_groups[ente_key] = {
+                        "no": ente_no,
+                        "label": ente_nombre,
+                        "_sort": float(row["ente_numero_sort"] or 0),
+                        "items": {},
+                        "totals": {
+                            "emitidas": build_status_metrics(),
+                            "solventadas": build_status_metrics(),
+                            "pendientes": build_status_metrics(),
+                        },
+                    }
+                tipo_auditoria = (
+                    normalize_tipo_auditoria(row["group_value"] or "")
+                    or "Sin tipo de auditoría"
+                )
+                if tipo_auditoria not in ente_groups[ente_key]["items"]:
+                    ente_groups[ente_key]["items"][tipo_auditoria] = {
+                        "detail": tipo_auditoria,
+                        "totals": {
+                            "emitidas": build_status_metrics(),
+                            "solventadas": build_status_metrics(),
+                            "pendientes": build_status_metrics(),
+                        },
+                    }
+
+                item_totals = ente_groups[ente_key]["items"][tipo_auditoria]["totals"]
+                ente_totals = ente_groups[ente_key]["totals"]
+                append_status_metric(item_totals["emitidas"], tipo_anexo, float(row["monto_pdp_emitido"] or 0))
+                append_status_metric(ente_totals["emitidas"], tipo_anexo, float(row["monto_pdp_emitido"] or 0))
+                append_status_metric(general_totals["emitidas"], tipo_anexo, float(row["monto_pdp_emitido"] or 0))
+
+                estado_norm = (row["estado"] or "").strip().lower()
+                if estado_norm.startswith("solvent"):
+                    append_status_metric(item_totals["solventadas"], tipo_anexo, float(row["monto_pdp_solventado"] or 0))
+                    append_status_metric(ente_totals["solventadas"], tipo_anexo, float(row["monto_pdp_solventado"] or 0))
+                    append_status_metric(general_totals["solventadas"], tipo_anexo, float(row["monto_pdp_solventado"] or 0))
+                elif estado_norm.startswith("pendient"):
+                    append_status_metric(item_totals["pendientes"], tipo_anexo, float(row["monto_pdp_pendiente"] or 0))
+                    append_status_metric(ente_totals["pendientes"], tipo_anexo, float(row["monto_pdp_pendiente"] or 0))
+                    append_status_metric(general_totals["pendientes"], tipo_anexo, float(row["monto_pdp_pendiente"] or 0))
+
+            payload_rows = []
+            for ente_group in sorted(
+                ente_groups.values(),
+                key=lambda item: (
+                    float(item.get("_sort") or 0),
+                    str(item.get("no") or ""),
+                    str(item.get("label") or "").casefold(),
+                ),
+            ):
+                type_rows = sorted(
+                    ente_group["items"].values(),
+                    key=lambda item: str(item.get("detail") or "").casefold(),
+                )
+                for index, item in enumerate(type_rows):
+                    payload_rows.append(
+                        {
+                            "no": ente_group["no"],
+                            "label": ente_group["label"],
+                            "show_entity": index == 0,
+                            "entity_rowspan": len(type_rows),
+                            "detail": item["detail"],
+                            "totals": item["totals"],
+                        }
+                    )
+                if len(type_rows) > 1:
+                    payload_rows.append(
+                        {
+                            "row_type": "subtotal",
+                            "no": "",
+                            "label": "SUBTOTAL",
+                            "detail": "",
+                            "totals": ente_group["totals"],
+                        }
+                    )
+            return {
+                "group_by": group_by,
+                "label": "Nombre del Ente",
+                "detail_label": "Tipo de Auditoría",
+                "rows": payload_rows,
+                "totals": general_totals,
+            }
+
+        for row in rows:
+            group_value = " ".join((row["group_value"] or "").split()) or config["empty"]
+            if group_by == "general":
+                group_key = (
+                    normalize_ente_id(row["ente_id"] or "")
+                    or f"{row['ente_numero'] or ''}|{group_value}".casefold()
+                )
+                group_no = (row["ente_numero"] or row["ente_id"] or "").strip() or "—"
+                group_sort = float(row["ente_numero_sort"] or 0)
+            elif group_by == "tipo_auditoria":
+                group_value = normalize_tipo_auditoria(group_value) or group_value
+                group_key = group_value.casefold()
+                group_no = ""
+                group_sort = 0.0
+            else:
+                group_key = group_value.casefold()
+                group_no = ""
+                group_sort = 0.0
+            if group_key not in groups_index:
+                groups_index[group_key] = {
+                    "label": group_value,
+                    "no": group_no,
+                    "_sort": group_sort,
+                    "totals": {
+                        "emitidas": build_status_metrics(),
+                        "solventadas": build_status_metrics(),
+                        "pendientes": build_status_metrics(),
+                    },
+                }
+
+            tipo_anexo = normalize_anexo_bucket(row["tipo_anexo"] or "")
+            if tipo_anexo not in anexos_orden:
+                continue
+            group_totals = groups_index[group_key]["totals"]
+            append_status_metric(
+                group_totals["emitidas"],
+                tipo_anexo,
+                float(row["monto_pdp_emitido"] or 0),
+            )
+            append_status_metric(
+                general_totals["emitidas"],
+                tipo_anexo,
+                float(row["monto_pdp_emitido"] or 0),
+            )
+
+            estado_norm = (row["estado"] or "").strip().lower()
+            if estado_norm.startswith("solvent"):
+                append_status_metric(
+                    group_totals["solventadas"],
+                    tipo_anexo,
+                    float(row["monto_pdp_solventado"] or 0),
+                )
+                append_status_metric(
+                    general_totals["solventadas"],
+                    tipo_anexo,
+                    float(row["monto_pdp_solventado"] or 0),
+                )
+            elif estado_norm.startswith("pendient"):
+                append_status_metric(
+                    group_totals["pendientes"],
+                    tipo_anexo,
+                    float(row["monto_pdp_pendiente"] or 0),
+                )
+                append_status_metric(
+                    general_totals["pendientes"],
+                    tipo_anexo,
+                    float(row["monto_pdp_pendiente"] or 0),
+                )
+
+        if group_by == "general":
+            payload_rows = sorted(
+                groups_index.values(),
+                key=lambda item: (
+                    float(item.get("_sort") or 0),
+                    str(item.get("no") or ""),
+                    str(item.get("label") or "").casefold(),
+                ),
+            )
+        else:
+            payload_rows = sorted(
+                groups_index.values(),
+                key=lambda item: (str(item.get("label") or "").casefold()),
+            )
+        for item in payload_rows:
+            item.pop("_sort", None)
+        return {
+            "group_by": group_by,
+            "label": config["label"],
+            "rows": payload_rows,
+            "totals": general_totals,
+        }
+
     @app.get("/observaciones-responsables")
     @luis_required
     def observaciones_responsables():
@@ -2588,6 +3009,32 @@ def register_luis_routes(app, deps):
             selected_filters,
         )
         return jsonify(groups_payload)
+
+    @app.get("/observaciones-desglose")
+    @luis_required
+    def observaciones_desglose():
+        ejercicio = request.args.get("ejercicio", "").strip()
+        group_by = request.args.get("group_by", "tipo_auditoria").strip()
+        selected_filters = parse_selected_filters()
+        if not ejercicio:
+            return jsonify({
+                "group_by": group_by,
+                "label": "",
+                "rows": [],
+                "totals": {
+                    "emitidas": build_status_metrics(),
+                    "solventadas": build_status_metrics(),
+                    "pendientes": build_status_metrics(),
+                },
+            })
+        return jsonify(
+            build_observaciones_breakdown(
+                get_db(),
+                ejercicio,
+                selected_filters,
+                group_by,
+            )
+        )
 
     @app.get("/observaciones-responsables-exportar")
     @luis_required
@@ -3007,6 +3454,403 @@ def register_luis_routes(app, deps):
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
+    @app.get("/observaciones-desglose-exportar")
+    @luis_required
+    def observaciones_desglose_exportar():
+        ejercicio = request.args.get("ejercicio", "").strip()
+        group_by = request.args.get("group_by", "tipo_auditoria").strip()
+        selected_filters = parse_selected_filters()
+        if not ejercicio:
+            return jsonify({"error": "ejercicio requerido"}), 400
+
+        payload = build_observaciones_breakdown(get_db(), ejercicio, selected_filters, group_by)
+        rows = payload.get("rows", []) or []
+        label = payload.get("label") or "Grupo"
+        totals = payload.get("totals", {}) or {}
+        is_tipo_auditoria = payload.get("group_by") == "tipo_auditoria"
+        is_fuente_financiamiento = payload.get("group_by") == "fuente_financiamiento"
+        left_headers = ["No", "Nombre del Ente", "Tipo de Auditoría"] if is_tipo_auditoria else ["No", label]
+        left_count = len(left_headers)
+        max_col = left_count + 21
+        amount_cols = (left_count + 7, left_count + 14, left_count + 21)
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Resumen"
+        thin_border = Border(
+            left=Side(style="thin", color="D7DFD9"),
+            right=Side(style="thin", color="D7DFD9"),
+            top=Side(style="thin", color="D7DFD9"),
+            bottom=Side(style="thin", color="D7DFD9"),
+        )
+        header_primary_fill = PatternFill("solid", fgColor="1F3B2C")
+        header_secondary_fill = PatternFill("solid", fgColor="2A503D")
+        total_fill = PatternFill("solid", fgColor="EDF4EF")
+        zebra_fill = PatternFill("solid", fgColor="F8FAF7")
+        white_bold_font = Font(bold=True, color="FFFFFF")
+        center_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        left_alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+        right_alignment = Alignment(horizontal="right", vertical="center")
+
+        def metric_export_values(metric: dict) -> list:
+            monto = float((metric or {}).get("monto_dano") or 0)
+            return [
+                int((metric or {}).get("R") or 0),
+                int((metric or {}).get("SA") or 0),
+                int((metric or {}).get("PDP") or 0),
+                int((metric or {}).get("PRAS") or 0),
+                int((metric or {}).get("PEFCF") or 0),
+                int((metric or {}).get("total") or 0),
+                monto if monto > 0 else "-",
+            ]
+
+        if is_fuente_financiamiento:
+            left_headers = [
+                "No",
+                "Nombre del Ente",
+                "Tipo de Auditoría",
+                "Fuente de Financiamiento",
+                "Periodo Cédula",
+                "Periodo Titular",
+            ]
+            left_count = len(left_headers)
+            max_col = left_count + 7
+            amount_cols = (max_col,)
+            sheet.append([*left_headers, "EMITIDAS", "", "", "", "", "", ""])
+            sheet.append([
+                *([""] * left_count),
+                "R",
+                "SA",
+                "PDP",
+                "PRAS",
+                "PECFF",
+                "Total",
+                "Monto Daño ($)",
+            ])
+            for col_idx in range(1, left_count + 1):
+                sheet.merge_cells(start_row=1, start_column=col_idx, end_row=2, end_column=col_idx)
+            sheet.merge_cells(start_row=1, start_column=left_count + 1, end_row=1, end_column=max_col)
+            for row_idx in (1, 2):
+                for cell in sheet[row_idx]:
+                    cell.font = white_bold_font
+                    cell.alignment = center_alignment
+                    cell.border = thin_border
+                    cell.fill = header_primary_fill if row_idx == 1 else header_secondary_fill
+            sheet.row_dimensions[1].height = 28
+            sheet.row_dimensions[2].height = 24
+            sheet.freeze_panes = "A3"
+
+            merge_ranges: list[tuple[int, int, int]] = []
+            subtotal_rows: set[int] = set()
+            if not rows:
+                sheet.append(["Sin resultados para los filtros seleccionados."])
+                sheet.merge_cells(start_row=3, start_column=1, end_row=3, end_column=max_col)
+                empty_cell = sheet["A3"]
+                empty_cell.alignment = center_alignment
+                empty_cell.font = Font(italic=True)
+                empty_cell.fill = zebra_fill
+            else:
+                for row in rows:
+                    if row.get("row_type") == "subtotal":
+                        sheet.append([
+                            "SUBTOTAL",
+                            "",
+                            "",
+                            "",
+                            "",
+                            "",
+                            *metric_export_values((row.get("totals") or {}).get("emitidas") or {}),
+                        ])
+                        row_idx = sheet.max_row
+                        subtotal_rows.add(row_idx)
+                        sheet.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=left_count)
+                        continue
+
+                    row_idx = sheet.max_row + 1
+                    if row.get("show_entity") and int(row.get("entity_rowspan") or 1) > 1:
+                        merge_ranges.append((row_idx, row_idx + int(row.get("entity_rowspan") or 1) - 1, 1))
+                        merge_ranges.append((row_idx, row_idx + int(row.get("entity_rowspan") or 1) - 1, 2))
+                    if row.get("show_tipo_auditoria") and int(row.get("tipo_auditoria_rowspan") or 1) > 1:
+                        merge_ranges.append((row_idx, row_idx + int(row.get("tipo_auditoria_rowspan") or 1) - 1, 3))
+                    if row.get("show_fuente_financiamiento") and int(row.get("fuente_financiamiento_rowspan") or 1) > 1:
+                        merge_ranges.append((row_idx, row_idx + int(row.get("fuente_financiamiento_rowspan") or 1) - 1, 4))
+                    sheet.append([
+                        row.get("no") if row.get("show_entity") else "",
+                        row.get("label") if row.get("show_entity") else "",
+                        row.get("tipo_auditoria") if row.get("show_tipo_auditoria") else "",
+                        row.get("fuente_financiamiento") if row.get("show_fuente_financiamiento") else "",
+                        row.get("periodo_cedula") or "—",
+                        row.get("periodo_titular") or "—",
+                        *metric_export_values((row.get("totals") or {}).get("emitidas") or {}),
+                    ])
+
+                sheet.append([
+                    "TOTAL GENERAL",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    *metric_export_values((totals or {}).get("emitidas") or {}),
+                ])
+                total_row_idx = sheet.max_row
+                sheet.merge_cells(start_row=total_row_idx, start_column=1, end_row=total_row_idx, end_column=left_count)
+                subtotal_rows.add(total_row_idx)
+
+            for start_row, end_row, col_idx in merge_ranges:
+                sheet.merge_cells(start_row=start_row, start_column=col_idx, end_row=end_row, end_column=col_idx)
+
+            for row_idx in range(3, sheet.max_row + 1):
+                for col_idx in range(1, max_col + 1):
+                    cell = sheet.cell(row=row_idx, column=col_idx)
+                    cell.border = thin_border
+                    cell.alignment = right_alignment if col_idx in amount_cols else (left_alignment if col_idx in range(2, left_count + 1) else center_alignment)
+                    if row_idx in subtotal_rows:
+                        cell.font = Font(bold=True)
+                        cell.fill = total_fill
+                    elif row_idx % 2 == 0:
+                        cell.fill = zebra_fill
+                for amount_col in amount_cols:
+                    amount_cell = sheet.cell(row=row_idx, column=amount_col)
+                    if isinstance(amount_cell.value, (int, float)):
+                        amount_cell.number_format = "#,##0.00"
+
+            base_widths = {
+                1: 8,
+                2: 42,
+                3: 22,
+                4: 38,
+                5: 28,
+                6: 28,
+                7: 8,
+                8: 8,
+                9: 9,
+                10: 9,
+                11: 10,
+                12: 12,
+                13: 16,
+            }
+            for col_idx in range(1, max_col + 1):
+                max_len = 0
+                for row_idx in range(1, sheet.max_row + 1):
+                    value = sheet.cell(row=row_idx, column=col_idx).value
+                    string_value = "" if value is None else str(value)
+                    if len(string_value) > max_len:
+                        max_len = len(string_value)
+                sheet.column_dimensions[get_column_letter(col_idx)].width = max(
+                    base_widths.get(col_idx, 10),
+                    min(max_len + 2, 54),
+                )
+
+            stream = BytesIO()
+            workbook.save(stream)
+            stream.seek(0)
+            filename = f"resumen_fuente_financiamiento_{ejercicio}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            return send_file(
+                stream,
+                as_attachment=True,
+                download_name=filename,
+                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
+        sheet.append(
+            [
+                *left_headers,
+                "EMITIDAS",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "SOLVENTADAS",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "PENDIENTES",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+            ]
+        )
+        sheet.append(
+            [
+                *([""] * left_count),
+                "R",
+                "SA",
+                "PDP",
+                "PRAS",
+                "PECFF",
+                "Emitidas",
+                "Monto Daño ($)",
+                "R",
+                "SA",
+                "PDP",
+                "PRAS",
+                "PECFF",
+                "Solventadas",
+                "Monto Daño ($)",
+                "R",
+                "SA",
+                "PDP",
+                "PRAS",
+                "PECFF",
+                "Pendientes",
+                "Monto Daño ($)",
+            ]
+        )
+        for col_idx in range(1, left_count + 1):
+            sheet.merge_cells(start_row=1, start_column=col_idx, end_row=2, end_column=col_idx)
+        sheet.merge_cells(start_row=1, start_column=left_count + 1, end_row=1, end_column=left_count + 7)
+        sheet.merge_cells(start_row=1, start_column=left_count + 8, end_row=1, end_column=left_count + 14)
+        sheet.merge_cells(start_row=1, start_column=left_count + 15, end_row=1, end_column=left_count + 21)
+        for row_idx in (1, 2):
+            for cell in sheet[row_idx]:
+                cell.font = white_bold_font
+                cell.alignment = center_alignment
+                cell.border = thin_border
+                cell.fill = header_primary_fill if row_idx == 1 else header_secondary_fill
+        sheet.row_dimensions[1].height = 28
+        sheet.row_dimensions[2].height = 24
+        sheet.freeze_panes = "A3"
+
+        def append_export_row(row_payload: dict | None, row_totals: dict, index: int | str = "") -> None:
+            row_payload = row_payload or {}
+            if is_tipo_auditoria:
+                if row_payload.get("row_type") == "subtotal":
+                    fixed_values = ["", "SUBTOTAL", ""]
+                elif row_payload.get("row_type") == "grand_total":
+                    fixed_values = ["", "TOTAL GENERAL", ""]
+                else:
+                    fixed_values = [
+                        row_payload.get("no", "") if row_payload.get("show_entity") else "",
+                        row_payload.get("label", "") if row_payload.get("show_entity") else "",
+                        row_payload.get("detail", ""),
+                    ]
+            else:
+                fixed_values = [
+                    row_payload.get("no") or index,
+                    row_payload.get("label") or "—",
+                ]
+            sheet.append(
+                [
+                    *fixed_values,
+                    *metric_export_values((row_totals or {}).get("emitidas") or {}),
+                    *metric_export_values((row_totals or {}).get("solventadas") or {}),
+                    *metric_export_values((row_totals or {}).get("pendientes") or {}),
+                ]
+            )
+
+        merge_ranges: list[tuple[int, int, int]] = []
+        if not rows:
+            sheet.append(["Sin resultados para los filtros seleccionados."])
+            sheet.merge_cells(start_row=3, start_column=1, end_row=3, end_column=max_col)
+            empty_cell = sheet["A3"]
+            empty_cell.alignment = center_alignment
+            empty_cell.font = Font(italic=True)
+            empty_cell.fill = zebra_fill
+            for col_idx in range(1, max_col + 1):
+                sheet.cell(row=3, column=col_idx).border = thin_border
+        else:
+            for index, row in enumerate(rows, start=1):
+                next_row_idx = sheet.max_row + 1
+                if is_tipo_auditoria and row.get("show_entity") and int(row.get("entity_rowspan") or 1) > 1:
+                    merge_ranges.append((next_row_idx, next_row_idx + int(row.get("entity_rowspan") or 1) - 1, 1))
+                    merge_ranges.append((next_row_idx, next_row_idx + int(row.get("entity_rowspan") or 1) - 1, 2))
+                append_export_row(row, row.get("totals") or {}, index)
+                row_idx = sheet.max_row
+                for col_idx in range(1, max_col + 1):
+                    cell = sheet.cell(row=row_idx, column=col_idx)
+                    cell.border = thin_border
+                    cell.alignment = left_alignment if col_idx in range(2, left_count + 1) else center_alignment
+                    if col_idx in amount_cols:
+                        cell.alignment = right_alignment
+                    if row.get("row_type") == "subtotal":
+                        cell.font = Font(bold=True)
+                        cell.fill = total_fill
+                    elif row_idx % 2 == 0:
+                        cell.fill = zebra_fill
+
+            append_export_row({"row_type": "grand_total", "no": "", "label": "TOTAL GENERAL", "detail": ""}, totals, "")
+            total_row_idx = sheet.max_row
+            for col_idx in range(1, max_col + 1):
+                cell = sheet.cell(row=total_row_idx, column=col_idx)
+                cell.font = Font(bold=True)
+                cell.fill = total_fill
+                cell.border = thin_border
+                cell.alignment = left_alignment if col_idx in range(2, left_count + 1) else center_alignment
+                if col_idx in amount_cols:
+                    cell.alignment = right_alignment
+
+            for start_row, end_row, col_idx in merge_ranges:
+                sheet.merge_cells(start_row=start_row, start_column=col_idx, end_row=end_row, end_column=col_idx)
+
+        for row_idx in range(3, sheet.max_row + 1):
+            for amount_col in amount_cols:
+                amount_cell = sheet.cell(row=row_idx, column=amount_col)
+                if isinstance(amount_cell.value, (int, float)):
+                    amount_cell.number_format = "#,##0.00"
+
+        base_widths = {
+            1: 8,
+            2: 42,
+            3: 8,
+            4: 8,
+            5: 9,
+            6: 9,
+            7: 10,
+            8: 12,
+            9: 16,
+            10: 8,
+            11: 8,
+            12: 9,
+            13: 9,
+            14: 10,
+            15: 13,
+            16: 16,
+            17: 8,
+            18: 8,
+            19: 9,
+            20: 9,
+            21: 10,
+            22: 12,
+            23: 16,
+        }
+        for col_idx in range(1, max_col + 1):
+            max_len = 0
+            for row_idx in range(1, sheet.max_row + 1):
+                value = sheet.cell(row=row_idx, column=col_idx).value
+                string_value = "" if value is None else str(value)
+                if len(string_value) > max_len:
+                    max_len = len(string_value)
+            sheet.column_dimensions[get_column_letter(col_idx)].width = max(
+                base_widths.get(col_idx, 10),
+                min(max_len + 2, 54),
+            )
+
+        stream = BytesIO()
+        workbook.save(stream)
+        stream.seek(0)
+        safe_group_map = {
+            "general": "general",
+            "tipo_auditoria": "tipo_auditoria",
+            "fuente_financiamiento": "fuente_financiamiento",
+        }
+        safe_group = safe_group_map.get(payload.get("group_by"), "tipo_auditoria")
+        filename = f"resumen_{safe_group}_{ejercicio}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        return send_file(
+            stream,
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
     @app.get("/observaciones-exportar")
     def observaciones_exportar():
         user = get_current_user()
@@ -3093,7 +3937,7 @@ def register_luis_routes(app, deps):
             "No. Obs",
             "Estado",
             "Fecha",
-            "Fuente",
+            "Fuente de Financiamiento",
             "Convenio",
             "Concepto de Irregularidad",
             "Monto emitido",
@@ -3299,7 +4143,7 @@ def register_luis_routes(app, deps):
         zebra_fill = PatternFill("solid", fgColor="F8FAF7")
         header_font = Font(bold=True, color="FFFFFF")
         left_alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
-        sheet.append(["Fuente de financiamiento"])
+        sheet.append(["Fuente de Financiamiento"])
         header_cell = sheet.cell(row=1, column=1)
         header_cell.font = header_font
         header_cell.fill = header_fill
@@ -3613,6 +4457,16 @@ def register_luis_routes(app, deps):
             "comparativo_anual.html",
             user=user,
             can_edit=can_edit,
+        )
+
+    def render_luis_operational_view(luis_view: str):
+        user = get_current_user()
+        can_edit = user["role"] == "editor" if user else False
+        return render_template(
+            "index.html",
+            user=user,
+            can_edit=can_edit,
+            luis_view=luis_view,
         )
 
 
@@ -4127,12 +4981,41 @@ def register_luis_routes(app, deps):
     @app.get("/")
     @luis_required
     def index():
-        user = get_current_user()
-        can_edit = user["role"] == "editor" if user else False
-        return render_template(
-            "index.html",
-            user=user,
-            can_edit=can_edit,
-        )
+        return render_luis_operational_view("consulta")
+
+    @app.get("/resumen-general")
+    @luis_required
+    def luis_resumen_general():
+        return render_luis_operational_view("resumen_general")
+
+    @app.get("/tipo-auditoria")
+    @luis_required
+    def luis_tipo_auditoria():
+        return render_luis_operational_view("tipo_auditoria")
+
+    @app.get("/fuente-financiamiento")
+    @luis_required
+    def luis_fuente_financiamiento():
+        return render_luis_operational_view("fuente_financiamiento")
+
+    @app.get("/graficas")
+    @luis_required
+    def luis_graficas():
+        return render_luis_operational_view("graficas")
+
+    @app.get("/pendientes-periodo")
+    @luis_required
+    def luis_pendientes_periodo():
+        return render_luis_operational_view("pendientes")
+
+    @app.get("/titulares-administrativos")
+    @luis_required
+    def luis_titulares_administrativos():
+        return render_luis_operational_view("titulares")
+
+    @app.get("/catalogo")
+    @luis_required
+    def luis_catalogo():
+        return render_luis_operational_view("catalogo")
     
     

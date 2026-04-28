@@ -47,6 +47,30 @@ def test_login_with_valid_credentials(client):
     assert r.status_code == 302
 
 
+def test_luis_operational_pages_share_navigation(client):
+    """Las páginas operativas de Luis deben exponer la navegación modular común."""
+    with client.session_transaction() as session_data:
+        session_data["user"] = "luis"
+        session_data["role"] = "viewer"
+
+    pages = [
+        ("/", b'data-luis-view="consulta"', b"Consulta operativa"),
+        ("/resumen-general", b'data-luis-view="resumen_general"', b"Resumen general"),
+        ("/tipo-auditoria", b'data-luis-view="tipo_auditoria"', b"Tipo de Auditor\xc3\xada"),
+        ("/fuente-financiamiento", b'data-luis-view="fuente_financiamiento"', b"Fuente de Financiamiento"),
+        ("/graficas", b'data-luis-view="graficas"', b"Gr\xc3\xa1ficas"),
+        ("/pendientes-periodo", b'data-luis-view="pendientes"', b"Pendientes por periodo"),
+        ("/titulares-administrativos", b'data-luis-view="titulares"', b"Titulares y administrativos"),
+        ("/catalogo", b'data-luis-view="catalogo"', b"Cat\xc3\xa1logo de entes"),
+    ]
+    for path, view_marker, label in pages:
+        response = client.get(path)
+        assert response.status_code == 200
+        assert view_marker in response.data
+        assert label in response.data
+        assert b"Comparativo anual" in response.data
+
+
 def test_login_with_invalid_credentials(client):
     """POST /login con credenciales inválidas debe volver al login."""
     r = client.post("/login", data={"username": "luis", "password": "wrong"})
@@ -68,6 +92,23 @@ def test_fuentes_export_requires_and_uses_ejercicio(client):
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
     assert "fuentes_financiamiento_2025_" in response.headers["Content-Disposition"]
+
+
+def test_luis_breakdown_exports(client):
+    """Los resúmenes de Luis deben exportar Excel por agrupación."""
+    with client.session_transaction() as session_data:
+        session_data["user"] = "luis"
+        session_data["role"] = "viewer"
+
+    for group_by in ("general", "tipo_auditoria", "fuente_financiamiento"):
+        response = client.get(
+            f"/observaciones-desglose-exportar?ejercicio=2025&group_by={group_by}"
+        )
+        assert response.status_code == 200
+        assert response.headers["Content-Type"].startswith(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        assert f"resumen_{group_by}_2025_" in response.headers["Content-Disposition"]
 
 
 def test_gabo_tools_page_only_shows_fuentes(client):

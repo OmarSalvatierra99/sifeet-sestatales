@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Registro Observaciones · Registro de Ejercicios Fiscales</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260428-oficio-pdf') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260428-col-anexo-center-fix') }}">
   <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
 </head>
-<body class="{% if user and user.username == 'luis' %}luis-wide-layout{% endif %}">
+<body class="{% if user and user.username == 'luis' %}luis-wide-layout{% endif %}" data-luis-view="{{ luis_view|default('consulta') }}">
   {% set user_display_names = {'luis': 'C.P Luis Felipe Camilo Fuentes', 'gabo': 'Ing. Omar Gabriel Salvatierra Garcia'} %}
   <header class="site-header">
     <div class="header-inner">
@@ -31,10 +31,7 @@
   </header>
 
   <main class="page-content">
-    <nav class="mode-switch" aria-label="Modos de consulta">
-      <a class="mode-switch-link is-active" href="{{ url_for('index') }}" id="luisConsultaTab">Consulta operativa</a>
-      <a class="mode-switch-link" href="{{ url_for('comparativo_anual') }}">Comparativo anual</a>
-    </nav>
+    {% include "_luis_module_nav.html" %}
 
     <section class="panel filter-panel luis-operational-panel">
       <div class="panel-header">
@@ -72,7 +69,7 @@
             </select>
           </div>
           <div class="field">
-            <label for="obs_fuente">Fuente de financiamiento</label>
+            <label for="obs_fuente">Fuente de Financiamiento</label>
             <select id="obs_fuente" name="obs_fuente" title="Filtra por fuente de financiamiento.">
               <option value="">Todas</option>
             </select>
@@ -131,10 +128,6 @@
           </div>
         </div>
       </form>
-      <div class="tab-bar" role="tablist">
-        <button class="tab-button is-active" type="button" data-tab="observaciones">Observaciones</button>
-        <button class="tab-button" type="button" data-tab="catalogo">Catálogo de entes</button>
-      </div>
     </section>
 
     <section class="results-layout tab-section luis-operational-panel" data-tab="observaciones">
@@ -142,14 +135,6 @@
         <section class="panel" id="summarySection">
           <div class="panel-header">
             <h2>Resumen</h2>
-            <p>Conteo general de observaciones por tipo de anexo.</p>
-            <div class="query-meta" id="queryMeta" aria-live="polite">Sin consultas recientes.</div>
-            <div class="chart-filter-field">
-              <label for="summary_tipo_anexo">Tipo de anexo (resumen)</label>
-              <select id="summary_tipo_anexo" name="summary_tipo_anexo">
-                <option value="">Todos</option>
-              </select>
-            </div>
           </div>
           <div class="table-wrap table-summary">
             <table>
@@ -168,11 +153,11 @@
               </tbody>
             </table>
           </div>
-          <div class="table-wrap table-summary" id="pdpMontoSummaryWrap" style="display: none;">
-            <table>
+          <div class="table-wrap table-summary pdp-amount-summary" id="pdpMontoSummaryWrap" style="display: none;" aria-live="polite">
+            <div class="summary-subtable-title">Montos PDP</div>
+            <table class="pdp-amount-table">
               <thead>
                 <tr>
-                  <th>Montos PDP (pesos)</th>
                   <th>Emitido</th>
                   <th>Solventado</th>
                   <th>Pendiente</th>
@@ -180,13 +165,13 @@
               </thead>
               <tbody id="pdpMontoSummaryBody">
                 <tr>
-                  <td colspan="4" class="muted">Sin resultados.</td>
+                  <td colspan="3" class="muted">Selecciona PDP para ver el resumen de montos.</td>
                 </tr>
               </tbody>
             </table>
           </div>
           <div class="chart-card summary-static-chart" id="summaryStaticChartWrap">
-            <h3>Distribucion por anexo (solventadas vs pendientes)</h3>
+            <h3>Distribución por anexo</h3>
             <canvas id="summaryStaticStackedBar" height="250"></canvas>
             <p class="chart-footnote">Etiqueta E: total emitidas.</p>
           </div>
@@ -194,11 +179,11 @@
 
         <section class="panel chart-panel" id="pdpChartSection">
           <div class="panel-header">
-            <h2>Graficas de estado</h2>
-            <p>Conteo de observaciones por estado segun filtros seleccionados.</p>
+            <h2>Gráficas de estado</h2>
+            <p>Lectura visual de observaciones por estado según los filtros seleccionados.</p>
           </div>
           <div class="chart-card summary-chart">
-            <h3>Gráfico de pastel (conteo)</h3>
+            <h3>Solventadas y pendientes</h3>
             <canvas id="pdpCountDonut" height="240"></canvas>
           </div>
           <div class="chart-card summary-chart">
@@ -218,7 +203,7 @@
             <canvas id="multiFiltroComparePctBar" height="240"></canvas>
           </div>
           <div class="chart-card summary-chart" id="pdpMontoChartWrap" style="display: none;">
-            <h3>Gráfico de pastel (montos PDP: pendiente vs solventado)</h3>
+            <h3>Montos PDP</h3>
             <canvas id="pdpMontoDonut" height="240"></canvas>
           </div>
         </section>
@@ -237,18 +222,18 @@
               <col class="pendientes-col-tipo">
               <col class="pendientes-col-periodo">
               <col class="pendientes-col-periodo">
-              <col class="pendientes-col-count">
-              <col class="pendientes-col-count">
-              <col class="pendientes-col-count">
-              <col class="pendientes-col-count">
-              <col class="pendientes-col-count">
+              <col class="pendientes-col-count col-anexo">
+              <col class="pendientes-col-count col-anexo">
+              <col class="pendientes-col-count col-anexo">
+              <col class="pendientes-col-count col-anexo">
+              <col class="pendientes-col-count col-anexo">
               <col class="pendientes-col-total">
               <col class="pendientes-col-monto">
-              <col class="pendientes-col-numeral">
-              <col class="pendientes-col-numeral">
-              <col class="pendientes-col-numeral">
-              <col class="pendientes-col-numeral">
-              <col class="pendientes-col-numeral">
+              <col class="pendientes-col-numeral col-anexo">
+              <col class="pendientes-col-numeral col-anexo">
+              <col class="pendientes-col-numeral col-anexo">
+              <col class="pendientes-col-numeral col-anexo">
+              <col class="pendientes-col-numeral col-anexo">
             </colgroup>
             <thead>
               <tr>
@@ -261,18 +246,18 @@
                 <th colspan="5">Numerales de Observaciones No Solventadas</th>
               </tr>
               <tr>
-                <th>R</th>
-                <th>SA</th>
-                <th>PDP</th>
-                <th>PRAS</th>
-                <th>PEFCE</th>
+                <th class="col-anexo">R</th>
+                <th class="col-anexo">SA</th>
+                <th class="col-anexo">PDP</th>
+                <th class="col-anexo">PRAS</th>
+                <th class="col-anexo">PEFCE</th>
                 <th>Total</th>
                 <th>Monto Daño ($)</th>
-                <th>SA</th>
-                <th>PDP</th>
-                <th>PRAS</th>
-                <th>PEFCF</th>
-                <th>R</th>
+                <th class="col-anexo">SA</th>
+                <th class="col-anexo">PDP</th>
+                <th class="col-anexo">PRAS</th>
+                <th class="col-anexo">PEFCF</th>
+                <th class="col-anexo">R</th>
               </tr>
             </thead>
             <tbody id="pendientesPeriodoBody">
@@ -298,6 +283,36 @@
             <h3>Titulares y administrativos del periodo</h3>
             <div class="table-wrap">
               <table class="table-compact obs-responsables-table">
+                <colgroup>
+                  <col class="report-col-no">
+                  <col class="report-col-ente">
+                  <col class="report-col-period">
+                  <col class="report-col-person">
+                  <col class="report-col-period">
+                  <col class="report-col-person">
+                  <col class="report-col-period">
+                  <col class="col-anexo">
+                  <col class="col-anexo">
+                  <col class="col-anexo">
+                  <col class="col-anexo">
+                  <col class="col-anexo">
+                  <col class="report-col-total">
+                  <col class="report-col-monto">
+                  <col class="col-anexo">
+                  <col class="col-anexo">
+                  <col class="col-anexo">
+                  <col class="col-anexo">
+                  <col class="col-anexo">
+                  <col class="report-col-total">
+                  <col class="report-col-monto">
+                  <col class="col-anexo">
+                  <col class="col-anexo">
+                  <col class="col-anexo">
+                  <col class="col-anexo">
+                  <col class="col-anexo">
+                  <col class="report-col-total">
+                  <col class="report-col-monto">
+                </colgroup>
                 <thead id="obsResponsablesHead">
                   <tr>
                     <th rowspan="2">No</th>
@@ -312,25 +327,25 @@
                     <th colspan="7">PENDIENTES</th>
                   </tr>
                   <tr>
-                    <th>R</th>
-                    <th>SA</th>
-                    <th>PDP</th>
-                    <th>PRAS</th>
-                    <th>PECFF</th>
+                    <th class="col-anexo">R</th>
+                    <th class="col-anexo">SA</th>
+                    <th class="col-anexo">PDP</th>
+                    <th class="col-anexo">PRAS</th>
+                    <th class="col-anexo">PECFF</th>
                     <th>Emitidas</th>
                     <th>Monto Daño ($)</th>
-                    <th>R</th>
-                    <th>SA</th>
-                    <th>PO</th>
-                    <th>PRAS</th>
-                    <th>PECFF</th>
+                    <th class="col-anexo">R</th>
+                    <th class="col-anexo">SA</th>
+                    <th class="col-anexo">PO</th>
+                    <th class="col-anexo">PRAS</th>
+                    <th class="col-anexo">PECFF</th>
                     <th>Solventadas</th>
                     <th>Monto Daño ($)</th>
-                    <th>R</th>
-                    <th>SA</th>
-                    <th>PDP</th>
-                    <th>PRAS</th>
-                    <th>PECFF</th>
+                    <th class="col-anexo">R</th>
+                    <th class="col-anexo">SA</th>
+                    <th class="col-anexo">PDP</th>
+                    <th class="col-anexo">PRAS</th>
+                    <th class="col-anexo">PECFF</th>
                     <th>Pendientes</th>
                     <th>Monto Daño ($)</th>
                   </tr>
@@ -377,7 +392,7 @@
                 <th>No. Obs</th>
                 <th>Estado</th>
                 <th>Fecha</th>
-                <th>Fuente</th>
+                <th>Fuente de Financiamiento</th>
                 <th>Convenio</th>
                 <th>Concepto de Irregularidad</th>
                 <th>Monto emitido</th>
@@ -410,6 +425,67 @@
           </button>
         </div>
       </section>
+    </section>
+
+    <section class="panel luis-breakdown-panel luis-operational-panel" id="luisBreakdownPanel">
+      <div class="panel-header">
+        <h2 id="luisBreakdownTitle">Resumen general</h2>
+        <p id="luisBreakdownDescription">Totales de observaciones conforme a los filtros seleccionados.</p>
+      </div>
+      <div class="table-wrap">
+        <table class="table-compact obs-responsables-table luis-breakdown-table">
+          <colgroup id="luisBreakdownColgroup"></colgroup>
+          <thead id="luisBreakdownHead">
+            <tr>
+              <th rowspan="2">No</th>
+              <th rowspan="2">Grupo</th>
+              <th colspan="7">EMITIDAS</th>
+              <th colspan="7">SOLVENTADAS</th>
+              <th colspan="7">PENDIENTES</th>
+            </tr>
+            <tr>
+              <th class="col-anexo">R</th>
+              <th class="col-anexo">SA</th>
+              <th class="col-anexo">PDP</th>
+              <th class="col-anexo">PRAS</th>
+              <th class="col-anexo">PECFF</th>
+              <th>Emitidas</th>
+              <th>Monto Daño ($)</th>
+              <th class="col-anexo">R</th>
+              <th class="col-anexo">SA</th>
+              <th class="col-anexo">PDP</th>
+              <th class="col-anexo">PRAS</th>
+              <th class="col-anexo">PECFF</th>
+              <th>Solventadas</th>
+              <th>Monto Daño ($)</th>
+              <th class="col-anexo">R</th>
+              <th class="col-anexo">SA</th>
+              <th class="col-anexo">PDP</th>
+              <th class="col-anexo">PRAS</th>
+              <th class="col-anexo">PECFF</th>
+              <th>Pendientes</th>
+              <th>Monto Daño ($)</th>
+            </tr>
+          </thead>
+          <tbody id="luisBreakdownBody">
+            <tr>
+              <td colspan="23" class="muted">Selecciona un ejercicio para ver resultados.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-inline-actions">
+        <button class="panel-action-btn" type="button" id="luis_breakdown_export">
+          <span class="floating-clear-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 4v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M8 10l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M5 18h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <span>Exportar a Excel</span>
+        </button>
+      </div>
     </section>
 
     <section class="panel catalogo-panel tab-section luis-operational-panel" data-tab="catalogo">
@@ -502,7 +578,6 @@
     const obsCount = document.getElementById("obsCount");
     const obsQuickSearch = document.getElementById("obs_quick_search");
     const responsablesEmptyMessage = "Selecciona al menos un ente para ver el resumen de titulares y administrativos.";
-    const queryMeta = document.getElementById("queryMeta");
     const activeFiltersPanel = document.getElementById("activeFiltersPanel");
     const activeFiltersChips = document.getElementById("activeFiltersChips");
     const pdpSummaryBody = document.getElementById("pdpSummaryBody");
@@ -533,10 +608,40 @@
     const pendientesPeriodoPanel = document.getElementById("pendientesPeriodoPanel");
     const pendientesPeriodoWrap = document.getElementById("pendientesPeriodoWrap");
     const pendientesPeriodoBody = document.getElementById("pendientesPeriodoBody");
+    const luisBreakdownTitle = document.getElementById("luisBreakdownTitle");
+    const luisBreakdownDescription = document.getElementById("luisBreakdownDescription");
+    const luisBreakdownColgroup = document.getElementById("luisBreakdownColgroup");
+    const luisBreakdownHead = document.getElementById("luisBreakdownHead");
+    const luisBreakdownBody = document.getElementById("luisBreakdownBody");
+    const luisBreakdownExport = document.getElementById("luis_breakdown_export");
 
     if (mainEjercicio && obsEnteInput && obsTableBody) {
       const tabButtons = document.querySelectorAll(".tab-button");
       const tabSections = document.querySelectorAll(".tab-section");
+      const luisNavLinks = document.querySelectorAll("[data-luis-nav-link]");
+      const currentLuisView = document.body.dataset.luisView || "consulta";
+      const breakdownViewConfig = {
+        resumen_general: {
+          groupBy: "general",
+          title: "Resumen general",
+          description: "Totales generales de observaciones conforme a los filtros seleccionados.",
+          label: "Resumen",
+        },
+        tipo_auditoria: {
+          groupBy: "tipo_auditoria",
+          title: "Resumen por Tipo de Auditoría",
+          description: "Totales de observaciones por ente y tipo de auditoría.",
+          label: "Nombre del Ente",
+          detailLabel: "Tipo de Auditoría",
+        },
+        fuente_financiamiento: {
+          groupBy: "fuente_financiamiento",
+          title: "Resumen por Fuente de Financiamiento",
+          description: "Detalle por ente, tipo de auditoría, fuente de financiamiento y periodos.",
+          label: "Nombre del Ente",
+        },
+      };
+      const currentBreakdownConfig = breakdownViewConfig[currentLuisView] || null;
 
       let pdpCountDonutChart = null;
       let pdpStatusBarChart = null;
@@ -884,7 +989,7 @@
         return option ? (option.textContent || value).trim() : value;
       };
 
-      const syncUrlFromFilters = () => {
+      const buildFilterSearchParams = (includePage = false) => {
         const filters = getCurrentFilters();
         const params = new URLSearchParams();
         Object.entries(filters).forEach(([key, value]) => {
@@ -896,11 +1001,29 @@
             params.set(key, value);
           }
         });
-        if (obsPage > 1) {
+        if (includePage && obsPage > 1) {
           params.set("page", String(obsPage));
         }
+        return params;
+      };
+
+      const syncLuisNavLinksFromFilters = () => {
+        const params = buildFilterSearchParams(false);
+        const query = params.toString();
+        luisNavLinks.forEach((link) => {
+          const baseHref = link.dataset.baseHref || link.getAttribute("href") || "";
+          if (!baseHref) {
+            return;
+          }
+          link.href = `${baseHref}${query ? `?${query}` : ""}`;
+        });
+      };
+
+      const syncUrlFromFilters = () => {
+        const params = buildFilterSearchParams(true);
         const url = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
         window.history.replaceState(null, "", url);
+        syncLuisNavLinksFromFilters();
       };
 
       const renderActiveFilterChips = () => {
@@ -912,7 +1035,7 @@
           tipo_auditoria: "Tipo auditoría",
           tipo_anexo: "Tipo anexo",
           estado: "Estado",
-          fuente_financiamiento: "Fuente",
+          fuente_financiamiento: "Fuente de Financiamiento",
           modalidad: "Modalidad",
           convenio_ente_nombre: "Convenio",
           origen_fuente: "Del Ejercicio / Remanentes",
@@ -1033,6 +1156,7 @@
           cedulaResultados,
           obsExport,
           pendientesPeriodoExport,
+          luisBreakdownExport,
           obsPrev,
           obsNext,
           summaryTipoAnexo,
@@ -1138,25 +1262,25 @@
             <th colspan="7">PENDIENTES</th>
           </tr>
           <tr>
-            <th>R</th>
-            <th>SA</th>
-            <th>PDP</th>
-            <th>PRAS</th>
-            <th>PECFF</th>
+            <th class="col-anexo">R</th>
+            <th class="col-anexo">SA</th>
+            <th class="col-anexo">PDP</th>
+            <th class="col-anexo">PRAS</th>
+            <th class="col-anexo">PECFF</th>
             <th>Emitidas</th>
             <th>Monto Daño ($)</th>
-            <th>R</th>
-            <th>SA</th>
-            <th>PO</th>
-            <th>PRAS</th>
-            <th>PECFF</th>
+            <th class="col-anexo">R</th>
+            <th class="col-anexo">SA</th>
+            <th class="col-anexo">PO</th>
+            <th class="col-anexo">PRAS</th>
+            <th class="col-anexo">PECFF</th>
             <th>Solventadas</th>
             <th>Monto Daño ($)</th>
-            <th>R</th>
-            <th>SA</th>
-            <th>PDP</th>
-            <th>PRAS</th>
-            <th>PECFF</th>
+            <th class="col-anexo">R</th>
+            <th class="col-anexo">SA</th>
+            <th class="col-anexo">PDP</th>
+            <th class="col-anexo">PRAS</th>
+            <th class="col-anexo">PECFF</th>
             <th>Pendientes</th>
             <th>Monto Daño ($)</th>
           </tr>
@@ -1241,11 +1365,11 @@
             emphasize ? `<strong>${value}</strong>` : value
           );
           return `
-            <td${spanAttr}>${wrapValue(formatMetricValue(metrics, "R"))}</td>
-            <td${spanAttr}>${wrapValue(formatMetricValue(metrics, "SA"))}</td>
-            <td${spanAttr}>${wrapValue(formatMetricValue(metrics, "PDP"))}</td>
-            <td${spanAttr}>${wrapValue(formatMetricValue(metrics, "PRAS"))}</td>
-            <td${spanAttr}>${wrapValue(formatMetricValue(metrics, "PEFCF"))}</td>
+            <td${spanAttr} class="col-anexo">${wrapValue(formatMetricValue(metrics, "R"))}</td>
+            <td${spanAttr} class="col-anexo">${wrapValue(formatMetricValue(metrics, "SA"))}</td>
+            <td${spanAttr} class="col-anexo">${wrapValue(formatMetricValue(metrics, "PDP"))}</td>
+            <td${spanAttr} class="col-anexo">${wrapValue(formatMetricValue(metrics, "PRAS"))}</td>
+            <td${spanAttr} class="col-anexo">${wrapValue(formatMetricValue(metrics, "PEFCF"))}</td>
             <td${spanAttr}>${wrapValue(formatMetricValue(metrics, "total"))}</td>
             <td${spanAttr} class="obs-responsables-monto">${wrapValue(formatMetricMonto(metrics))}</td>
           `;
@@ -1406,6 +1530,279 @@
         obsResponsablesBody.innerHTML = `${groupsHtml}${totalGeneralHtml}`;
       };
 
+      const renderLuisBreakdownHead = (label) => {
+        if (!luisBreakdownHead) {
+          return;
+        }
+        const metricColgroupHtml = () => `
+          <col class="col-anexo">
+          <col class="col-anexo">
+          <col class="col-anexo">
+          <col class="col-anexo">
+          <col class="col-anexo">
+          <col class="report-col-total">
+          <col class="report-col-monto">
+        `;
+        if (luisBreakdownColgroup) {
+          if (currentBreakdownConfig?.groupBy === "fuente_financiamiento") {
+            luisBreakdownColgroup.innerHTML = `
+              <col class="report-col-no">
+              <col class="report-col-ente">
+              <col class="report-col-detail">
+              <col class="report-col-source">
+              <col class="report-col-period">
+              <col class="report-col-period">
+              ${metricColgroupHtml()}
+            `;
+          } else {
+            const detailCol = currentBreakdownConfig?.groupBy === "tipo_auditoria"
+              ? '<col class="report-col-detail">'
+              : "";
+            luisBreakdownColgroup.innerHTML = `
+              <col class="report-col-no">
+              <col class="report-col-ente">
+              ${detailCol}
+              ${metricColgroupHtml()}
+              ${metricColgroupHtml()}
+              ${metricColgroupHtml()}
+            `;
+          }
+        }
+        const showDetailColumn = currentBreakdownConfig?.groupBy === "tipo_auditoria";
+        if (currentBreakdownConfig?.groupBy === "fuente_financiamiento") {
+          luisBreakdownHead.innerHTML = `
+            <tr>
+              <th rowspan="2">No</th>
+              <th rowspan="2">${escapeHtml(label || "Nombre del Ente")}</th>
+              <th rowspan="2">Tipo de Auditoría</th>
+              <th rowspan="2">Fuente de Financiamiento</th>
+              <th rowspan="2">Periodo Cédula</th>
+              <th rowspan="2">Periodo Titular</th>
+              <th colspan="7">EMITIDAS</th>
+            </tr>
+            <tr>
+              <th class="col-anexo">R</th>
+              <th class="col-anexo">SA</th>
+              <th class="col-anexo">PDP</th>
+              <th class="col-anexo">PRAS</th>
+              <th class="col-anexo">PECFF</th>
+              <th>Total</th>
+              <th>Monto Daño ($)</th>
+            </tr>
+          `;
+          return;
+        }
+        const detailHeader = showDetailColumn ? `<th rowspan="2">${escapeHtml(currentBreakdownConfig.detailLabel || "Detalle")}</th>` : "";
+        luisBreakdownHead.innerHTML = `
+          <tr>
+            <th rowspan="2">No</th>
+            <th rowspan="2">${escapeHtml(label || "Grupo")}</th>
+            ${detailHeader}
+            <th colspan="7">EMITIDAS</th>
+            <th colspan="7">SOLVENTADAS</th>
+            <th colspan="7">PENDIENTES</th>
+          </tr>
+          <tr>
+            <th class="col-anexo">R</th>
+            <th class="col-anexo">SA</th>
+            <th class="col-anexo">PDP</th>
+            <th class="col-anexo">PRAS</th>
+            <th class="col-anexo">PECFF</th>
+            <th>Emitidas</th>
+            <th>Monto Daño ($)</th>
+            <th class="col-anexo">R</th>
+            <th class="col-anexo">SA</th>
+            <th class="col-anexo">PDP</th>
+            <th class="col-anexo">PRAS</th>
+            <th class="col-anexo">PECFF</th>
+            <th>Solventadas</th>
+            <th>Monto Daño ($)</th>
+            <th class="col-anexo">R</th>
+            <th class="col-anexo">SA</th>
+            <th class="col-anexo">PDP</th>
+            <th class="col-anexo">PRAS</th>
+            <th class="col-anexo">PECFF</th>
+            <th>Pendientes</th>
+            <th>Monto Daño ($)</th>
+          </tr>
+        `;
+      };
+
+      const renderLuisBreakdownMetricCells = (metrics, emphasize = false) => {
+        const wrapValue = (value) => emphasize ? `<strong>${value}</strong>` : value;
+        const monto = Number(metrics?.monto_dano || 0);
+        return `
+          <td class="col-anexo">${wrapValue(Number(metrics?.R || 0))}</td>
+          <td class="col-anexo">${wrapValue(Number(metrics?.SA || 0))}</td>
+          <td class="col-anexo">${wrapValue(Number(metrics?.PDP || 0))}</td>
+          <td class="col-anexo">${wrapValue(Number(metrics?.PRAS || 0))}</td>
+          <td class="col-anexo">${wrapValue(Number(metrics?.PEFCF || 0))}</td>
+          <td>${wrapValue(Number(metrics?.total || 0))}</td>
+          <td class="obs-responsables-monto">${wrapValue(monto > 0 ? formatMonto(monto) : "-")}</td>
+        `;
+      };
+
+      const renderLuisBreakdown = (payload) => {
+        if (!currentBreakdownConfig || !luisBreakdownBody) {
+          return;
+        }
+        const label = payload?.label || currentBreakdownConfig.label;
+        renderLuisBreakdownHead(label);
+        if (luisBreakdownTitle) {
+          luisBreakdownTitle.textContent = currentBreakdownConfig.title;
+        }
+        if (luisBreakdownDescription) {
+          luisBreakdownDescription.textContent = currentBreakdownConfig.description;
+        }
+        const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+        const emptyColspan = currentBreakdownConfig.groupBy === "tipo_auditoria"
+          ? 24
+          : (currentBreakdownConfig.groupBy === "fuente_financiamiento" ? 13 : 23);
+        if (!mainEjercicio.value) {
+          luisBreakdownBody.innerHTML = `<tr><td colspan="${emptyColspan}" class="muted">Selecciona un ejercicio para ver resultados.</td></tr>`;
+          return;
+        }
+        if (!rows.length) {
+          luisBreakdownBody.innerHTML = `<tr><td colspan="${emptyColspan}" class="muted">Sin resultados para los filtros seleccionados.</td></tr>`;
+          return;
+        }
+        const breakdownRowspanAttr = (value) => {
+          const rowspan = Math.max(1, Number(value || 1));
+          return rowspan > 1 ? ` rowspan="${rowspan}"` : "";
+        };
+        const rowsHtml = rows.map((row, index) => {
+          const isSubtotal = row?.row_type === "subtotal";
+          if (currentBreakdownConfig.groupBy === "fuente_financiamiento") {
+            return `
+              <tr class="${isSubtotal ? "obs-responsables-subtotal-row" : ""}">
+                ${isSubtotal ? `<td colspan="6" class="obs-responsables-cell obs-responsables-cell--subtotal-label"><strong>SUBTOTAL</strong></td>` : `
+                  ${row?.show_entity ? `<td${breakdownRowspanAttr(row?.entity_rowspan)} class="obs-responsables-cell obs-responsables-cell--no">${escapeHtml(row?.no || "")}</td>` : ""}
+                  ${row?.show_entity ? `<td${breakdownRowspanAttr(row?.entity_rowspan)} class="obs-responsables-cell obs-responsables-cell--ente">${escapeHtml(row?.label || "")}</td>` : ""}
+                  ${row?.show_tipo_auditoria ? `<td${breakdownRowspanAttr(row?.tipo_auditoria_rowspan)} class="obs-responsables-cell obs-responsables-cell--periodo">${escapeHtml(row?.tipo_auditoria || "—")}</td>` : ""}
+                  ${row?.show_fuente_financiamiento ? `<td${breakdownRowspanAttr(row?.fuente_financiamiento_rowspan)} class="obs-responsables-cell obs-responsables-cell--fuente">${escapeHtml(row?.fuente_financiamiento || "—")}</td>` : ""}
+                  <td class="obs-responsables-cell obs-responsables-cell--periodo">${escapeHtml(row?.periodo_cedula || "—")}</td>
+                  <td class="obs-responsables-cell obs-responsables-cell--periodo">${escapeHtml(row?.periodo_titular || "—")}</td>
+                `}
+                ${renderLuisBreakdownMetricCells(row?.totals?.emitidas, isSubtotal)}
+              </tr>
+            `;
+          }
+          if (currentBreakdownConfig.groupBy === "tipo_auditoria") {
+            return `
+              <tr class="${isSubtotal ? "obs-responsables-subtotal-row" : ""}">
+                ${isSubtotal ? `<td colspan="3" class="obs-responsables-cell obs-responsables-cell--subtotal-label"><strong>SUBTOTAL</strong></td>` : `
+                  ${row?.show_entity ? `<td${breakdownRowspanAttr(row?.entity_rowspan)} class="obs-responsables-cell obs-responsables-cell--no">${escapeHtml(row?.no || "")}</td>` : ""}
+                  ${row?.show_entity ? `<td${breakdownRowspanAttr(row?.entity_rowspan)} class="obs-responsables-cell obs-responsables-cell--ente">${escapeHtml(row?.label || "")}</td>` : ""}
+                  <td class="obs-responsables-cell obs-responsables-cell--periodo">${escapeHtml(row?.detail || "—")}</td>
+                `}
+                ${renderLuisBreakdownMetricCells(row?.totals?.emitidas, isSubtotal)}
+                ${renderLuisBreakdownMetricCells(row?.totals?.solventadas, isSubtotal)}
+                ${renderLuisBreakdownMetricCells(row?.totals?.pendientes, isSubtotal)}
+              </tr>
+            `;
+          }
+          return `
+            <tr>
+              <td class="obs-responsables-cell obs-responsables-cell--no">${escapeHtml(row?.no || String(index + 1))}</td>
+              <td class="obs-responsables-cell obs-responsables-cell--ente">${escapeHtml(row?.label || "—")}</td>
+              ${renderLuisBreakdownMetricCells(row?.totals?.emitidas)}
+              ${renderLuisBreakdownMetricCells(row?.totals?.solventadas)}
+              ${renderLuisBreakdownMetricCells(row?.totals?.pendientes)}
+            </tr>
+          `;
+        }).join("");
+        const totals = payload?.totals || {};
+        if (currentBreakdownConfig.groupBy === "fuente_financiamiento") {
+          luisBreakdownBody.innerHTML = `
+            ${rowsHtml}
+            <tr class="obs-responsables-grand-total-row">
+              <td colspan="6" class="obs-responsables-cell obs-responsables-cell--subtotal-label"><strong>TOTAL GENERAL</strong></td>
+              ${renderLuisBreakdownMetricCells(totals.emitidas, true)}
+            </tr>
+          `;
+          return;
+        }
+        const totalColspan = currentBreakdownConfig.groupBy === "tipo_auditoria" ? 3 : 2;
+        luisBreakdownBody.innerHTML = `
+          ${rowsHtml}
+          <tr class="obs-responsables-grand-total-row">
+            <td colspan="${totalColspan}" class="obs-responsables-cell obs-responsables-cell--subtotal-label"><strong>TOTAL GENERAL</strong></td>
+            ${renderLuisBreakdownMetricCells(totals.emitidas, true)}
+            ${renderLuisBreakdownMetricCells(totals.solventadas, true)}
+            ${renderLuisBreakdownMetricCells(totals.pendientes, true)}
+          </tr>
+        `;
+      };
+
+      const appendCurrentObservationFilters = (params) => {
+        appendValuesToParams(params, "ente_id", getSelectedValues(obsEnteInput));
+        const selectedTipoAnexo = getSelectedTipoAnexo();
+        appendValuesToParams(params, "tipo_anexo", selectedTipoAnexo);
+        appendValuesToParams(params, "tipo_auditoria", getSelectedValues(mainTipoAuditoria));
+        appendValuesToParams(params, "estado", getSelectedValues(obsEstado));
+        appendValuesToParams(params, "fuente_financiamiento", getSelectedValues(obsFuente));
+        appendValuesToParams(params, "modalidad", getSelectedValues(obsModalidad));
+        appendValuesToParams(params, "convenio_ente_nombre", getSelectedValues(obsConvenio));
+        appendValuesToParams(params, "origen_fuente", getSelectedValues(obsOrigenFuente));
+        appendValuesToParams(params, "ramo_33", getSelectedValues(obsRamo));
+        appendValuesToParams(params, "ramo_28", getSelectedValues(obsRamo28));
+        if (!selectedTipoAnexo.length || selectedTipoAnexo.includes("PDP")) {
+          appendValuesToParams(params, "concepto_irregularidad", getSelectedValues(obsConceptoIrregularidad));
+        }
+        appendValuesToParams(params, "periodo_cedula", getSelectedValues(cedulaResultados));
+      };
+
+      const loadLuisBreakdown = async () => {
+        if (!currentBreakdownConfig || !luisBreakdownBody) {
+          return;
+        }
+        renderLuisBreakdownHead(currentBreakdownConfig.label);
+        if (luisBreakdownTitle) {
+          luisBreakdownTitle.textContent = currentBreakdownConfig.title;
+        }
+        if (luisBreakdownDescription) {
+          luisBreakdownDescription.textContent = currentBreakdownConfig.description;
+        }
+        const ejercicio = mainEjercicio.value;
+        if (!ejercicio) {
+          renderLuisBreakdown({ rows: [], label: currentBreakdownConfig.label, totals: {} });
+          return;
+        }
+        const params = new URLSearchParams({
+          ejercicio,
+          group_by: currentBreakdownConfig.groupBy,
+        });
+        appendCurrentObservationFilters(params);
+        try {
+          const data = await fetchJsonWithAbort(
+            `/observaciones-desglose?${params.toString()}`,
+            `desglose-${currentBreakdownConfig.groupBy}`,
+          );
+          renderLuisBreakdown(data);
+        } catch (error) {
+          if (error.name === "AbortError") {
+            return;
+          }
+          console.error(error);
+          const errorColspan = currentBreakdownConfig.groupBy === "tipo_auditoria"
+            ? 24
+            : (currentBreakdownConfig.groupBy === "fuente_financiamiento" ? 13 : 23);
+          luisBreakdownBody.innerHTML = `<tr><td colspan="${errorColspan}" class="muted">No se pudo cargar el resumen.</td></tr>`;
+        }
+      };
+
+      const exportLuisBreakdown = () => {
+        if (!currentBreakdownConfig || !mainEjercicio.value) {
+          return;
+        }
+        const params = new URLSearchParams({
+          ejercicio: mainEjercicio.value,
+          group_by: currentBreakdownConfig.groupBy,
+        });
+        appendCurrentObservationFilters(params);
+        window.location.href = `/observaciones-desglose-exportar?${params.toString()}`;
+      };
+
       const formatMonto = (value) => {
         const numeric = Number(value);
         if (!Number.isFinite(numeric)) {
@@ -1432,9 +1829,18 @@
         return `${text.slice(0, Math.max(1, maxLength - 1))}…`;
       };
 
+      const getActiveSummaryTipo = () => {
+        if (summaryTipoAnexo) {
+          return summaryTipoAnexo.value || "";
+        }
+        const selectedMainTipos = getSelectedValues(obsTipoAnexo);
+        return selectedMainTipos.length === 1 ? selectedMainTipos[0] : "";
+      };
+
       const syncPdpWidgetsVisibility = () => {
-        const showPdpWidgets = summaryTipoAnexo && summaryTipoAnexo.value === "PDP";
+        const showPdpWidgets = getActiveSummaryTipo() === "PDP";
         if (pdpMontoSummaryWrap) {
+          pdpMontoSummaryWrap.hidden = !showPdpWidgets;
           pdpMontoSummaryWrap.style.display = showPdpWidgets ? "block" : "none";
         }
         if (pdpMontoChartWrap) {
@@ -2034,13 +2440,13 @@
             ? dashboardSummary.top_pendientes
             : [];
           const multiCompare = dashboardSummary.multi_compare || { active: false, items: [] };
-          const selectedTipo = summaryTipoAnexo ? summaryTipoAnexo.value : "";
+          const selectedTipo = getActiveSummaryTipo();
           const isPdpSelected = selectedTipo === "PDP";
           syncPdpWidgetsVisibility();
           if (!safeRows.length) {
             pdpSummaryBody.innerHTML = "<tr><td colspan=\"4\" class=\"muted\">Sin resultados.</td></tr>";
             if (pdpMontoSummaryBody) {
-              pdpMontoSummaryBody.innerHTML = "<tr><td colspan=\"4\" class=\"muted\">Sin resultados.</td></tr>";
+              pdpMontoSummaryBody.innerHTML = "<tr><td colspan=\"3\" class=\"muted\">Sin resultados.</td></tr>";
             }
             updateSummaryCountDonut(0, 0);
             updateSummaryStatusBar([]);
@@ -2058,7 +2464,7 @@
           if (!summaryRows.length) {
             pdpSummaryBody.innerHTML = "<tr><td colspan=\"4\" class=\"muted\">Sin resultados para el tipo seleccionado.</td></tr>";
             if (pdpMontoSummaryBody) {
-              pdpMontoSummaryBody.innerHTML = "<tr><td colspan=\"4\" class=\"muted\">Sin resultados.</td></tr>";
+              pdpMontoSummaryBody.innerHTML = "<tr><td colspan=\"3\" class=\"muted\">Sin resultados.</td></tr>";
             }
             updateSummaryCountDonut(0, 0);
             updateSummaryStatusBar([]);
@@ -2126,7 +2532,6 @@
             const pdpMontos = dashboardSummary.pdp_montos || { emitido: 0, solventado: 0, pendiente: 0 };
             pdpMontoSummaryBody.innerHTML = `
               <tr>
-                <td><strong>Totales</strong></td>
                 <td><strong>${formatPesos(pdpMontos.emitido)}</strong></td>
                 <td><strong>${formatPesos(pdpMontos.solventado)}</strong></td>
                 <td><strong>${formatPesos(pdpMontos.pendiente)}</strong></td>
@@ -2134,6 +2539,9 @@
             `;
             updateSummaryMontoDonut(pdpMontos.solventado, pdpMontos.pendiente);
           } else {
+            if (pdpMontoSummaryBody) {
+              pdpMontoSummaryBody.innerHTML = "<tr><td colspan=\"3\" class=\"muted\">Selecciona PDP para ver el resumen de montos.</td></tr>";
+            }
             updateSummaryMontoDonut(0, 0);
           }
           updateSummaryCountDonut(totals.solventadas, totals.pendientes);
@@ -2144,7 +2552,7 @@
           console.error("Error al renderizar resumen general:", error);
           pdpSummaryBody.innerHTML = "<tr><td colspan=\"4\" class=\"muted\">Sin resultados.</td></tr>";
           if (pdpMontoSummaryBody) {
-            pdpMontoSummaryBody.innerHTML = "<tr><td colspan=\"4\" class=\"muted\">Sin resultados.</td></tr>";
+            pdpMontoSummaryBody.innerHTML = "<tr><td colspan=\"3\" class=\"muted\">Sin resultados.</td></tr>";
           }
           updateSummaryCountDonut(0, 0);
           updateSummaryStatusBar([]);
@@ -2204,18 +2612,18 @@
                   ${index === 0 ? `<td class="pendientes-periodo-tipo" rowspan="${periodos.length}">${escapeHtml(group.tipo_auditoria || "—")}</td>` : ""}
                   <td class="pendientes-periodo-text">${escapeHtml(periodo.periodo_cedula || "—")}</td>
                   <td class="pendientes-periodo-text">${escapeHtml(periodo.periodo_titular || "—")}</td>
-                  <td class="pendientes-periodo-number">${Number(pendientes.R || 0)}</td>
-                  <td class="pendientes-periodo-number">${Number(pendientes.SA || 0)}</td>
-                  <td class="pendientes-periodo-number">${Number(pendientes.PDP || 0)}</td>
-                  <td class="pendientes-periodo-number">${Number(pendientes.PRAS || 0)}</td>
-                  <td class="pendientes-periodo-number">${Number(pendientes.PEFCF || 0)}</td>
+                  <td class="pendientes-periodo-number col-anexo">${Number(pendientes.R || 0)}</td>
+                  <td class="pendientes-periodo-number col-anexo">${Number(pendientes.SA || 0)}</td>
+                  <td class="pendientes-periodo-number col-anexo">${Number(pendientes.PDP || 0)}</td>
+                  <td class="pendientes-periodo-number col-anexo">${Number(pendientes.PRAS || 0)}</td>
+                  <td class="pendientes-periodo-number col-anexo">${Number(pendientes.PEFCF || 0)}</td>
                   <td class="pendientes-periodo-number pendientes-periodo-strong"><strong>${Number(pendientes.total || 0)}</strong></td>
                   <td class="pendientes-periodo-monto">${montoRow > 0 ? formatMonto(montoRow) : "-"}</td>
-                  <td class="pendientes-periodo-numeral">${escapeHtml(numerales.SA || "-")}</td>
-                  <td class="pendientes-periodo-numeral">${escapeHtml(numerales.PDP || "-")}</td>
-                  <td class="pendientes-periodo-numeral">${escapeHtml(numerales.PRAS || "-")}</td>
-                  <td class="pendientes-periodo-numeral">${escapeHtml(numerales.PEFCF || "-")}</td>
-                  <td class="pendientes-periodo-numeral">${escapeHtml(numerales.R || "-")}</td>
+                  <td class="pendientes-periodo-numeral col-anexo">${escapeHtml(numerales.SA || "-")}</td>
+                  <td class="pendientes-periodo-numeral col-anexo">${escapeHtml(numerales.PDP || "-")}</td>
+                  <td class="pendientes-periodo-numeral col-anexo">${escapeHtml(numerales.PRAS || "-")}</td>
+                  <td class="pendientes-periodo-numeral col-anexo">${escapeHtml(numerales.PEFCF || "-")}</td>
+                  <td class="pendientes-periodo-numeral col-anexo">${escapeHtml(numerales.R || "-")}</td>
                 </tr>
               `;
             }).join("");
@@ -2226,11 +2634,11 @@
               ${rowsHtml}
               <tr class="pendientes-total-row">
                 <td colspan="5" class="pendientes-total-label"><strong>TOTAL</strong></td>
-                <td class="pendientes-periodo-number"><strong>${Number(totales.R || 0)}</strong></td>
-                <td class="pendientes-periodo-number"><strong>${Number(totales.SA || 0)}</strong></td>
-                <td class="pendientes-periodo-number"><strong>${Number(totales.PDP || 0)}</strong></td>
-                <td class="pendientes-periodo-number"><strong>${Number(totales.PRAS || 0)}</strong></td>
-                <td class="pendientes-periodo-number"><strong>${Number(totales.PEFCF || 0)}</strong></td>
+                <td class="pendientes-periodo-number col-anexo"><strong>${Number(totales.R || 0)}</strong></td>
+                <td class="pendientes-periodo-number col-anexo"><strong>${Number(totales.SA || 0)}</strong></td>
+                <td class="pendientes-periodo-number col-anexo"><strong>${Number(totales.PDP || 0)}</strong></td>
+                <td class="pendientes-periodo-number col-anexo"><strong>${Number(totales.PRAS || 0)}</strong></td>
+                <td class="pendientes-periodo-number col-anexo"><strong>${Number(totales.PEFCF || 0)}</strong></td>
                 <td class="pendientes-periodo-number"><strong>${Number(totales.total || 0)}</strong></td>
                 <td class="pendientes-periodo-monto"><strong>${montoTotal > 0 ? formatMonto(montoTotal) : "-"}</strong></td>
                 <td colspan="5" class="pendientes-total-empty"></td>
@@ -2368,7 +2776,6 @@
         const ejercicio = mainEjercicio.value;
         const enteIds = getSelectedValues(obsEnteInput);
         const selectedTipoAnexo = getSelectedTipoAnexo();
-        const startTs = performance.now();
         if (summaryTipoAnexo) {
           summaryTipoAnexo.value = selectedTipoAnexo.length === 1 ? selectedTipoAnexo[0] : "";
         }
@@ -2395,6 +2802,7 @@
           obsPage = 1;
           renderPdpSummary();
           renderPendientesPorPeriodo();
+          await loadLuisBreakdown();
           if (obsPageInfo) {
             obsPageInfo.textContent = "Página 0 de 0";
           }
@@ -2444,13 +2852,9 @@
             data.total_pages || 1,
           );
           loadResponsablesPeriodo();
+          loadLuisBreakdown();
           renderActiveFilterChips();
           syncUrlFromFilters();
-          if (queryMeta) {
-            const elapsedMs = Math.max(1, Math.round(performance.now() - startTs));
-            const now = new Date();
-            queryMeta.textContent = `Actualizado: ${now.toLocaleDateString("es-MX")} ${now.toLocaleTimeString("es-MX")} · ${elapsedMs} ms`;
-          }
         } catch (error) {
           if (error.name === "AbortError") {
             return;
@@ -2691,7 +3095,7 @@
       tabButtons.forEach((button) => {
         button.addEventListener("click", () => setTab(button.dataset.tab));
       });
-      setTab("observaciones");
+      setTab(currentLuisView === "catalogo" ? "catalogo" : "observaciones");
 
       const handleEjercicioChange = async () => {
         closeAllMultiSelectPanels();
@@ -2797,6 +3201,9 @@
       }
       if (responsablesPeriodoExport) {
         responsablesPeriodoExport.addEventListener("click", exportResponsablesPeriodo);
+      }
+      if (luisBreakdownExport) {
+        luisBreakdownExport.addEventListener("click", exportLuisBreakdown);
       }
 
       if (obsPrev) {
