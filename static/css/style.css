@@ -1576,6 +1576,10 @@ table {
   gap: 0.85rem;
 }
 
+.loader-oficios-summary-panel .panel-header {
+  text-align: center;
+}
+
 .gabo-oficios-table {
   min-width: 1280px;
 }
@@ -1585,15 +1589,6 @@ table {
   text-align: center;
   vertical-align: middle;
   font-variant-numeric: tabular-nums;
-}
-
-.gabo-oficios-table th:nth-child(1),
-.gabo-oficios-table td:nth-child(1),
-.gabo-oficios-table th:nth-child(2),
-.gabo-oficios-table td:nth-child(2),
-.gabo-oficios-table th:nth-child(3),
-.gabo-oficios-table td:nth-child(3) {
-  text-align: left;
 }
 
 .gabo-oficios-oficio {
@@ -1617,7 +1612,7 @@ table {
 }
 
 .gabo-oficios-ente-total th:first-child {
-  text-align: left;
+  text-align: center;
 }
 
 .gabo-oficios-actions-cell {

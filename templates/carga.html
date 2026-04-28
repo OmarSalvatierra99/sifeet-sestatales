@@ -1126,7 +1126,7 @@
       );
       const bodyRows = groups.map((group) => (
         group.rows.map((item) => renderOficioRow(item.row, item.rowIndex)).join("")
-        + renderEnteTotalRow(group)
+        + (groups.length > 1 ? renderEnteTotalRow(group) : "")
       )).join("");
       const totalRow = (
         `<tr class="gabo-oficios-total">` +
