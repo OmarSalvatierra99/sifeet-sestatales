@@ -139,7 +139,260 @@ def test_gabo_manual_save_materializes_convenio_scope(client, monkeypatch, tmp_p
     }
 
 
-def test_gabo_oficios_resumen_repairs_cargas_and_groups_convenios_as_obra(client, monkeypatch, tmp_path):
+def test_gabo_manual_save_uses_fuente_catalog_classification(client, monkeypatch, tmp_path):
+    import app as app_module
+
+    test_db_path = tmp_path / "ramo_flags_save.db"
+    monkeypatch.setattr(app_module, "DB_PATH", str(test_db_path))
+    app_module.init_db()
+
+    conn = sqlite3.connect(test_db_path)
+    try:
+        conn.execute(
+            """
+            INSERT INTO entes_detalle (
+                ente_id, ejercicio, ente_numero, ente_nombre,
+                responsable, clasificacion, ramo33, ramo28, created_at
+            )
+            VALUES ('1.1', '2025', '1.1', 'Ente de prueba', '', '', 'No', 'No', 'now')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO fuentes_financiamiento (
+                nombre, ramo_33, ramo_28, origen_fuente, created_at
+            )
+            VALUES
+              ('Fondo de Aportaciones', 'Si', 'No', 'Remanentes', 'now'),
+              ('Participaciones estatales', 'No', 'Si', 'Del Ejercicio', 'now')
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    detalle = [
+        {
+            "tipo_auditoria": "Financiera",
+            "fuente_nombre": "Fondo de Aportaciones",
+            "periodo": "01 de Enero al 31 de Enero",
+            "cantidad_sa": 1,
+            "cantidad_pdp": 0,
+            "cantidad_pras": 0,
+            "cantidad_pefcf": 0,
+            "cantidad_r": 0,
+            "ramo_33": "No",
+            "origen_fuente": "Del Ejercicio",
+            "ramo_28": "No",
+        },
+        {
+            "tipo_auditoria": "Financiera",
+            "fuente_nombre": "Participaciones estatales",
+            "periodo": "01 de Febrero al 28 de Febrero",
+            "cantidad_sa": 0,
+            "cantidad_pdp": 0,
+            "cantidad_pras": 1,
+            "cantidad_pefcf": 0,
+            "cantidad_r": 0,
+            "ramo_33": "Si",
+            "origen_fuente": "Remanentes",
+            "ramo_28": "No",
+        },
+    ]
+
+    with client.session_transaction() as session_data:
+        session_data["user"] = "gabo"
+        session_data["role"] = "loader"
+
+    response = client.post(
+        "/carga",
+        data={
+            "action": "manual_save",
+            "manual_ente_id": "1.1",
+            "manual_tipo_auditoria": "Financiera",
+            "manual_numero_oficio": "OFS/RAMOS/2025",
+            "manual_asunto": "Notificación de Cédula de Resultados",
+            "manual_ejercicio": "2025",
+            "manual_periodo": "01 de Enero al 31 de Enero",
+            "manual_fecha_notificacion": "2025-02-01",
+            "manual_fuente_id": "__new__",
+            "manual_fuente_nueva": "Fondo de Aportaciones",
+            "manual_fuentes_detalle_json": json.dumps(detalle, ensure_ascii=False),
+            "manual_pdp_detalle_json": "[]",
+        },
+    )
+
+    assert response.status_code == 200
+
+    conn = sqlite3.connect(test_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        cargas = conn.execute(
+            """
+            SELECT fuente_nombre, ramo_33, origen_fuente, ramo_28
+            FROM cargas_manuales
+            ORDER BY id ASC
+            """
+        ).fetchall()
+        observaciones = conn.execute(
+            """
+            SELECT fuente_financiamiento, ramo_33, origen_fuente, ramo_28
+            FROM observaciones
+            ORDER BY id ASC
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert [dict(row) for row in cargas] == [
+        {
+            "fuente_nombre": "Fondo de Aportaciones",
+            "ramo_33": "Si",
+            "origen_fuente": "Remanentes",
+            "ramo_28": "No",
+        },
+        {
+            "fuente_nombre": "Participaciones estatales",
+            "ramo_33": "No",
+            "origen_fuente": "Del Ejercicio",
+            "ramo_28": "Si",
+        },
+    ]
+    assert [dict(row) for row in observaciones] == [
+        {
+            "fuente_financiamiento": "Fondo de Aportaciones",
+            "ramo_33": "Si",
+            "origen_fuente": "Remanentes",
+            "ramo_28": "No",
+        },
+        {
+            "fuente_financiamiento": "Participaciones estatales",
+            "ramo_33": "No",
+            "origen_fuente": "Del Ejercicio",
+            "ramo_28": "Si",
+        },
+    ]
+
+
+def test_gabo_fuente_catalog_classification_updates_existing_rows(client, monkeypatch, tmp_path):
+    import app as app_module
+
+    test_db_path = tmp_path / "fuentes_catalog_admin.db"
+    monkeypatch.setattr(app_module, "DB_PATH", str(test_db_path))
+    app_module.init_db()
+
+    conn = sqlite3.connect(test_db_path)
+    try:
+        conn.execute(
+            """
+            INSERT INTO fuentes_financiamiento (
+                id, nombre, ramo_33, ramo_28, origen_fuente, created_at
+            )
+            VALUES (1, 'Participaciones estatales', 'No', 'No', 'Del Ejercicio', 'now')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO cargas_manuales (
+                ente_id, ente_nombre, tipo_auditoria, tipo_responsable,
+                numero_oficio, asunto, ejercicio, fuente_id, fuente_nombre,
+                periodo, periodo_titular, fecha_notificacion, ramo_33, ramo_28,
+                origen_fuente, estado, cantidad_sa, cantidad_pdp, cantidad_pras,
+                cantidad_pefcf, cantidad_r, monto_pdp_emitido, monto_pdp_solventado,
+                monto_pdp_pendiente, fuente_detalle_json, pdp_detalle_json,
+                created_by, created_at
+            )
+            VALUES (
+                '1.1', 'Ente de prueba', 'Financiera', 'Titular',
+                'OFS/FUENTES/2025', 'Notificación de Cédula de Resultados',
+                '2025', 1, 'Participaciones estatales',
+                '01 de Enero al 31 de Enero', '01 de Enero al 31 de Enero',
+                '2025-02-01', 'No', 'No', 'Del Ejercicio', 'Emitido',
+                1, 0, 0, 0, 0, 0, 0, 0, '{}', '[]', 'gabo', 'now'
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO observaciones (
+                ejercicio, ente_id, ente_nombre, tipo_auditoria,
+                fuente_financiamiento, ramo_33, ramo_28, origen_fuente,
+                periodo_cedula, periodo_titular, periodo, oficio,
+                fecha_notificacion, tipo_anexo, numero_observacion, estado,
+                created_at
+            )
+            VALUES (
+                '2025', '1.1', 'Ente de prueba', 'Financiera',
+                'Participaciones estatales', 'No', 'No', 'Del Ejercicio',
+                '01 de Enero al 31 de Enero', '01 de Enero al 31 de Enero',
+                '01 de Enero al 31 de Enero', 'OFS/FUENTES/2025',
+                '2025-02-01', 'SA', 1, 'Emitido', 'now'
+            )
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    with client.session_transaction() as session_data:
+        session_data["user"] = "gabo"
+        session_data["role"] = "loader"
+
+    response = client.post(
+        "/carga/fuentes-financiamiento/clasificacion",
+        json={
+            "ejercicio": "2025",
+            "fuente_id": "1",
+            "fuente_nombre": "Participaciones estatales",
+            "ramo_33": "No",
+            "ramo_28": "Si",
+            "origen_fuente": "Remanentes",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["cargas_actualizadas"] == 1
+    assert payload["observaciones_actualizadas"] == 1
+
+    conn = sqlite3.connect(test_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        catalog_row = conn.execute(
+            """
+            SELECT ramo_33, ramo_28, origen_fuente
+            FROM fuentes_financiamiento
+            WHERE id = 1
+            """
+        ).fetchone()
+        carga_row = conn.execute(
+            """
+            SELECT ramo_33, ramo_28, origen_fuente
+            FROM cargas_manuales
+            WHERE fuente_id = 1
+            """
+        ).fetchone()
+        obs_row = conn.execute(
+            """
+            SELECT ramo_33, ramo_28, origen_fuente
+            FROM observaciones
+            WHERE fuente_financiamiento = 'Participaciones estatales'
+            """
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert dict(catalog_row) == {
+        "ramo_33": "No",
+        "ramo_28": "Si",
+        "origen_fuente": "Remanentes",
+    }
+    assert dict(carga_row) == dict(catalog_row)
+    assert dict(obs_row) == dict(catalog_row)
+
+
+def test_gabo_oficios_resumen_repair_action_groups_convenios_as_obra(client, monkeypatch, tmp_path):
     import app as app_module
 
     test_db_path = tmp_path / "convenios_oficios_resumen.db"
@@ -194,7 +447,21 @@ def test_gabo_oficios_resumen_repairs_cargas_and_groups_convenios_as_obra(client
         session_data["role"] = "loader"
 
     response = client.get("/carga/oficios-resumen?ejercicio=2025&ente_id=1.16")
+    assert response.status_code == 200
+    initial_payload = response.get_json()
+    assert initial_payload["rows"] == []
+    assert initial_payload["repair_candidates"] == 2
 
+    repair_response = client.post(
+        "/carga/oficios-resumen/reparar",
+        json={"ejercicio": "2025", "ente_id": "1.16"},
+    )
+    assert repair_response.status_code == 200
+    repair_payload = repair_response.get_json()
+    assert repair_payload["ok"] is True
+    assert repair_payload["repaired"] == 2
+
+    response = client.get("/carga/oficios-resumen?ejercicio=2025&ente_id=1.16")
     assert response.status_code == 200
     rows = response.get_json()["rows"]
     assert [(row["tipos_auditoria"], row["total"]) for row in rows] == [

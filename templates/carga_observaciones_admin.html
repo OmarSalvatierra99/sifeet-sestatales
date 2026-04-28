@@ -23,7 +23,6 @@
           <strong>{{ user_display_names.get(user.username, user.username) }}</strong>
         </div>
         <div class="user-actions">
-          <span class="user-role">Carga</span>
           <a class="btn-secondary btn-compact" href="{{ url_for('logout') }}">Cerrar sesión</a>
         </div>
       </div>
@@ -31,6 +30,8 @@
   </header>
 
   <main class="page-content loader-content obs-admin-content">
+    {% set gabo_module_active = 'solventacion' %}
+    {% include "_gabo_module_nav.html" %}
     <section class="panel">
       <div class="panel-header">
         <h2>Resultados de Solventación</h2>

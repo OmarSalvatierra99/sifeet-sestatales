@@ -34,39 +34,7 @@
     <nav class="mode-switch" aria-label="Modos de consulta">
       <a class="mode-switch-link is-active" href="{{ url_for('index') }}" id="luisConsultaTab">Consulta operativa</a>
       <a class="mode-switch-link" href="{{ url_for('comparativo_anual') }}">Comparativo anual</a>
-      <button class="mode-switch-link mode-switch-button" type="button" id="luisToolsTab">Herramientas</button>
     </nav>
-
-    <section class="panel tools-panel tools-tab-panel" aria-labelledby="toolsPanelTitle" id="luisToolsPanel" hidden>
-      <div class="panel-header">
-        <h2 id="toolsPanelTitle">Herramientas</h2>
-        <p>Acciones para administrar salidas y catálogos del ejercicio seleccionado.</p>
-      </div>
-      <div class="tools-tab-grid">
-        <article class="tool-action-card">
-          <div class="tool-action-copy">
-            <span class="tool-action-kicker">Fuentes de financiamiento</span>
-            <h3>Exportar fuentes</h3>
-            <p>Genera un archivo con únicamente las fuentes del ejercicio activo.</p>
-          </div>
-          <button
-            class="panel-action-btn"
-            type="button"
-            id="fuentes_export"
-            data-base-href="{{ url_for('fuentes_financiamiento_exportar') }}"
-          >
-            <span class="floating-clear-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none">
-                <path d="M12 4v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                <path d="M8 10l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M5 18h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-              </svg>
-            </span>
-            <span>Exportar fuentes</span>
-          </button>
-        </article>
-      </div>
-    </section>
 
     <section class="panel filter-panel luis-operational-panel">
       <div class="panel-header">
@@ -526,11 +494,6 @@
     const obsResponsablesBody = document.getElementById("obsResponsablesBody");
     const obsClearFab = document.getElementById("obs_clear_fab");
     const activeFiltersToggle = document.getElementById("activeFiltersToggle");
-    const fuentesExport = document.getElementById("fuentes_export");
-    const luisConsultaTab = document.getElementById("luisConsultaTab");
-    const luisToolsTab = document.getElementById("luisToolsTab");
-    const luisToolsPanel = document.getElementById("luisToolsPanel");
-    const luisOperationalPanels = Array.from(document.querySelectorAll(".luis-operational-panel"));
     const obsExport = document.getElementById("obs_export");
     const pendientesPeriodoExport = document.getElementById("pendientes_periodo_export");
     const responsablesPeriodoExportWrap = document.getElementById("responsablesPeriodoExportWrap");
@@ -1080,9 +1043,6 @@
             syncMultiSelectDisabledState(el);
           }
         });
-        if (fuentesExport) {
-          fuentesExport.disabled = !enabled;
-        }
         if (obsClearFab) {
           obsClearFab.disabled = !enabled;
         }
@@ -2581,19 +2541,6 @@
         }
       };
 
-      const exportFuentesFinanciamiento = () => {
-        if (!fuentesExport) {
-          return;
-        }
-        const ejercicio = mainEjercicio.value;
-        if (!ejercicio) {
-          return;
-        }
-        const baseHref = fuentesExport.dataset.baseHref || "/fuentes-financiamiento-exportar";
-        const params = new URLSearchParams({ ejercicio });
-        window.location.href = `${baseHref}${params.toString() ? `?${params.toString()}` : ""}`;
-      };
-
       const exportObservaciones = () => {
         const ejercicio = mainEjercicio.value;
         if (!ejercicio) {
@@ -2741,45 +2688,9 @@
         });
       };
 
-      const setLuisMainView = (view) => {
-        const isToolsView = view === "herramientas";
-        if (luisToolsPanel) {
-          luisToolsPanel.hidden = !isToolsView;
-        }
-        luisOperationalPanels.forEach((panel) => {
-          panel.hidden = isToolsView;
-        });
-        if (luisConsultaTab) {
-          luisConsultaTab.classList.toggle("is-active", !isToolsView);
-        }
-        if (luisToolsTab) {
-          luisToolsTab.classList.toggle("is-active", isToolsView);
-        }
-        if (activeFiltersToggle) {
-          activeFiltersToggle.hidden = isToolsView;
-          activeFiltersToggle.setAttribute("aria-expanded", "false");
-        }
-        if (activeFiltersPanel && isToolsView) {
-          activeFiltersPanel.classList.remove("is-open");
-        }
-        if (obsClearFab) {
-          obsClearFab.hidden = isToolsView;
-        }
-      };
-
       tabButtons.forEach((button) => {
         button.addEventListener("click", () => setTab(button.dataset.tab));
       });
-      if (luisConsultaTab) {
-        luisConsultaTab.addEventListener("click", (event) => {
-          event.preventDefault();
-          setLuisMainView("consulta");
-        });
-      }
-      if (luisToolsTab) {
-        luisToolsTab.addEventListener("click", () => setLuisMainView("herramientas"));
-      }
-      setLuisMainView("consulta");
       setTab("observaciones");
 
       const handleEjercicioChange = async () => {
@@ -2877,9 +2788,6 @@
 
       if (obsClearFab) {
         obsClearFab.addEventListener("click", clearObservacionesFilters);
-      }
-      if (fuentesExport) {
-        fuentesExport.addEventListener("click", exportFuentesFinanciamiento);
       }
       if (obsExport) {
         obsExport.addEventListener("click", exportObservaciones);

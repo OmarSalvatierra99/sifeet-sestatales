@@ -7,6 +7,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
+from scripts.financiamiento import normalize_origen_fuente, origen_fuente_sql
+
 
 def register_luis_routes(app, deps):
     globals().update(deps)
@@ -97,26 +99,6 @@ def register_luis_routes(app, deps):
 
     def column_sql(column: str, alias: str = "") -> str:
         return f"{alias}.{column}" if alias else column
-
-    def normalize_origen_fuente(value: str) -> str:
-        clean = " ".join((value or "").split())
-        key = clean.lower()
-        if key in {"remanente", "remanentes"}:
-            return "Remanentes"
-        if key in {"del ejercicio", "ejercicio", "del_ejercicio"}:
-            return "Del Ejercicio"
-        return clean
-
-    def origen_fuente_sql(alias: str = "") -> str:
-        fuente_col = column_sql("fuente_financiamiento", alias)
-        fuente_key = f"LOWER(TRIM(COALESCE({fuente_col}, '')))"
-        return (
-            "CASE "
-            f"WHEN {fuente_key} LIKE 'remanente%' THEN 'Remanentes' "
-            f"WHEN {fuente_key} LIKE 'rea:%' THEN 'Remanentes' "
-            f"WHEN {fuente_key} LIKE 'seguimiento%' THEN 'Remanentes' "
-            "ELSE 'Del Ejercicio' END"
-        )
 
     def apply_filter_clause(
         clauses: list[str],
@@ -3026,8 +3008,13 @@ def register_luis_routes(app, deps):
         )
 
     @app.get("/observaciones-exportar")
-    @luis_required
     def observaciones_exportar():
+        user = get_current_user()
+        if user is None:
+            return redirect(url_for("login", next=request.path))
+        if user.get("username") not in {"luis", "gabo"}:
+            return redirect(url_for(home_endpoint_for_user(user), notice="no_permission"))
+
         ejercicio = request.args.get("ejercicio", "").strip()
         selected_filters = parse_selected_filters()
         if not ejercicio:

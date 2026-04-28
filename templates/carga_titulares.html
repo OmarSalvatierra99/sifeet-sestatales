@@ -23,7 +23,6 @@
           <strong>{{ user_display_names.get(user.username, user.username) }}</strong>
         </div>
         <div class="user-actions">
-          <span class="user-role">Carga</span>
           <form class="logout-form" method="post" action="{{ url_for('logout') }}">
             <button type="submit" class="btn-secondary btn-compact">Cerrar sesión</button>
           </form>
@@ -33,6 +32,8 @@
   </header>
 
   <main class="page-content loader-content">
+    {% set gabo_module_active = 'titulares' %}
+    {% include "_gabo_module_nav.html" %}
     <section class="panel loader-card titular-workspace-card">
       <div class="panel-header">
         <h2>Titulares</h2>
@@ -56,17 +57,20 @@
               required
             >
               {% for ejercicio in ejercicios %}
-                <option value="{{ ejercicio }}" {% if form_data.titular_ejercicio == ejercicio %}selected{% endif %}>{{ ejercicio }}</option>
+                <option value="{{ ejercicio }}" {% if form_data.titular_ejercicio == ejercicio %}selected{% endif %}>
+                  {{ ejercicio }}{% if ejercicio in read_only_ejercicios %} · solo consulta{% endif %}
+                </option>
               {% endfor %}
             </select>
           </div>
-          <div class="field">
+          <div class="field ente-search-field">
             <label for="titular_ente_id">Ente</label>
             <select
               id="titular_ente_id"
               name="titular_ente_id"
               form="titularCreateForm"
               data-selected="{{ form_data.titular_ente_id }}"
+              class="ente-search-hidden-select"
               required
             >
               <option value="">Selecciona un ente</option>
@@ -76,6 +80,11 @@
                 </option>
               {% endfor %}
             </select>
+            <div class="ente-search-wrapper">
+              <input type="text" id="titular_ente_search_input" class="ente-search-input" placeholder="Buscar ente..." autocomplete="off">
+              <button type="button" class="ente-search-clear" id="titular_ente_search_clear" title="Limpiar">&times;</button>
+              <div class="ente-search-dropdown" id="titular_ente_search_dropdown"></div>
+            </div>
           </div>
           <div class="field">
             <label for="titular_tipo_auditoria">Tipo de auditoría</label>
@@ -93,114 +102,145 @@
         </div>
       </div>
 
-      <div id="titularCreateMode" class="titular-mode-panel">
-        <div class="titular-mode-head">
-          <h3>Registrar en este contexto</h3>
-          <p>Captura nombre y fechas reales. Si el administrativo comparte periodo, puedes reutilizarlo.</p>
+      <section class="titular-import-card" aria-label="Carga de titulares desde Excel">
+        <div class="titular-import-head">
+          <div>
+            <h3>Cargar archivo XLSX</h3>
+            <p id="titularExcelContextLabel">Selecciona ejercicio, ente y tipo de auditoría.</p>
+          </div>
+          <span class="titular-import-format">XLSX</span>
         </div>
 
-        <form class="record-form loader-manual-form" method="POST" autocomplete="off" id="titularCreateForm">
-          <div class="titular-roles-grid">
-            <section class="titular-role-card" aria-label="Datos del titular">
-              <div class="titular-role-head">
-                <h4>Titular</h4>
-              </div>
-              <div class="form-grid titular-role-grid">
-                <div class="field titular-role-name-field">
-                  <label for="titular_nombre">Nombre del titular</label>
-                  <input id="titular_nombre" name="titular_nombre" type="text" value="{{ form_data.titular_nombre }}" required>
-                </div>
-                <div class="field">
-                  <label for="titular_fecha_inicio">Fecha inicial</label>
-                  <input id="titular_fecha_inicio" name="titular_fecha_inicio" type="date" value="{{ form_data.titular_fecha_inicio }}" required>
-                </div>
-                <div class="field">
-                  <label for="titular_fecha_fin">Fecha final</label>
-                  <input id="titular_fecha_fin" name="titular_fecha_fin" type="date" value="{{ form_data.titular_fecha_fin }}" required>
-                </div>
-              </div>
-            </section>
+        <form id="titularExcelUploadForm" class="record-form titular-import-form" autocomplete="off">
+          <div class="titular-import-simple">
+            <div class="oficio-upload-zone titular-excel-upload-zone" id="titularExcelUploadZone">
+              <input id="titular_excel_file" name="titulares_file" type="file" accept=".xlsx" hidden>
+              <span class="oficio-upload-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="M7 3.8H14.2L19 8.6V20.2H7V3.8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+                  <path d="M14 4V9H19" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+                  <path d="M9.8 13.2H16.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                  <path d="M9.8 16.2H14.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <strong id="titularExcelFileTitle">Seleccionar Excel</strong>
+              <p id="titularExcelFileSubtitle">Archivo .xlsx de periodos y cédulas.</p>
+              <p class="oficio-file-name" id="titularExcelFileName" hidden></p>
+            </div>
 
-            <section class="titular-role-card" aria-label="Datos del administrativo">
-              <div class="titular-role-head">
-                <h4>Director Administrativo</h4>
-                <label class="titular-inline-check">
-                  <input
-                    id="titular_admin_mismo_periodo"
-                    name="titular_admin_mismo_periodo"
-                    type="checkbox"
-                    value="1"
-                    {% if form_data.titular_admin_mismo_periodo == "1" %}checked{% endif %}
-                  >
-                  <span>Usar el mismo periodo del titular</span>
-                </label>
-              </div>
-              <div class="form-grid titular-role-grid">
-                <div class="field titular-role-name-field">
-                  <label for="titular_administrativo">Nombre del administrativo</label>
-                  <input id="titular_administrativo" name="titular_administrativo" type="text" value="{{ form_data.titular_administrativo }}" required>
-                </div>
-                <div class="field" id="titularAdminFechaInicioField">
-                  <label for="titular_admin_fecha_inicio">Fecha inicial</label>
-                  <input id="titular_admin_fecha_inicio" name="titular_admin_fecha_inicio" type="date" value="{{ form_data.titular_admin_fecha_inicio }}" required>
-                </div>
-                <div class="field" id="titularAdminFechaFinField">
-                  <label for="titular_admin_fecha_fin">Fecha final</label>
-                  <input id="titular_admin_fecha_fin" name="titular_admin_fecha_fin" type="date" value="{{ form_data.titular_admin_fecha_fin }}" required>
-                </div>
-              </div>
-            </section>
-          </div>
-
-          <div class="loader-step-nav">
-            <button class="btn-primary" type="submit">Guardar titulares</button>
+            <div class="titular-import-actions">
+              <button type="button" class="btn-primary" id="titularExcelApplyBtn" disabled>Guardar</button>
+              <button type="button" class="btn-secondary" id="titularExcelResetBtn">Limpiar</button>
+            </div>
           </div>
         </form>
-      </div>
 
-      <div id="titularEditMode" class="titular-mode-panel" hidden>
-        <div class="titular-mode-head">
-          <h3 id="titularEditTitle">Editar registro</h3>
-          <p id="titularEditContext" class="titular-edit-context"></p>
+        <div id="titularExcelStatus" class="status status-info" hidden></div>
+
+        <section class="titular-import-summary-card" id="titularExcelWarningsCard" hidden>
+          <div id="titularExcelWarningsBody" class="obs-bulk-note-list"></div>
+        </section>
+
+        <section class="titular-import-preview-card" id="titularExcelPreviewCard" hidden>
+          <div class="obs-admin-summary-head">
+            <h4>Vista previa</h4>
+            <p id="titularExcelPreviewCaption">Sin registros.</p>
+          </div>
+          <div class="obs-admin-summary-table-wrap titular-import-table-wrap">
+            <table class="obs-admin-summary-table titular-import-preview-table">
+              <thead>
+                <tr>
+                  <th>Periodo informe</th>
+                  <th>Titular</th>
+                  <th>Periodo administrativo</th>
+                  <th>Administrativo</th>
+                  <th>Cédulas</th>
+                </tr>
+              </thead>
+              <tbody id="titularExcelPreviewBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <details class="titular-manual-details">
+        <summary>
+          <span>Captura manual</span>
+          <small>Agregar un registro sin Excel</small>
+        </summary>
+
+        <div id="titularCreateMode" class="titular-mode-panel">
+          <div class="titular-mode-head">
+            <h3>Registrar en este contexto</h3>
+            <p>Captura nombre y fechas reales. Si el administrativo comparte periodo, puedes reutilizarlo.</p>
+          </div>
+
+          <form class="record-form loader-manual-form" method="POST" autocomplete="off" id="titularCreateForm">
+            <div class="titular-roles-grid">
+              <section class="titular-role-card" aria-label="Datos del titular">
+                <div class="titular-role-head">
+                  <h4>Titular</h4>
+                </div>
+                <div class="form-grid titular-role-grid">
+                  <div class="field titular-role-name-field">
+                    <label for="titular_nombre">Nombre del titular</label>
+                    <input id="titular_nombre" name="titular_nombre" type="text" value="{{ form_data.titular_nombre }}" required>
+                  </div>
+                  <div class="field">
+                    <label for="titular_fecha_inicio">Fecha inicial</label>
+                    <input id="titular_fecha_inicio" name="titular_fecha_inicio" type="date" value="{{ form_data.titular_fecha_inicio }}" required>
+                  </div>
+                  <div class="field">
+                    <label for="titular_fecha_fin">Fecha final</label>
+                    <input id="titular_fecha_fin" name="titular_fecha_fin" type="date" value="{{ form_data.titular_fecha_fin }}" required>
+                  </div>
+                </div>
+              </section>
+
+              <section class="titular-role-card" aria-label="Datos del administrativo">
+                <div class="titular-role-head">
+                  <h4>Director Administrativo</h4>
+                  <label class="titular-inline-check">
+                    <input
+                      id="titular_admin_mismo_periodo"
+                      name="titular_admin_mismo_periodo"
+                      type="checkbox"
+                      value="1"
+                      {% if form_data.titular_admin_mismo_periodo == "1" %}checked{% endif %}
+                    >
+                    <span>Usar el mismo periodo del titular</span>
+                  </label>
+                </div>
+                <div class="form-grid titular-role-grid">
+                  <div class="field titular-role-name-field">
+                    <label for="titular_administrativo">Nombre del administrativo</label>
+                    <input id="titular_administrativo" name="titular_administrativo" type="text" value="{{ form_data.titular_administrativo }}" required>
+                  </div>
+                  <div class="field" id="titularAdminFechaInicioField">
+                    <label for="titular_admin_fecha_inicio">Fecha inicial</label>
+                    <input id="titular_admin_fecha_inicio" name="titular_admin_fecha_inicio" type="date" value="{{ form_data.titular_admin_fecha_inicio }}" required>
+                  </div>
+                  <div class="field" id="titularAdminFechaFinField">
+                    <label for="titular_admin_fecha_fin">Fecha final</label>
+                    <input id="titular_admin_fecha_fin" name="titular_admin_fecha_fin" type="date" value="{{ form_data.titular_admin_fecha_fin }}" required>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <div class="loader-step-nav">
+              <button class="btn-primary" type="submit">Guardar titulares</button>
+            </div>
+          </form>
         </div>
+      </details>
 
-        <div id="titularInlineEditStatus" class="status status-info" hidden></div>
-
-        <form class="record-form loader-manual-form" autocomplete="off" id="titularInlineEditForm">
-          <input id="titular_edit_id" type="hidden">
-          <input id="titular_edit_tipo_registro" type="hidden">
-
-          <div class="form-grid titular-edit-grid">
-            <div class="field">
-              <label for="titular_edit_nombre">Nombre</label>
-              <input id="titular_edit_nombre" type="text" required>
-            </div>
-            <div class="field">
-              <label for="titular_edit_cargo">Cargo</label>
-              <input id="titular_edit_cargo" type="text" required>
-            </div>
-            <div class="field">
-              <label for="titular_edit_fecha_inicio">Fecha inicial</label>
-              <input id="titular_edit_fecha_inicio" type="date" required>
-            </div>
-            <div class="field">
-              <label for="titular_edit_fecha_fin">Fecha final</label>
-              <input id="titular_edit_fecha_fin" type="date" required>
-            </div>
-          </div>
-
-          <div class="loader-step-nav">
-            <button class="btn-primary" type="submit">Guardar cambios</button>
-            <button class="btn-secondary" type="button" id="titularEditCancelBtn">Cancelar</button>
-          </div>
-        </form>
-      </div>
     </section>
 
     <section class="panel loader-card titular-history-card">
       <div class="panel-header">
-        <h2>Historial y corrección</h2>
-        <p>Se actualiza automáticamente al cambiar ejercicio, ente o tipo de auditoría.</p>
+        <h2>Titulares cargados</h2>
+        <p>Registros guardados para el ejercicio, ente y tipo de auditoría seleccionados.</p>
       </div>
 
       <div id="titularHistoryStatus" class="status status-info" hidden></div>
@@ -233,6 +273,9 @@
   <script>
     const ejercicioInput = document.getElementById("titular_ejercicio");
     const enteInput = document.getElementById("titular_ente_id");
+    const enteSearchInput = document.getElementById("titular_ente_search_input");
+    const enteSearchDropdown = document.getElementById("titular_ente_search_dropdown");
+    const enteSearchClear = document.getElementById("titular_ente_search_clear");
     const tipoInput = document.getElementById("titular_tipo_auditoria");
     const createMode = document.getElementById("titularCreateMode");
     const createForm = document.getElementById("titularCreateForm");
@@ -245,23 +288,30 @@
     const adminFechaFinField = document.getElementById("titularAdminFechaFinField");
     const adminFechaInicioInput = document.getElementById("titular_admin_fecha_inicio");
     const adminFechaFinInput = document.getElementById("titular_admin_fecha_fin");
-    const editMode = document.getElementById("titularEditMode");
-    const editTitle = document.getElementById("titularEditTitle");
-    const editContext = document.getElementById("titularEditContext");
-    const editStatus = document.getElementById("titularInlineEditStatus");
-    const editForm = document.getElementById("titularInlineEditForm");
-    const editIdInput = document.getElementById("titular_edit_id");
-    const editTipoRegistroInput = document.getElementById("titular_edit_tipo_registro");
-    const editNombreInput = document.getElementById("titular_edit_nombre");
-    const editCargoInput = document.getElementById("titular_edit_cargo");
-    const editFechaInicioInput = document.getElementById("titular_edit_fecha_inicio");
-    const editFechaFinInput = document.getElementById("titular_edit_fecha_fin");
-    const editCancelBtn = document.getElementById("titularEditCancelBtn");
     const historyStatus = document.getElementById("titularHistoryStatus");
     const historyCount = document.getElementById("titularHistoryCount");
     const historyGroups = document.getElementById("titularHistoryGroups");
+    const titularExcelUploadForm = document.getElementById("titularExcelUploadForm");
+    const titularExcelContextLabel = document.getElementById("titularExcelContextLabel");
+    const titularExcelFileInput = document.getElementById("titular_excel_file");
+    const titularExcelUploadZone = document.getElementById("titularExcelUploadZone");
+    const titularExcelFileTitle = document.getElementById("titularExcelFileTitle");
+    const titularExcelFileSubtitle = document.getElementById("titularExcelFileSubtitle");
+    const titularExcelFileName = document.getElementById("titularExcelFileName");
+    const titularExcelApplyBtn = document.getElementById("titularExcelApplyBtn");
+    const titularExcelResetBtn = document.getElementById("titularExcelResetBtn");
+    const titularExcelStatus = document.getElementById("titularExcelStatus");
+    const titularExcelWarningsCard = document.getElementById("titularExcelWarningsCard");
+    const titularExcelWarningsBody = document.getElementById("titularExcelWarningsBody");
+    const titularExcelPreviewCard = document.getElementById("titularExcelPreviewCard");
+    const titularExcelPreviewCaption = document.getElementById("titularExcelPreviewCaption");
+    const titularExcelPreviewBody = document.getElementById("titularExcelPreviewBody");
 
     let historyRows = [];
+    let titularCaptureRows = [];
+    let titularExcelPreview = null;
+    const readOnlyEjercicios = new Set({{ read_only_ejercicios | default([]) | tojson }});
+    const isReadOnlyEjercicio = (value) => readOnlyEjercicios.has(String(value || "").trim());
 
     const escapeHtml = (value) => (
       String(value || "")
@@ -293,6 +343,223 @@
       element.textContent = message;
     };
 
+    const setTitularExcelBusy = (busy) => {
+      [titularExcelApplyBtn, titularExcelResetBtn, titularExcelFileInput].forEach((element) => {
+        if (element) {
+          element.disabled = !!busy;
+        }
+      });
+      if (titularExcelUploadZone) {
+        titularExcelUploadZone.classList.toggle("processing", !!busy);
+      }
+      if (!busy && titularExcelApplyBtn) {
+        titularExcelApplyBtn.disabled = isReadOnlyEjercicio(ejercicioInput ? ejercicioInput.value : "")
+          || !(titularExcelPreview && Array.isArray(titularExcelPreview.capture_rows) && titularExcelPreview.capture_rows.length);
+      }
+    };
+
+    const updateTitularExcelFileState = () => {
+      const file = titularExcelFileInput && titularExcelFileInput.files ? titularExcelFileInput.files[0] : null;
+      const fileName = file ? file.name : "";
+      if (titularExcelUploadZone) {
+        titularExcelUploadZone.classList.toggle("has-file", !!fileName);
+      }
+      if (titularExcelFileTitle) {
+        titularExcelFileTitle.textContent = fileName || "Seleccionar Excel";
+      }
+      if (titularExcelFileSubtitle) {
+        titularExcelFileSubtitle.textContent = fileName
+          ? "El archivo se procesa automáticamente."
+          : "Archivo .xlsx de periodos y cédulas.";
+      }
+      if (titularExcelFileName) {
+        titularExcelFileName.hidden = !fileName;
+        titularExcelFileName.textContent = fileName;
+      }
+    };
+
+    const resetTitularExcelPreview = ({ keepFile = false } = {}) => {
+      titularExcelPreview = null;
+      if (!keepFile && titularExcelFileInput) {
+        titularExcelFileInput.value = "";
+      }
+      updateTitularExcelFileState();
+      setStatus(titularExcelStatus, "");
+      [titularExcelWarningsCard, titularExcelPreviewCard].forEach((card) => {
+        if (card) {
+          card.hidden = true;
+        }
+      });
+      if (titularExcelWarningsBody) titularExcelWarningsBody.innerHTML = "";
+      if (titularExcelPreviewBody) titularExcelPreviewBody.innerHTML = "";
+      if (titularExcelPreviewCaption) titularExcelPreviewCaption.textContent = "Sin registros.";
+      if (titularExcelApplyBtn) {
+        titularExcelApplyBtn.disabled = true;
+      }
+    };
+
+    const collectTitularImportWarnings = (preview) => {
+      const rows = [];
+      (preview.files || []).forEach((file) => {
+        (file.errors || []).forEach((message) => {
+          rows.push({ file: file.file_name || "Archivo", message, level: "error" });
+        });
+        (file.warnings || []).forEach((message) => {
+          rows.push({ file: file.file_name || "Archivo", message, level: "warning" });
+        });
+      });
+      return rows;
+    };
+
+    const renderTitularExcelPreview = (preview) => {
+      const warnings = collectTitularImportWarnings(preview);
+      if (titularExcelWarningsCard) {
+        titularExcelWarningsCard.hidden = !warnings.length;
+      }
+      if (titularExcelWarningsBody) {
+        titularExcelWarningsBody.innerHTML = warnings.length
+          ? `<ul class="obs-bulk-note-items">${warnings.map((item) => `
+              <li><strong>${escapeHtml(item.file)}:</strong> ${escapeHtml(item.message)}</li>
+            `).join("")}</ul>`
+          : "";
+      }
+
+      const rows = splitCedulaResultRows(preview.preview_capture_rows || preview.capture_rows || []);
+      if (titularExcelPreviewCard) {
+        titularExcelPreviewCard.hidden = !rows.length;
+      }
+      if (titularExcelPreviewCaption) {
+        const total = splitCedulaResultRows(preview.capture_rows || []).length;
+        const limit = preview.preview_limit || rows.length;
+        titularExcelPreviewCaption.textContent = total > limit
+          ? `Mostrando ${rows.length} de ${total} cédula(s).`
+          : `${total} cédula(s) listas.`;
+      }
+      if (titularExcelPreviewBody) {
+        titularExcelPreviewBody.innerHTML = rows.length
+          ? rows.map((row) => `
+              <tr>
+                <td>${escapeHtml(row.periodo_informe || "—")}</td>
+                <td>${escapeHtml(row.titular || "—")}</td>
+                <td>${escapeHtml(row.periodo_administrativo || "—")}</td>
+                <td>${escapeHtml(row.administrativo || "—")}</td>
+                <td>${escapeHtml(row.cedula_resultados || "—")}</td>
+              </tr>
+            `).join("")
+          : "";
+      }
+
+      if (titularExcelApplyBtn) {
+        titularExcelApplyBtn.disabled = isReadOnlyEjercicio(ejercicioInput ? ejercicioInput.value : "")
+          || !(preview.capture_rows || []).length;
+      }
+    };
+
+    const analyzeTitularExcelFile = async () => {
+      if (!contextIsComplete()) {
+        setStatus(titularExcelStatus, "Selecciona ejercicio, ente y tipo de auditoría antes de cargar.", "error");
+        return;
+      }
+      const ejercicio = ejercicioInput ? String(ejercicioInput.value || "").trim() : "";
+      if (isReadOnlyEjercicio(ejercicio)) {
+        setStatus(titularExcelStatus, `El ejercicio ${ejercicio} está concluido y solo puede consultarse.`, "error");
+        return;
+      }
+      const file = titularExcelFileInput && titularExcelFileInput.files ? titularExcelFileInput.files[0] : null;
+      if (!file) {
+        setStatus(titularExcelStatus, "Selecciona un archivo XLSX.", "error");
+        return;
+      }
+      resetTitularExcelPreview({ keepFile: true });
+      setTitularExcelBusy(true);
+      setStatus(titularExcelStatus, "Procesando titulares...", "info");
+      const formData = new FormData();
+      formData.set("titulares_file", file);
+      formData.set("ejercicio", ejercicioInput ? ejercicioInput.value || "" : "");
+      formData.set("ente_id", enteInput ? enteInput.value || "" : "");
+      formData.set("tipo_auditoria_destino", tipoInput ? tipoInput.value || "" : "");
+      try {
+        const response = await fetch("/carga/titulares/excel/preview", {
+          method: "POST",
+          credentials: "same-origin",
+          body: formData,
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "No se pudo procesar el archivo.");
+        }
+        titularExcelPreview = data;
+        renderTitularExcelPreview(data);
+        const summary = data.summary || {};
+        const statusLevel = summary.errors ? "error" : (summary.warnings ? "info" : "success");
+        setStatus(
+          titularExcelStatus,
+          `${summary.capturas || 0} captura(s) detectadas para ${data.tipo_auditoria_destino || "el destino seleccionado"}.`,
+          statusLevel,
+        );
+      } catch (error) {
+        titularExcelPreview = null;
+        setStatus(
+          titularExcelStatus,
+          error instanceof Error ? error.message : "No se pudo procesar el archivo.",
+          "error",
+        );
+      } finally {
+        setTitularExcelBusy(false);
+      }
+    };
+
+    const applyTitularExcelPreview = async () => {
+      const ejercicio = ejercicioInput ? String(ejercicioInput.value || "").trim() : "";
+      if (isReadOnlyEjercicio(ejercicio)) {
+        setStatus(titularExcelStatus, `El ejercicio ${ejercicio} está concluido y solo puede consultarse.`, "error");
+        return;
+      }
+      if (!titularExcelPreview || !(titularExcelPreview.capture_rows || []).length) {
+        setStatus(titularExcelStatus, "Carga un archivo válido antes de guardar.", "error");
+        return;
+      }
+      const totalCapturas = (titularExcelPreview.capture_rows || []).length;
+      const confirmed = window.confirm(`Se guardarán ${totalCapturas} captura(s) de titulares. ¿Continuar?`);
+      if (!confirmed) {
+        return;
+      }
+      setTitularExcelBusy(true);
+      setStatus(titularExcelStatus, "Guardando titulares...", "info");
+      try {
+        const response = await fetch("/carga/titulares/excel/aplicar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            tipo_auditoria_destino: titularExcelPreview.tipo_auditoria_destino,
+            history_rows: titularExcelPreview.history_rows || [],
+            capture_rows: titularExcelPreview.capture_rows || [],
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "No se pudo guardar la carga de titulares.");
+        }
+        const history = data.history || {};
+        const captures = data.captures || {};
+        setStatus(
+          titularExcelStatus,
+          `Guardado: ${history.inserted || 0} registros nuevos, ${history.updated || 0} actualizados y ${captures.inserted || 0} captura(s) en bitácora.`,
+          "success",
+        );
+        await loadHistory();
+      } catch (error) {
+        setStatus(
+          titularExcelStatus,
+          error instanceof Error ? error.message : "No se pudo guardar la carga de titulares.",
+          "error",
+        );
+      } finally {
+        setTitularExcelBusy(false);
+      }
+    };
+
     const contextIsComplete = () => {
       const ejercicio = ejercicioInput ? String(ejercicioInput.value || "").trim() : "";
       const enteId = enteInput ? String(enteInput.value || "").trim() : "";
@@ -309,6 +576,18 @@
           : ""
       );
       return [ejercicio, enteLabel, tipo].filter(Boolean).join(" · ");
+    };
+
+    const updateTitularExcelContextLabel = () => {
+      if (!titularExcelContextLabel) {
+        return;
+      }
+      const ejercicio = ejercicioInput ? String(ejercicioInput.value || "").trim() : "";
+      titularExcelContextLabel.textContent = contextIsComplete()
+        ? (isReadOnlyEjercicio(ejercicio)
+          ? `${contextLabel()} · solo consulta`
+          : contextLabel())
+        : "Selecciona ejercicio, ente y tipo de auditoría.";
     };
 
     const formatTipoRegistro = (tipoRegistro) => (
@@ -333,6 +612,127 @@
         return raw;
       }
       return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    };
+
+    const formatPeriodDisplay = (value) => {
+      const raw = String(value || "").trim();
+      if (!raw) {
+        return "—";
+      }
+      return raw.replace(/\b(de\s+)?enero\b/gi, "de Enero")
+        .replace(/\b(de\s+)?febrero\b/gi, "de Febrero")
+        .replace(/\b(de\s+)?marzo\b/gi, "de Marzo")
+        .replace(/\b(de\s+)?abril\b/gi, "de Abril")
+        .replace(/\b(de\s+)?mayo\b/gi, "de Mayo")
+        .replace(/\b(de\s+)?junio\b/gi, "de Junio")
+        .replace(/\b(de\s+)?julio\b/gi, "de Julio")
+        .replace(/\b(de\s+)?agosto\b/gi, "de Agosto")
+        .replace(/\b(de\s+)?septiembre\b/gi, "de Septiembre")
+        .replace(/\b(de\s+)?octubre\b/gi, "de Octubre")
+        .replace(/\b(de\s+)?noviembre\b/gi, "de Noviembre")
+        .replace(/\b(de\s+)?diciembre\b/gi, "de Diciembre");
+    };
+
+    const formatEnteNameForLoadedTable = (value) => {
+      const clean = String(value || "").replace(/\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
+      return clean ? clean.toUpperCase() : "—";
+    };
+
+    const mergeKey = (value, index) => {
+      const clean = String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+      return clean || `__empty_${index}`;
+    };
+
+    const splitCedulaResultRows = (rows) => (
+      rows.flatMap((row) => {
+        const cedulas = String(row.cedula_resultados || "")
+          .split("|")
+          .map((item) => item.trim())
+          .filter(Boolean);
+        if (!cedulas.length) {
+          return [{ ...row, cedula_resultados: "" }];
+        }
+        return cedulas.map((cedula, index) => ({
+          ...row,
+          cedula_resultados: cedula,
+          cedula_orden: index,
+        }));
+      })
+    );
+
+    const buildLoadedTableRows = (rows) => {
+      const prepared = splitCedulaResultRows(rows).map((row, index) => ({
+        row,
+        periodKey: mergeKey(row.periodo_informe, index),
+        titularKey: mergeKey(row.titular, index),
+        adminPeriodKey: mergeKey(row.periodo_administrativo, index),
+        adminNameKey: mergeKey(row.administrativo, index),
+      }));
+
+      return prepared.map((item, index) => {
+        const previous = prepared[index - 1];
+        const startsPeriod = !previous || previous.periodKey !== item.periodKey;
+        const startsTitular = startsPeriod || previous.titularKey !== item.titularKey;
+        const startsAdminPeriod = startsTitular || previous.adminPeriodKey !== item.adminPeriodKey;
+        const startsAdminName = startsAdminPeriod || previous.adminNameKey !== item.adminNameKey;
+        let periodRowspan = 0;
+        let titularRowspan = 0;
+        let adminPeriodRowspan = 0;
+        let adminNameRowspan = 0;
+
+        if (startsPeriod) {
+          periodRowspan = 1;
+          for (let next = index + 1; next < prepared.length; next += 1) {
+            if (prepared[next].periodKey !== item.periodKey) break;
+            periodRowspan += 1;
+          }
+        }
+
+        if (startsTitular) {
+          titularRowspan = 1;
+          for (let next = index + 1; next < prepared.length; next += 1) {
+            if (prepared[next].periodKey !== item.periodKey || prepared[next].titularKey !== item.titularKey) break;
+            titularRowspan += 1;
+          }
+        }
+
+        if (startsAdminPeriod) {
+          adminPeriodRowspan = 1;
+          for (let next = index + 1; next < prepared.length; next += 1) {
+            if (
+              prepared[next].periodKey !== item.periodKey ||
+              prepared[next].titularKey !== item.titularKey ||
+              prepared[next].adminPeriodKey !== item.adminPeriodKey
+            ) {
+              break;
+            }
+            adminPeriodRowspan += 1;
+          }
+        }
+
+        if (startsAdminName) {
+          adminNameRowspan = 1;
+          for (let next = index + 1; next < prepared.length; next += 1) {
+            if (
+              prepared[next].periodKey !== item.periodKey ||
+              prepared[next].titularKey !== item.titularKey ||
+              prepared[next].adminPeriodKey !== item.adminPeriodKey ||
+              prepared[next].adminNameKey !== item.adminNameKey
+            ) {
+              break;
+            }
+            adminNameRowspan += 1;
+          }
+        }
+
+        return {
+          ...item.row,
+          periodRowspan,
+          titularRowspan,
+          adminPeriodRowspan,
+          adminNameRowspan,
+        };
+      });
     };
 
     const fillEnteSelect = (selectElement, rows, { selectedValue = "", emptyLabel = "Selecciona un ente", allowBlank = true } = {}) => {
@@ -362,6 +762,7 @@
       if (selectedValue) {
         selectElement.value = selectedValue;
       }
+      selectElement.dispatchEvent(new Event("ente-search-sync"));
     };
 
     const loadEntesForSelect = async (selectElement, ejercicio, { selectedValue = "", emptyLabel = "Selecciona un ente", allowBlank = true } = {}) => {
@@ -422,19 +823,6 @@
       if (createMode) {
         createMode.hidden = false;
       }
-      if (editMode) {
-        editMode.hidden = true;
-      }
-      if (editForm) {
-        editForm.reset();
-      }
-      if (editTitle) {
-        editTitle.textContent = "Editar registro";
-      }
-      if (editContext) {
-        editContext.textContent = "";
-      }
-      setStatus(editStatus, "");
       syncAdminPeriodFields({ copyDates: false });
     };
 
@@ -454,59 +842,66 @@
         return;
       }
 
-      const groups = [
-        {
-          key: "titular",
-          label: "Titular",
-          emptyMessage: "No hay titular registrado para este contexto.",
-        },
-        {
-          key: "director_administrativo",
-          label: "Director Administrativo",
-          emptyMessage: "No hay director administrativo registrado para este contexto.",
-        },
-      ];
-
-      historyGroups.innerHTML = groups.map((group) => {
-        const rows = historyRows.filter((row) => String(row.tipo_registro || "").trim() === group.key);
-        return `
-          <section class="titular-history-group">
-            <div class="titular-history-group-head">
-              <h3>${group.label}</h3>
-              <span>${rows.length}</span>
-            </div>
-            ${
-              rows.length
-                ? `<div class="titular-history-records">
-                    ${rows.map((row) => `
-                      <article class="titular-history-record" data-row-card-id="${escapeHtml(row.id)}">
-                        <div class="titular-history-record-main">
-                          <strong>${escapeHtml(row.nombre || "Sin nombre")}</strong>
-                          <span>${escapeHtml(row.cargo || defaultCargoForTipoRegistro(row.tipo_registro))}</span>
-                        </div>
-                        <div class="titular-history-record-meta">
-                          <span>${escapeHtml(formatDateForCard(row.fecha_inicio))} al ${escapeHtml(formatDateForCard(row.fecha_fin))}</span>
-                        </div>
-                        <div class="titular-history-record-actions">
-                          <button class="btn-secondary btn-compact" type="button" data-edit-row-id="${escapeHtml(row.id)}">Editar</button>
-                        </div>
-                      </article>
-                    `).join("")}
-                  </div>`
-                : `<p class="muted titular-history-empty-text">${group.emptyMessage}</p>`
-            }
-          </section>
+      const rows = Array.isArray(titularCaptureRows) ? titularCaptureRows : [];
+      if (!rows.length) {
+        historyGroups.innerHTML = `
+          <div class="titular-history-empty">
+            <p class="muted">No hay titulares cargados para este contexto.</p>
+          </div>
         `;
-      }).join("");
+        if (historyCount) {
+          historyCount.textContent = "Sin registros cargados en el contexto actual.";
+        }
+        return;
+      }
+
+      const firstRow = rows[0] || {};
+      const ejercicio = String(firstRow.ejercicio || (ejercicioInput ? ejercicioInput.value || "" : "")).trim();
+      const enteNombre = formatEnteNameForLoadedTable(firstRow.ente_nombre || "");
+      const tableRows = buildLoadedTableRows(rows);
+
+      historyGroups.innerHTML = `
+        <section class="titular-loaded-table-card">
+          <div class="titular-loaded-document-head">
+            <h3>EJERCICIO ${escapeHtml(ejercicio || "—")}</h3>
+            <p><strong>Nombre del ente:</strong> ${escapeHtml(enteNombre)}</p>
+          </div>
+          <div class="titular-loaded-table-wrap">
+            <table class="titular-loaded-table">
+              <thead>
+                <tr>
+                  <th>Periodos Informe</th>
+                  <th>Titular</th>
+                  <th>Administrativo</th>
+                  <th>Director Administrativo a cargo</th>
+                  <th>Cédulas de resultados</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${tableRows.map((row) => `
+                  <tr>
+                    ${row.periodRowspan ? `<td class="titular-loaded-merged-cell" rowspan="${row.periodRowspan}">${escapeHtml(formatPeriodDisplay(row.periodo_informe))}</td>` : ""}
+                    ${row.titularRowspan ? `<td class="titular-loaded-merged-cell" rowspan="${row.titularRowspan}">${escapeHtml(row.titular || "—")}</td>` : ""}
+                    ${row.adminPeriodRowspan ? `<td class="titular-loaded-merged-cell" rowspan="${row.adminPeriodRowspan}">${escapeHtml(formatPeriodDisplay(row.periodo_administrativo))}</td>` : ""}
+                    ${row.adminNameRowspan ? `<td class="titular-loaded-merged-cell" rowspan="${row.adminNameRowspan}">${escapeHtml(row.administrativo || "—")}</td>` : ""}
+                    <td>${escapeHtml(formatPeriodDisplay(row.cedula_resultados))}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      `;
 
       if (historyCount) {
-        historyCount.textContent = `${historyRows.length} registros en el contexto actual.`;
+        historyCount.textContent = `${rows.length} registro(s) cargado(s) en el contexto actual.`;
       }
     };
 
     const loadHistory = async () => {
       if (!contextIsComplete()) {
         historyRows = [];
+        titularCaptureRows = [];
         renderHistory();
         setStatus(historyStatus, "", "info");
         return;
@@ -525,10 +920,12 @@
           throw new Error(data.error || "No se pudo consultar el historial.");
         }
         historyRows = Array.isArray(data.rows) ? data.rows : [];
+        titularCaptureRows = Array.isArray(data.capture_rows) ? data.capture_rows : [];
         renderHistory();
         setStatus(historyStatus, "", "info");
       } catch (error) {
         historyRows = [];
+        titularCaptureRows = [];
         renderHistory();
         setStatus(
           historyStatus,
@@ -538,41 +935,190 @@
       }
     };
 
-    const openEditMode = (row) => {
-      if (!row || !editMode || !createMode) {
+    const initTitularEnteSearch = () => {
+      if (!enteInput || !enteSearchInput || !enteSearchDropdown || !enteSearchClear) {
         return;
       }
-      createMode.hidden = true;
-      editMode.hidden = false;
-      if (editTitle) {
-        editTitle.textContent = `Editar ${formatTipoRegistro(row.tipo_registro)}`;
-      }
-      if (editContext) {
-        editContext.textContent = contextLabel();
-      }
-      if (editIdInput) {
-        editIdInput.value = String(row.id || "");
-      }
-      if (editTipoRegistroInput) {
-        editTipoRegistroInput.value = String(row.tipo_registro || "");
-      }
-      if (editNombreInput) {
-        editNombreInput.value = String(row.nombre || "");
-      }
-      if (editCargoInput) {
-        editCargoInput.value = String(row.cargo || defaultCargoForTipoRegistro(row.tipo_registro));
-      }
-      if (editFechaInicioInput) {
-        editFechaInicioInput.value = String(row.fecha_inicio || "");
-      }
-      if (editFechaFinInput) {
-        editFechaFinInput.value = String(row.fecha_fin || "");
-      }
-      syncDateBounds(editFechaInicioInput, editFechaFinInput);
-      setStatus(editStatus, "", "info");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      let options = [];
+      let activeIndex = -1;
+
+      const collectOptions = () => {
+        options = Array.from(enteInput.options)
+          .filter((option) => option.value)
+          .map((option) => ({
+            value: option.value,
+            label: String(option.textContent || "").trim(),
+          }));
+      };
+
+      const highlightMatch = (text, query) => {
+        if (!query) {
+          return escapeHtml(text);
+        }
+        const escapedQuery = String(query).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return escapeHtml(text).replace(new RegExp(`(${escapedQuery})`, "gi"), "<mark>$1</mark>");
+      };
+
+      const renderDropdown = (query = "") => {
+        collectOptions();
+        const q = String(query || "").toLowerCase().trim();
+        const filtered = q
+          ? options.filter((option) => option.label.toLowerCase().includes(q))
+          : options;
+        if (!filtered.length) {
+          enteSearchDropdown.innerHTML = '<div class="ente-search-no-results">Sin resultados</div>';
+          enteSearchDropdown.classList.add("is-open");
+          activeIndex = -1;
+          return;
+        }
+        enteSearchDropdown.innerHTML = filtered.map((option, index) => (
+          `<div class="ente-search-option" data-value="${escapeHtml(option.value)}" data-index="${index}">${highlightMatch(option.label, q)}</div>`
+        )).join("");
+        enteSearchDropdown.classList.add("is-open");
+        activeIndex = -1;
+      };
+
+      const selectOption = (value, label) => {
+        enteInput.value = value || "";
+        enteInput.dataset.selected = value || "";
+        enteSearchInput.value = String(label || "").replace(/<[^>]*>/g, "").trim();
+        enteSearchClear.style.display = enteInput.value ? "block" : "none";
+        enteSearchDropdown.classList.remove("is-open");
+        enteInput.dispatchEvent(new Event("change"));
+      };
+
+      const syncInputFromSelect = () => {
+        collectOptions();
+        const value = String(enteInput.value || "").trim();
+        if (value) {
+          const match = options.find((option) => option.value === value);
+          enteSearchInput.value = match ? match.label : "";
+          enteSearchClear.style.display = "block";
+        } else {
+          enteSearchInput.value = "";
+          enteSearchClear.style.display = "none";
+        }
+      };
+
+      enteSearchInput.addEventListener("focus", () => {
+        renderDropdown(enteSearchInput.value);
+      });
+
+      enteSearchInput.addEventListener("input", () => {
+        renderDropdown(enteSearchInput.value);
+        if (!enteSearchInput.value) {
+          enteSearchClear.style.display = "none";
+          enteInput.value = "";
+          enteInput.dataset.selected = "";
+          enteInput.dispatchEvent(new Event("change"));
+        } else {
+          enteSearchClear.style.display = "block";
+        }
+      });
+
+      enteSearchInput.addEventListener("keydown", (event) => {
+        const items = Array.from(enteSearchDropdown.querySelectorAll(".ente-search-option"));
+        if (!items.length) {
+          return;
+        }
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          activeIndex = Math.min(activeIndex + 1, items.length - 1);
+          items.forEach((item, index) => item.classList.toggle("is-active", index === activeIndex));
+          items[activeIndex].scrollIntoView({ block: "nearest" });
+        } else if (event.key === "ArrowUp") {
+          event.preventDefault();
+          activeIndex = Math.max(activeIndex - 1, 0);
+          items.forEach((item, index) => item.classList.toggle("is-active", index === activeIndex));
+          items[activeIndex].scrollIntoView({ block: "nearest" });
+        } else if (event.key === "Enter") {
+          event.preventDefault();
+          if (activeIndex >= 0 && items[activeIndex]) {
+            selectOption(items[activeIndex].dataset.value, items[activeIndex].textContent);
+          }
+        } else if (event.key === "Escape") {
+          enteSearchDropdown.classList.remove("is-open");
+          enteSearchInput.blur();
+        }
+      });
+
+      enteSearchDropdown.addEventListener("click", (event) => {
+        const item = event.target.closest(".ente-search-option");
+        if (item) {
+          selectOption(item.dataset.value, item.textContent);
+        }
+      });
+
+      enteSearchClear.addEventListener("click", () => {
+        enteSearchInput.value = "";
+        enteSearchClear.style.display = "none";
+        enteInput.value = "";
+        enteInput.dataset.selected = "";
+        enteInput.dispatchEvent(new Event("change"));
+        enteSearchInput.focus();
+      });
+
+      document.addEventListener("click", (event) => {
+        if (!event.target.closest(".ente-search-wrapper")) {
+          enteSearchDropdown.classList.remove("is-open");
+        }
+      });
+
+      const observer = new MutationObserver(() => syncInputFromSelect());
+      observer.observe(enteInput, { childList: true, attributes: true, attributeFilter: ["value"] });
+      enteInput.addEventListener("ente-search-sync", syncInputFromSelect);
+      syncInputFromSelect();
     };
 
+    if (titularExcelUploadZone && titularExcelFileInput) {
+      titularExcelUploadZone.addEventListener("click", () => {
+        titularExcelFileInput.click();
+      });
+      titularExcelUploadZone.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        titularExcelUploadZone.classList.add("drag-over");
+      });
+      titularExcelUploadZone.addEventListener("dragleave", () => {
+        titularExcelUploadZone.classList.remove("drag-over");
+      });
+      titularExcelUploadZone.addEventListener("drop", (event) => {
+        event.preventDefault();
+        titularExcelUploadZone.classList.remove("drag-over");
+        const file = event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files[0] : null;
+        if (!file) {
+          return;
+        }
+        const transfer = new DataTransfer();
+        transfer.items.add(file);
+        titularExcelFileInput.files = transfer.files;
+        updateTitularExcelFileState();
+        analyzeTitularExcelFile();
+      });
+    }
+    if (titularExcelFileInput) {
+      titularExcelFileInput.addEventListener("change", () => {
+        updateTitularExcelFileState();
+        if (titularExcelFileInput.files && titularExcelFileInput.files[0]) {
+          analyzeTitularExcelFile();
+        }
+      });
+    }
+    if (titularExcelUploadForm) {
+      titularExcelUploadForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        analyzeTitularExcelFile();
+      });
+    }
+    if (titularExcelApplyBtn) {
+      titularExcelApplyBtn.addEventListener("click", () => {
+        applyTitularExcelPreview();
+      });
+    }
+    if (titularExcelResetBtn) {
+      titularExcelResetBtn.addEventListener("click", () => {
+        resetTitularExcelPreview();
+      });
+    }
     if (adminMismoPeriodoInput) {
       adminMismoPeriodoInput.addEventListener("change", () => {
         syncAdminPeriodFields({ copyDates: adminMismoPeriodoInput.checked });
@@ -606,7 +1152,13 @@
     }
 
     if (createForm) {
-      createForm.addEventListener("submit", () => {
+      createForm.addEventListener("submit", (event) => {
+        const ejercicio = ejercicioInput ? String(ejercicioInput.value || "").trim() : "";
+        if (isReadOnlyEjercicio(ejercicio)) {
+          event.preventDefault();
+          setStatus(historyStatus, `El ejercicio ${ejercicio} está concluido y solo puede consultarse.`, "error");
+          return;
+        }
         syncAdminPeriodFields({ copyDates: true });
       });
     }
@@ -614,108 +1166,38 @@
     if (ejercicioInput) {
       ejercicioInput.addEventListener("change", async () => {
         showCreateMode();
+        resetTitularExcelPreview();
         await loadEntesForSelect(enteInput, ejercicioInput.value, {
           selectedValue: "",
           emptyLabel: "Selecciona un ente",
           allowBlank: true,
         });
+        updateTitularExcelContextLabel();
         await loadHistory();
       });
     }
     if (enteInput) {
       enteInput.addEventListener("change", async () => {
         showCreateMode();
+        resetTitularExcelPreview();
+        updateTitularExcelContextLabel();
         await loadHistory();
       });
     }
     if (tipoInput) {
       tipoInput.addEventListener("change", async () => {
         showCreateMode();
+        resetTitularExcelPreview();
+        updateTitularExcelContextLabel();
         await loadHistory();
-      });
-    }
-
-    if (historyGroups) {
-      historyGroups.addEventListener("click", (event) => {
-        const editButton = event.target.closest("[data-edit-row-id]");
-        if (!editButton) {
-          return;
-        }
-        const rowId = Number(editButton.dataset.editRowId || 0);
-        if (!rowId) {
-          return;
-        }
-        const selectedRow = historyRows.find((item) => Number(item.id) === rowId);
-        if (!selectedRow) {
-          return;
-        }
-        openEditMode(selectedRow);
-      });
-    }
-
-    if (editCancelBtn) {
-      editCancelBtn.addEventListener("click", () => {
-        showCreateMode();
-      });
-    }
-    if (editFechaInicioInput) {
-      editFechaInicioInput.addEventListener("change", () => {
-        syncDateBounds(editFechaInicioInput, editFechaFinInput);
-      });
-    }
-    if (editFechaFinInput) {
-      editFechaFinInput.addEventListener("change", () => {
-        syncDateBounds(editFechaInicioInput, editFechaFinInput);
-      });
-    }
-
-    if (editForm) {
-      editForm.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const historialId = Number(editIdInput ? editIdInput.value || 0 : 0);
-        if (!historialId || !contextIsComplete()) {
-          setStatus(editStatus, "Selecciona un contexto válido antes de guardar.", "error");
-          return;
-        }
-        const payload = {
-          ejercicio: ejercicioInput ? ejercicioInput.value || "" : "",
-          ente_id: enteInput ? enteInput.value || "" : "",
-          tipo_auditoria: tipoInput ? tipoInput.value || "" : "",
-          tipo_registro: editTipoRegistroInput ? editTipoRegistroInput.value || "" : "",
-          nombre: editNombreInput ? editNombreInput.value || "" : "",
-          cargo: editCargoInput ? editCargoInput.value || "" : "",
-          fecha_inicio: editFechaInicioInput ? editFechaInicioInput.value || "" : "",
-          fecha_fin: editFechaFinInput ? editFechaFinInput.value || "" : "",
-        };
-        setStatus(editStatus, "Guardando cambios...", "info");
-        try {
-          const response = await fetch(`/carga/titulares/historial/${historialId}/actualizar`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            credentials: "same-origin",
-            body: JSON.stringify(payload),
-          });
-          const data = await response.json();
-          if (!response.ok || !data.ok) {
-            throw new Error(data.error || "No se pudo guardar la corrección.");
-          }
-          showCreateMode();
-          await loadHistory();
-          setStatus(historyStatus, data.message || "Registro actualizado.", "success");
-        } catch (error) {
-          setStatus(
-            editStatus,
-            error instanceof Error ? error.message : "No se pudo guardar la corrección.",
-            "error",
-          );
-        }
       });
     }
 
     syncDateBounds(titularFechaInicioInput, titularFechaFinInput);
     syncAdminPeriodFields({ copyDates: false });
+    initTitularEnteSearch();
+    resetTitularExcelPreview();
+    updateTitularExcelContextLabel();
     renderHistory();
     loadHistory();
   </script>

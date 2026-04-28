@@ -369,6 +369,23 @@ def is_remanente_fuente(value: str) -> bool:
     )
 
 
+def normalize_origen_fuente(value: str) -> str:
+    clean = " ".join((value or "").split())
+    key = normalize_text_key(clean)
+    if key in {"remanente", "remanentes"}:
+        return "Remanentes"
+    if key in {"del ejercicio", "ejercicio", "del_ejercicio"}:
+        return "Del Ejercicio"
+    return clean
+
+
+def infer_origen_fuente(fuente_nombre: str, origen_fuente: str = "") -> str:
+    origen = normalize_origen_fuente(origen_fuente)
+    if origen in {"Del Ejercicio", "Remanentes"}:
+        return origen
+    return "Remanentes" if is_remanente_fuente(fuente_nombre) else "Del Ejercicio"
+
+
 def _sentence_case_irregularidad(value: str) -> str:
     clean = " ".join((value or "").replace("—", "-").replace("–", "-").split()).rstrip(".").strip()
     if not clean:
@@ -1566,6 +1583,9 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS fuentes_financiamiento (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 nombre TEXT NOT NULL UNIQUE,
+                ramo_33 TEXT NOT NULL DEFAULT 'No',
+                ramo_28 TEXT NOT NULL DEFAULT 'No',
+                origen_fuente TEXT NOT NULL DEFAULT 'Del Ejercicio',
                 created_at TEXT NOT NULL
             )
             """
@@ -1637,6 +1657,7 @@ def init_db() -> None:
                 convenio_ente_id TEXT,
                 ramo_33 TEXT NOT NULL,
                 ramo_28 TEXT NOT NULL DEFAULT 'No',
+                origen_fuente TEXT NOT NULL DEFAULT 'Del Ejercicio',
                 periodo_cedula TEXT,
                 periodo_titular TEXT,
                 periodo TEXT,
@@ -1683,6 +1704,7 @@ def init_db() -> None:
                 fecha_notificacion TEXT,
                 ramo_33 TEXT NOT NULL DEFAULT 'No',
                 ramo_28 TEXT NOT NULL DEFAULT 'No',
+                origen_fuente TEXT NOT NULL DEFAULT 'Del Ejercicio',
                 estado TEXT NOT NULL DEFAULT 'E',
                 cantidad_sa INTEGER NOT NULL DEFAULT 0,
                 cantidad_pdp INTEGER NOT NULL DEFAULT 0,
@@ -1721,6 +1743,45 @@ def init_db() -> None:
             row[1]
             for row in conn.execute("PRAGMA table_info(registros)").fetchall()
         }
+
+        fuentes_columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(fuentes_financiamiento)").fetchall()
+        }
+        if "ramo_33" not in fuentes_columns:
+            conn.execute("ALTER TABLE fuentes_financiamiento ADD COLUMN ramo_33 TEXT NOT NULL DEFAULT 'No'")
+        if "ramo_28" not in fuentes_columns:
+            conn.execute("ALTER TABLE fuentes_financiamiento ADD COLUMN ramo_28 TEXT NOT NULL DEFAULT 'No'")
+        if "origen_fuente" not in fuentes_columns:
+            conn.execute(
+                "ALTER TABLE fuentes_financiamiento ADD COLUMN origen_fuente TEXT NOT NULL DEFAULT 'Del Ejercicio'"
+            )
+        conn.execute(
+            """
+            UPDATE fuentes_financiamiento
+            SET ramo_33 = 'No'
+            WHERE TRIM(COALESCE(ramo_33, '')) = ''
+            """
+        )
+        conn.execute(
+            """
+            UPDATE fuentes_financiamiento
+            SET ramo_28 = 'No'
+            WHERE TRIM(COALESCE(ramo_28, '')) = ''
+            """
+        )
+        conn.execute(
+            """
+            UPDATE fuentes_financiamiento
+            SET origen_fuente = CASE
+                WHEN LOWER(TRIM(COALESCE(nombre, ''))) LIKE 'remanente%' THEN 'Remanentes'
+                WHEN LOWER(TRIM(COALESCE(nombre, ''))) LIKE 'rea:%' THEN 'Remanentes'
+                WHEN LOWER(TRIM(COALESCE(nombre, ''))) LIKE 'seguimiento%' THEN 'Remanentes'
+                ELSE 'Del Ejercicio'
+            END
+            WHERE TRIM(COALESCE(origen_fuente, '')) = ''
+            """
+        )
 
         historial_columns = {
             row[1]
@@ -1792,6 +1853,10 @@ def init_db() -> None:
             conn.execute("ALTER TABLE cargas_manuales ADD COLUMN ramo_33 TEXT NOT NULL DEFAULT 'No'")
         if "ramo_28" not in cargas_manuales_columns:
             conn.execute("ALTER TABLE cargas_manuales ADD COLUMN ramo_28 TEXT NOT NULL DEFAULT 'No'")
+        if "origen_fuente" not in cargas_manuales_columns:
+            conn.execute(
+                "ALTER TABLE cargas_manuales ADD COLUMN origen_fuente TEXT NOT NULL DEFAULT 'Del Ejercicio'"
+            )
         conn.execute(
             """
             UPDATE cargas_manuales
@@ -1804,6 +1869,18 @@ def init_db() -> None:
             UPDATE cargas_manuales
             SET ramo_28 = 'No'
             WHERE TRIM(COALESCE(ramo_28, '')) = ''
+            """
+        )
+        conn.execute(
+            """
+            UPDATE cargas_manuales
+            SET origen_fuente = CASE
+                WHEN LOWER(TRIM(COALESCE(fuente_nombre, ''))) LIKE 'remanente%' THEN 'Remanentes'
+                WHEN LOWER(TRIM(COALESCE(fuente_nombre, ''))) LIKE 'rea:%' THEN 'Remanentes'
+                WHEN LOWER(TRIM(COALESCE(fuente_nombre, ''))) LIKE 'seguimiento%' THEN 'Remanentes'
+                ELSE 'Del Ejercicio'
+            END
+            WHERE TRIM(COALESCE(origen_fuente, '')) = ''
             """
         )
         if "estado" not in cargas_manuales_columns:
@@ -1954,11 +2031,27 @@ def init_db() -> None:
             conn.execute("ALTER TABLE observaciones ADD COLUMN ramo_33 TEXT")
         if "ramo_28" not in observaciones_columns:
             conn.execute("ALTER TABLE observaciones ADD COLUMN ramo_28 TEXT NOT NULL DEFAULT 'No'")
+        if "origen_fuente" not in observaciones_columns:
+            conn.execute(
+                "ALTER TABLE observaciones ADD COLUMN origen_fuente TEXT NOT NULL DEFAULT 'Del Ejercicio'"
+            )
         conn.execute(
             """
             UPDATE observaciones
             SET ramo_28 = 'No'
             WHERE TRIM(COALESCE(ramo_28, '')) = ''
+            """
+        )
+        conn.execute(
+            """
+            UPDATE observaciones
+            SET origen_fuente = CASE
+                WHEN LOWER(TRIM(COALESCE(fuente_financiamiento, ''))) LIKE 'remanente%' THEN 'Remanentes'
+                WHEN LOWER(TRIM(COALESCE(fuente_financiamiento, ''))) LIKE 'rea:%' THEN 'Remanentes'
+                WHEN LOWER(TRIM(COALESCE(fuente_financiamiento, ''))) LIKE 'seguimiento%' THEN 'Remanentes'
+                ELSE 'Del Ejercicio'
+            END
+            WHERE TRIM(COALESCE(origen_fuente, '')) = ''
             """
         )
         if "periodo_cedula" not in observaciones_columns:
@@ -2068,6 +2161,12 @@ def init_db() -> None:
             """
             CREATE INDEX IF NOT EXISTS idx_obs_ejercicio_filtros_ramo28
             ON observaciones (ejercicio, fuente_financiamiento, ramo_33, ramo_28, periodo_cedula)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_obs_ejercicio_origen_filtros
+            ON observaciones (ejercicio, origen_fuente, fuente_financiamiento, ramo_33, ramo_28, periodo_cedula)
             """
         )
         conn.execute(
@@ -2289,7 +2388,10 @@ ROUTE_DEPS = {
     "get_db": get_db,
     "normalize_ente_id": normalize_ente_id,
     "normalize_ente_id_sql": normalize_ente_id_sql,
+    "normalize_text_key": normalize_text_key,
     "normalize_fuente_financiamiento": normalize_fuente_financiamiento,
+    "normalize_origen_fuente": normalize_origen_fuente,
+    "infer_origen_fuente": infer_origen_fuente,
     "normalize_irregularidad_concepto": normalize_irregularidad_concepto,
     "normalize_irregularidad_subconcepto": normalize_irregularidad_subconcepto,
     "normalize_tipo_auditoria": normalize_tipo_auditoria,

@@ -1,0 +1,67 @@
+{% set gabo_module_active = gabo_module_active|default('carga') %}
+{% set _form_data = form_data|default({}) %}
+{% set _nav_ejercicio = (request.args.get('ejercicio') or ejercicio_default|default('') or _form_data.manual_ejercicio|default('') or _form_data.titular_ejercicio|default(''))|trim %}
+{% set _nav_ente_id = (request.args.get('ente_id') or _form_data.manual_ente_id|default('') or _form_data.titular_ente_id|default(''))|trim %}
+{% set _nav_tipo = (request.args.get('tipo_auditoria') or _form_data.manual_tipo_auditoria|default('') or _form_data.titular_tipo_auditoria|default(''))|trim %}
+{% set _nav_oficio = (request.args.get('oficio') or _form_data.manual_numero_oficio|default(''))|trim %}
+{% set _carga_q = namespace(value='') %}
+{% if _nav_ejercicio %}{% set _carga_q.value = _carga_q.value ~ ('&' if _carga_q.value else '?') ~ 'ejercicio=' ~ (_nav_ejercicio|urlencode) %}{% endif %}
+{% if _nav_ente_id %}{% set _carga_q.value = _carga_q.value ~ ('&' if _carga_q.value else '?') ~ 'ente_id=' ~ (_nav_ente_id|urlencode) %}{% endif %}
+{% if _nav_tipo %}{% set _carga_q.value = _carga_q.value ~ ('&' if _carga_q.value else '?') ~ 'tipo_auditoria=' ~ (_nav_tipo|urlencode) %}{% endif %}
+{% if _nav_oficio %}{% set _carga_q.value = _carga_q.value ~ ('&' if _carga_q.value else '?') ~ 'oficio=' ~ (_nav_oficio|urlencode) %}{% endif %}
+{% set _fuentes_q = namespace(value='') %}
+{% if _nav_ejercicio %}{% set _fuentes_q.value = '?ejercicio=' ~ (_nav_ejercicio|urlencode) %}{% endif %}
+{% set _titulares_q = namespace(value='') %}
+{% if _nav_ejercicio %}{% set _titulares_q.value = _titulares_q.value ~ ('&' if _titulares_q.value else '?') ~ 'ejercicio=' ~ (_nav_ejercicio|urlencode) %}{% endif %}
+{% if _nav_ente_id %}{% set _titulares_q.value = _titulares_q.value ~ ('&' if _titulares_q.value else '?') ~ 'ente_id=' ~ (_nav_ente_id|urlencode) %}{% endif %}
+{% if _nav_tipo %}{% set _titulares_q.value = _titulares_q.value ~ ('&' if _titulares_q.value else '?') ~ 'tipo_auditoria=' ~ (_nav_tipo|urlencode) %}{% endif %}
+<nav class="mode-switch gabo-module-nav" aria-label="Navegación del módulo de carga">
+  <a
+    class="mode-switch-link{% if gabo_module_active == 'carga' %} is-active{% endif %}"
+    href="{{ url_for('carga') }}{{ _carga_q.value }}"
+    data-gabo-nav-link="carga"
+    data-base-href="{{ url_for('carga') }}"
+    {% if gabo_module_active == 'carga' %}aria-current="page"{% endif %}
+  >
+    <span class="gabo-module-nav-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M7 3.5H15L19 7.5V20.5H7V3.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        <path d="M14.5 3.8V8H18.7" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        <path d="M10 12H16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M10 16H15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <span>Oficios</span>
+  </a>
+  <a
+    class="mode-switch-link{% if gabo_module_active == 'fuentes' %} is-active{% endif %}"
+    href="{{ url_for('carga_herramientas') }}{{ _fuentes_q.value }}"
+    data-gabo-nav-link="fuentes"
+    data-base-href="{{ url_for('carga_herramientas') }}"
+    {% if gabo_module_active == 'fuentes' %}aria-current="page"{% endif %}
+  >
+    <span class="gabo-module-nav-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M4 7L12 3L20 7L12 11L4 7Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        <path d="M4 12L12 16L20 12" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        <path d="M4 17L12 21L20 17" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      </svg>
+    </span>
+    <span>Fuentes</span>
+  </a>
+  <a
+    class="mode-switch-link{% if gabo_module_active == 'titulares' %} is-active{% endif %}"
+    href="{{ url_for('carga_titulares') }}{{ _titulares_q.value }}"
+    data-gabo-nav-link="titulares"
+    data-base-href="{{ url_for('carga_titulares') }}"
+    {% if gabo_module_active == 'titulares' %}aria-current="page"{% endif %}
+  >
+    <span class="gabo-module-nav-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M12 12C14.2 12 16 10.2 16 8C16 5.8 14.2 4 12 4C9.8 4 8 5.8 8 8C8 10.2 9.8 12 12 12Z" stroke="currentColor" stroke-width="1.8"/>
+        <path d="M5 20C5.7 16.8 8.4 15 12 15C15.6 15 18.3 16.8 19 20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <span>Titulares</span>
+  </a>
+</nav>

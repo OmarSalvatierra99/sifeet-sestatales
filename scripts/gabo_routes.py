@@ -1,6 +1,6 @@
 import csv
 from datetime import datetime
-from io import StringIO
+from io import BytesIO, StringIO
 import json
 import os
 from pathlib import Path
@@ -10,8 +10,13 @@ import sys
 import tempfile
 import unicodedata
 
-from flask import jsonify, render_template, request
+from flask import jsonify, render_template, request, send_file
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
+from openpyxl.utils.exceptions import InvalidFileException
 from backup_utils import prune_backup_dir
+from scripts import financiamiento as financiamiento_service
 from scripts.parsers import parse_cedula
 
 
@@ -111,6 +116,8 @@ def register_gabo_routes(app, deps):
         "estatus": "estatus",
         "estado": "estatus",
     }
+    TITULAR_IMPORT_ALLOWED_EXTENSIONS = {".xlsx"}
+    TITULAR_IMPORT_PREVIEW_LIMIT = 140
     TITULAR_MONTHS_ES = {
         "01": "enero",
         "02": "febrero",
@@ -171,6 +178,9 @@ def register_gabo_routes(app, deps):
     def _ensure_editable_ejercicio(ejercicio: str, *, user=None) -> None:
         if _is_readonly_ejercicio(ejercicio, user=user):
             raise ValueError(_readonly_obs_message(ejercicio))
+
+    def _readonly_error_status(exc: ValueError) -> int:
+        return 403 if "concluido" in str(exc).lower() else 400
 
     def _editable_ejercicios(ejercicios: list[str], *, user=None) -> list[str]:
         readonly = _readonly_ejercicios_for_user(user)
@@ -533,6 +543,85 @@ def register_gabo_routes(app, deps):
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def _list_cargas_titulares_rows(
+        db,
+        *,
+        ejercicio: str,
+        ente_id_norm: str = "",
+        tipo_auditoria: str = "",
+    ) -> list[dict]:
+        if not ejercicio:
+            return []
+
+        where_clauses = ["TRIM(COALESCE(ct.ejercicio, '')) = ?"]
+        params: list[str] = [ejercicio]
+
+        if ente_id_norm:
+            where_clauses.append(f"{normalize_ente_id_sql('ct.ente_id')} = ?")
+            params.append(ente_id_norm)
+        if tipo_auditoria:
+            where_clauses.append("TRIM(COALESCE(ct.tipo_auditoria, '')) = ?")
+            params.append(tipo_auditoria)
+
+        rows = db.execute(
+            f"""
+            SELECT
+                ct.id,
+                TRIM(COALESCE(ct.ejercicio, '')) AS ejercicio,
+                TRIM(COALESCE(ct.ente_id, '')) AS ente_id,
+                TRIM(COALESCE(ed.ente_numero, '')) AS ente_numero,
+                TRIM(COALESCE(ed.ente_nombre, ct.ente_nombre, '')) AS ente_nombre,
+                TRIM(COALESCE(ct.tipo_auditoria, '')) AS tipo_auditoria,
+                TRIM(COALESCE(ct.periodo_informe, '')) AS periodo_informe,
+                TRIM(COALESCE(ct.titular, '')) AS titular,
+                TRIM(COALESCE(ct.periodo_administrativo, '')) AS periodo_administrativo,
+                TRIM(COALESCE(ct.administrativo, '')) AS administrativo,
+                TRIM(COALESCE(ct.cedula_resultados, '')) AS cedula_resultados,
+                TRIM(COALESCE(ct.created_at, '')) AS created_at
+            FROM cargas_titulares AS ct
+            LEFT JOIN entes_detalle AS ed
+              ON TRIM(COALESCE(ed.ejercicio, '')) = TRIM(COALESCE(ct.ejercicio, ''))
+             AND {normalize_ente_id_sql('ed.ente_id')} = {normalize_ente_id_sql('ct.ente_id')}
+            WHERE {" AND ".join(where_clauses)}
+            ORDER BY ct.id ASC
+            """,
+            params,
+        ).fetchall()
+
+        payload = []
+        for row in rows:
+            base_row = dict(row)
+            cedula_resultados = (base_row.get("cedula_resultados") or "").strip()
+            cedula_periodos = [
+                item.strip()
+                for item in re.split(r"\s*\|\s*", cedula_resultados)
+                if item.strip()
+            ] or [""]
+            for cedula_index, cedula_periodo in enumerate(cedula_periodos):
+                split_row = dict(base_row)
+                split_row["cedula_resultados"] = cedula_periodo
+                split_row["cedula_orden"] = cedula_index
+                payload.append(split_row)
+
+        def sort_key(row: dict) -> tuple[str, str, str, str, int, str, int]:
+            periodo_informe = row.get("periodo_informe") or ""
+            periodo_admin = row.get("periodo_administrativo") or ""
+            cedula_resultados = row.get("cedula_resultados") or ""
+            informe_inicio, _ = parse_periodo_cedula(ejercicio, periodo_informe)
+            admin_inicio, _ = parse_periodo_cedula(ejercicio, periodo_admin)
+            cedula_inicio, _ = parse_periodo_cedula(ejercicio, cedula_resultados)
+            return (
+                informe_inicio or periodo_informe.lower(),
+                admin_inicio or periodo_admin.lower(),
+                (row.get("titular") or "").lower(),
+                (row.get("administrativo") or "").lower(),
+                int(row.get("id") or 0),
+                cedula_inicio or cedula_resultados.lower(),
+                int(row.get("cedula_orden") or 0),
+            )
+
+        return sorted(payload, key=sort_key)
+
     def _upsert_historial_titular(
         db,
         *,
@@ -678,6 +767,7 @@ def register_gabo_routes(app, deps):
 
         if not titular_ejercicio:
             raise ValueError("Titulares: ejercicio requerido.")
+        _ensure_editable_ejercicio(titular_ejercicio, user=user)
         ejercicio_exists = db.execute(
             """
             SELECT 1
@@ -861,39 +951,605 @@ def register_gabo_routes(app, deps):
             "message": "Titulares: registro guardado correctamente en historial y bitácora.",
         }
 
+    def _clean_titular_excel_text(value) -> str:
+        if value is None:
+            return ""
+        if hasattr(value, "strftime"):
+            return value.strftime("%Y-%m-%d")
+        return " ".join(str(value).replace("\xa0", " ").replace("\n", " ").split()).strip()
+
+    def _titular_excel_merged_value(ws, row_index: int, column_index: int):
+        cell = ws.cell(row_index, column_index)
+        if cell.value is not None:
+            return cell.value
+        coordinate = cell.coordinate
+        for merged_range in ws.merged_cells.ranges:
+            if coordinate in merged_range:
+                return ws.cell(merged_range.min_row, merged_range.min_col).value
+        return None
+
+    def _normalize_titular_excel_period(raw_value: str) -> str:
+        clean = _clean_titular_excel_text(raw_value)
+        if not clean:
+            return ""
+        clean = re.sub(r"\*+", "", clean).strip()
+        clean = re.sub(r"\bseptimbre\b", "septiembre", clean, flags=re.IGNORECASE)
+        clean = re.sub(r"\bsetiembre\b", "septiembre", clean, flags=re.IGNORECASE)
+        clean = re.sub(r"\s+de\s+20\d{2}\b", "", clean, flags=re.IGNORECASE)
+        return " ".join(clean.split())
+
+    def _parse_titular_excel_period(ejercicio: str, raw_value: str, *, label: str) -> dict[str, str]:
+        periodo = _normalize_titular_excel_period(raw_value)
+        if not periodo:
+            raise ValueError(f"{label}: periodo vacío.")
+        fecha_inicio, fecha_fin = parse_periodo_cedula(ejercicio, periodo)
+        if not fecha_inicio or not fecha_fin:
+            raise ValueError(
+                f"{label}: periodo inválido {periodo!r}. Usa formato '01 de enero al 31 de diciembre'."
+            )
+        return {
+            "periodo": _format_periodo_label_from_dates(fecha_inicio, fecha_fin) or periodo,
+            "fecha_inicio": fecha_inicio,
+            "fecha_fin": fecha_fin,
+        }
+
+    def _is_titular_excel_note_row(values: list[str]) -> bool:
+        joined = normalize_text_key(" ".join(values))
+        if not joined:
+            return True
+        note_markers = (
+            "fecha de entrega",
+            "nota",
+            "se autorizo",
+            "revision a",
+            "revisión a",
+        )
+        if any(marker in joined for marker in note_markers):
+            return True
+        first_value = (values[0] or "").strip()
+        return first_value.startswith("*")
+
+    def _titular_import_file_entries(upload) -> list[dict[str, object]]:
+        file_name = Path(upload.filename or "").name
+        suffix = Path(file_name).suffix.lower()
+        if suffix not in TITULAR_IMPORT_ALLOWED_EXTENSIONS:
+            raise ValueError("Carga titulares: sube un archivo .xlsx.")
+        data = upload.read()
+        if not data:
+            raise ValueError("Carga titulares: el archivo está vacío.")
+        return [{"file_name": file_name, "data": data}]
+
+    def _find_titular_excel_header_row(ws) -> int:
+        for row_index in range(1, min(ws.max_row, 20) + 1):
+            values = [
+                normalize_text_key(_clean_titular_excel_text(_titular_excel_merged_value(ws, row_index, col)))
+                for col in range(1, 6)
+            ]
+            if "periodos informe" in values[0] and "titular" in values[1]:
+                return row_index
+        return 4
+
+    def _titular_import_tipo_options(raw_value: str) -> list[str]:
+        clean = normalize_tipo_auditoria(raw_value or "")
+        key = normalize_text_key(clean)
+        if key in {
+            "ambas",
+            "financiera y obra publica",
+            "obra publica y financiera",
+            "financiera obra publica",
+        }:
+            return ["Financiera", "Obra Pública"]
+        if clean in {"Financiera", "Obra Pública"}:
+            return [clean]
+        return ["Financiera", "Obra Pública"]
+
+    def _parse_titular_excel_workbook(
+        *,
+        file_name: str,
+        data: bytes,
+        ejercicio: str,
+        ente_row: dict,
+    ) -> dict[str, object]:
+        file_result = {
+            "file_name": file_name,
+            "sheet_name": "",
+            "ejercicio": "",
+            "ente_excel": "",
+            "ente_id": "",
+            "ente_numero": "",
+            "ente_nombre": "",
+            "resolution": "",
+            "status": "ok",
+            "warnings": [],
+            "errors": [],
+            "source_rows": 0,
+            "titulares": 0,
+            "administrativos": 0,
+            "capturas": 0,
+        }
+        history_rows: list[dict[str, str]] = []
+        capture_rows: list[dict[str, object]] = []
+
+        try:
+            workbook = load_workbook(BytesIO(data), data_only=True)
+        except (InvalidFileException, OSError, ValueError) as exc:
+            file_result["status"] = "error"
+            file_result["errors"].append("El archivo no se pudo abrir como Excel.")
+            return {"file": file_result, "history_rows": history_rows, "capture_rows": capture_rows}
+
+        ws = workbook[workbook.sheetnames[0]]
+        file_result["sheet_name"] = ws.title
+        ejercicio_text = _clean_titular_excel_text(_titular_excel_merged_value(ws, 1, 1))
+        ejercicio_match = re.search(r"(20\d{2})", ejercicio_text)
+        ejercicio_excel = ejercicio_match.group(1) if ejercicio_match else ""
+        file_result["ejercicio"] = ejercicio
+        ente_excel = _clean_titular_excel_text(_titular_excel_merged_value(ws, 2, 2))
+        file_result["ente_excel"] = ente_excel
+        if ejercicio_excel and ejercicio_excel != ejercicio:
+            file_result["warnings"].append(
+                f"El Excel indica ejercicio {ejercicio_excel}, pero se cargará en {ejercicio}."
+            )
+
+        file_result.update(
+            {
+                "ente_id": ente_row["ente_id"],
+                "ente_numero": ente_row["ente_numero"],
+                "ente_nombre": ente_row["ente_nombre"],
+                "resolution": "contexto seleccionado",
+            }
+        )
+
+        header_row = _find_titular_excel_header_row(ws)
+        titular_seen: dict[tuple[str, str, str], dict[str, str]] = {}
+        admin_seen: dict[tuple[str, str, str], dict[str, str]] = {}
+        capture_groups: dict[tuple[str, str, str, str, str, str], dict[str, object]] = {}
+
+        for row_index in range(header_row + 1, ws.max_row + 1):
+            raw_values = [
+                _clean_titular_excel_text(_titular_excel_merged_value(ws, row_index, column_index))
+                for column_index in range(1, 6)
+            ]
+            if not any(raw_values) or _is_titular_excel_note_row(raw_values):
+                continue
+
+            file_result["source_rows"] += 1
+            try:
+                periodo_informe = _parse_titular_excel_period(
+                    ejercicio,
+                    raw_values[0],
+                    label=f"{file_name}, fila {row_index}, periodo informe",
+                )
+                cedula = None
+                if _normalize_titular_excel_period(raw_values[4]):
+                    cedula = _parse_titular_excel_period(
+                        ejercicio,
+                        raw_values[4],
+                        label=f"{file_name}, fila {row_index}, cédula",
+                    )
+                admin_period_raw = raw_values[2]
+                if (
+                    not _normalize_titular_excel_period(admin_period_raw)
+                    and _clean_titular_excel_text(raw_values[3])
+                    and cedula
+                ):
+                    admin_period_raw = cedula["periodo"]
+                periodo_admin = _parse_titular_excel_period(
+                    ejercicio,
+                    admin_period_raw,
+                    label=f"{file_name}, fila {row_index}, periodo administrativo",
+                )
+            except ValueError as exc:
+                file_result["warnings"].append(str(exc))
+                continue
+
+            titular_nombre = _clean_titular_excel_text(raw_values[1])
+            admin_nombre = _clean_titular_excel_text(raw_values[3])
+            if not titular_nombre or not admin_nombre:
+                file_result["warnings"].append(
+                    f"{file_name}, fila {row_index}: faltan titular o administrativo."
+                )
+                continue
+
+            base_context = {
+                "ejercicio": ejercicio,
+                "ente_id": ente_row["ente_id"],
+                "ente_numero": ente_row["ente_numero"],
+                "ente_nombre": ente_row["ente_nombre"],
+                "ente_excel": ente_excel,
+                "file_name": file_name,
+                "sheet_name": ws.title,
+            }
+            titular_key = (
+                periodo_informe["fecha_inicio"],
+                periodo_informe["fecha_fin"],
+                titular_nombre.lower(),
+            )
+            if titular_key not in titular_seen:
+                titular_seen[titular_key] = {
+                    **base_context,
+                    "tipo_registro": "titular",
+                    "nombre": titular_nombre,
+                    "cargo": "Titular",
+                    "periodo": periodo_informe["periodo"],
+                    "fecha_inicio": periodo_informe["fecha_inicio"],
+                    "fecha_fin": periodo_informe["fecha_fin"],
+                }
+            admin_key = (
+                periodo_admin["fecha_inicio"],
+                periodo_admin["fecha_fin"],
+                admin_nombre.lower(),
+            )
+            if admin_key not in admin_seen:
+                admin_seen[admin_key] = {
+                    **base_context,
+                    "tipo_registro": "director_administrativo",
+                    "nombre": admin_nombre,
+                    "cargo": "Director Administrativo",
+                    "periodo": periodo_admin["periodo"],
+                    "fecha_inicio": periodo_admin["fecha_inicio"],
+                    "fecha_fin": periodo_admin["fecha_fin"],
+                }
+
+            capture_key = (
+                periodo_informe["fecha_inicio"],
+                periodo_informe["fecha_fin"],
+                titular_nombre.lower(),
+                periodo_admin["fecha_inicio"],
+                periodo_admin["fecha_fin"],
+                admin_nombre.lower(),
+            )
+            group = capture_groups.setdefault(
+                capture_key,
+                {
+                    **base_context,
+                    "periodo_informe": periodo_informe["periodo"],
+                    "periodo_informe_inicio": periodo_informe["fecha_inicio"],
+                    "periodo_informe_fin": periodo_informe["fecha_fin"],
+                    "titular": titular_nombre,
+                    "periodo_administrativo": periodo_admin["periodo"],
+                    "periodo_administrativo_inicio": periodo_admin["fecha_inicio"],
+                    "periodo_administrativo_fin": periodo_admin["fecha_fin"],
+                    "administrativo": admin_nombre,
+                    "cedulas": {},
+                    "source_rows": [],
+                },
+            )
+            group["source_rows"].append(row_index)
+            if cedula:
+                group["cedulas"][(cedula["fecha_inicio"], cedula["fecha_fin"])] = cedula["periodo"]
+
+        history_rows = list(titular_seen.values()) + list(admin_seen.values())
+        capture_rows = []
+        for group in capture_groups.values():
+            cedula_items = [
+                {"fecha_inicio": start, "fecha_fin": end, "periodo": label}
+                for (start, end), label in sorted(group.pop("cedulas").items())
+            ]
+            group["cedula_periodos"] = cedula_items
+            group["cedula_resultados"] = " | ".join(item["periodo"] for item in cedula_items)
+            group["source_rows"] = ", ".join(str(item) for item in group["source_rows"])
+            capture_rows.append(group)
+
+        file_result["titulares"] = sum(1 for row in history_rows if row["tipo_registro"] == "titular")
+        file_result["administrativos"] = sum(
+            1 for row in history_rows if row["tipo_registro"] == "director_administrativo"
+        )
+        file_result["capturas"] = len(capture_rows)
+        if file_result["warnings"]:
+            file_result["status"] = "warning"
+        if not capture_rows and not history_rows and not file_result["warnings"]:
+            file_result["status"] = "warning"
+            file_result["warnings"].append("No se encontraron registros de titulares en el formato esperado.")
+
+        return {"file": file_result, "history_rows": history_rows, "capture_rows": capture_rows}
+
+    def _build_titulares_excel_preview(
+        db,
+        upload,
+        *,
+        ejercicio: str,
+        ente_id_norm: str,
+        tipo_auditoria_destino: str,
+    ) -> dict[str, object]:
+        if not ejercicio:
+            raise ValueError("Carga titulares: selecciona un ejercicio.")
+        _ensure_editable_ejercicio(ejercicio, user=get_current_user())
+        if not ente_id_norm:
+            raise ValueError("Carga titulares: selecciona un ente.")
+        tipo_options = _titular_import_tipo_options(tipo_auditoria_destino)
+        if len(tipo_options) != 1:
+            raise ValueError("Carga titulares: selecciona un solo tipo de auditoría.")
+        ente_row = _get_ente_row_by_ejercicio_id(db, ejercicio, ente_id_norm)
+        if not ente_row:
+            raise ValueError("Carga titulares: el ente seleccionado no existe para ese ejercicio.")
+
+        entries = _titular_import_file_entries(upload)
+        files: list[dict[str, object]] = []
+        history_rows: list[dict[str, str]] = []
+        capture_rows: list[dict[str, object]] = []
+
+        for entry in entries:
+            parsed = _parse_titular_excel_workbook(
+                file_name=str(entry["file_name"]),
+                data=entry["data"],
+                ejercicio=ejercicio,
+                ente_row=dict(ente_row),
+            )
+            files.append(parsed["file"])
+            history_rows.extend(parsed["history_rows"])
+            capture_rows.extend(parsed["capture_rows"])
+
+        titular_count = sum(1 for row in history_rows if row["tipo_registro"] == "titular")
+        admin_count = sum(1 for row in history_rows if row["tipo_registro"] == "director_administrativo")
+        warning_count = sum(len(item.get("warnings") or []) for item in files)
+        error_count = sum(len(item.get("errors") or []) for item in files)
+
+        return {
+            "ok": True,
+            "tipo_auditoria_destino": tipo_options[0],
+            "tipo_auditoria_options": tipo_options,
+            "files": files,
+            "history_rows": history_rows,
+            "capture_rows": capture_rows,
+            "preview_capture_rows": capture_rows[:TITULAR_IMPORT_PREVIEW_LIMIT],
+            "preview_limit": TITULAR_IMPORT_PREVIEW_LIMIT,
+            "summary": {
+                "files_total": len(files),
+                "files_ok": sum(1 for item in files if item.get("status") == "ok"),
+                "files_warning": sum(1 for item in files if item.get("status") == "warning"),
+                "files_error": sum(1 for item in files if item.get("status") == "error"),
+                "titulares": titular_count,
+                "administrativos": admin_count,
+                "capturas": len(capture_rows),
+                "cedulas": sum(len(row.get("cedula_periodos") or []) for row in capture_rows),
+                "tipos_destino": len(tipo_options),
+                "warnings": warning_count,
+                "errors": error_count,
+            },
+        }
+
+    def _insert_titulares_import_capture(
+        db,
+        *,
+        user,
+        ejercicio: str,
+        ente_id: str,
+        ente_nombre: str,
+        tipo_auditoria: str,
+        periodo_informe: str,
+        titular: str,
+        periodo_administrativo: str,
+        administrativo: str,
+        cedula_resultados: str,
+    ) -> str:
+        duplicate_capture = db.execute(
+            """
+            SELECT id
+            FROM cargas_titulares
+            WHERE ejercicio = ?
+              AND ente_id = ?
+              AND tipo_auditoria = ?
+              AND periodo_informe = ?
+              AND titular = ?
+              AND periodo_administrativo = ?
+              AND administrativo = ?
+              AND cedula_resultados = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (
+                ejercicio,
+                ente_id,
+                tipo_auditoria,
+                periodo_informe,
+                titular,
+                periodo_administrativo,
+                administrativo,
+                cedula_resultados,
+            ),
+        ).fetchone()
+        if duplicate_capture:
+            return "unchanged"
+
+        db.execute(
+            """
+            INSERT INTO cargas_titulares (
+                ejercicio,
+                ente_id,
+                ente_nombre,
+                tipo_auditoria,
+                periodo_informe,
+                titular,
+                periodo_administrativo,
+                administrativo,
+                cedula_resultados,
+                created_by,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                ejercicio,
+                ente_id,
+                ente_nombre,
+                tipo_auditoria,
+                periodo_informe,
+                titular,
+                periodo_administrativo,
+                administrativo,
+                cedula_resultados,
+                user["username"],
+                datetime.now().strftime("%Y-%m-%d %H:%M"),
+            ),
+        )
+        return "inserted"
+
+    def _apply_titulares_excel_import(db, user, payload: dict) -> dict[str, object]:
+        history_rows = payload.get("history_rows")
+        capture_rows = payload.get("capture_rows")
+        if not isinstance(history_rows, list) or not isinstance(capture_rows, list):
+            raise ValueError("Carga titulares: analiza el Excel antes de aplicar.")
+        tipo_options = _titular_import_tipo_options(payload.get("tipo_auditoria_destino") or "")
+        if len(tipo_options) != 1:
+            raise ValueError("Carga titulares: selecciona un solo tipo de auditoría.")
+        if not history_rows and not capture_rows:
+            raise ValueError("Carga titulares: no hay registros válidos para guardar.")
+
+        for raw_row in [*history_rows, *capture_rows]:
+            if not isinstance(raw_row, dict):
+                continue
+            ejercicio = " ".join((raw_row.get("ejercicio") or "").split())
+            if ejercicio:
+                _ensure_editable_ejercicio(ejercicio, user=user)
+
+        backup_path = _create_db_snapshot("titulares-excel-import")
+        history_counts = {"inserted": 0, "updated": 0, "unchanged": 0}
+        capture_counts = {"inserted": 0, "unchanged": 0}
+        history_seen: set[tuple[str, ...]] = set()
+        capture_seen: set[tuple[str, ...]] = set()
+
+        for raw_row in history_rows:
+            if not isinstance(raw_row, dict):
+                continue
+            ejercicio = " ".join((raw_row.get("ejercicio") or "").split())
+            ente_id = normalize_ente_id(raw_row.get("ente_id") or "")
+            tipo_registro = " ".join((raw_row.get("tipo_registro") or "").split())
+            nombre = " ".join((raw_row.get("nombre") or "").split())
+            cargo = " ".join((raw_row.get("cargo") or "").split())
+            fecha_inicio = " ".join((raw_row.get("fecha_inicio") or "").split())
+            fecha_fin = " ".join((raw_row.get("fecha_fin") or "").split())
+            if not ejercicio or not ente_id:
+                raise ValueError("Carga titulares: cada registro debe tener ejercicio y ente.")
+            _ensure_editable_ejercicio(ejercicio, user=user)
+            if tipo_registro not in {"titular", "director_administrativo"}:
+                raise ValueError("Carga titulares: tipo de registro inválido.")
+            if not nombre:
+                raise ValueError("Carga titulares: cada registro debe tener nombre.")
+            inicio_date = parse_historial_date(fecha_inicio)
+            fin_date = parse_historial_date(fecha_fin)
+            if not inicio_date or not fin_date or inicio_date > fin_date:
+                raise ValueError("Carga titulares: hay fechas inválidas en el Excel.")
+
+            ente_row = _get_ente_row_by_ejercicio_id(db, ejercicio, ente_id)
+            if not ente_row:
+                raise ValueError(f"Carga titulares: ente {ente_id} no existe para {ejercicio}.")
+            ente_nombre = (ente_row["ente_nombre"] or "").strip()
+            ente_uid = (ente_row["ente_uid"] or "").strip()
+            for tipo_auditoria in tipo_options:
+                key = (
+                    ejercicio,
+                    ente_id,
+                    tipo_auditoria,
+                    tipo_registro,
+                    fecha_inicio,
+                    fecha_fin,
+                    nombre,
+                    cargo,
+                )
+                if key in history_seen:
+                    continue
+                history_seen.add(key)
+                state = _upsert_historial_titular(
+                    db,
+                    ejercicio=ejercicio,
+                    ente_uid=ente_uid,
+                    ente_nombre=ente_nombre,
+                    tipo_auditoria=tipo_auditoria,
+                    nombre=nombre,
+                    cargo=cargo or ("Titular" if tipo_registro == "titular" else "Director Administrativo"),
+                    fecha_inicio=inicio_date.isoformat(),
+                    fecha_fin=fin_date.isoformat(),
+                    tipo_registro=tipo_registro,
+                )
+                history_counts[state] = history_counts.get(state, 0) + 1
+
+        for raw_row in capture_rows:
+            if not isinstance(raw_row, dict):
+                continue
+            ejercicio = " ".join((raw_row.get("ejercicio") or "").split())
+            ente_id = normalize_ente_id(raw_row.get("ente_id") or "")
+            periodo_informe = " ".join((raw_row.get("periodo_informe") or "").split())
+            titular = " ".join((raw_row.get("titular") or "").split())
+            periodo_administrativo = " ".join((raw_row.get("periodo_administrativo") or "").split())
+            administrativo = " ".join((raw_row.get("administrativo") or "").split())
+            cedula_resultados = " ".join((raw_row.get("cedula_resultados") or "").split())
+            if not all([ejercicio, ente_id, periodo_informe, titular, periodo_administrativo, administrativo]):
+                continue
+            _ensure_editable_ejercicio(ejercicio, user=user)
+            ente_row = _get_ente_row_by_ejercicio_id(db, ejercicio, ente_id)
+            if not ente_row:
+                raise ValueError(f"Carga titulares: ente {ente_id} no existe para {ejercicio}.")
+            ente_nombre = (ente_row["ente_nombre"] or "").strip()
+            for tipo_auditoria in tipo_options:
+                key = (
+                    ejercicio,
+                    ente_id,
+                    tipo_auditoria,
+                    periodo_informe,
+                    titular,
+                    periodo_administrativo,
+                    administrativo,
+                    cedula_resultados,
+                )
+                if key in capture_seen:
+                    continue
+                capture_seen.add(key)
+                state = _insert_titulares_import_capture(
+                    db,
+                    user=user,
+                    ejercicio=ejercicio,
+                    ente_id=ente_id,
+                    ente_nombre=ente_nombre,
+                    tipo_auditoria=tipo_auditoria,
+                    periodo_informe=periodo_informe,
+                    titular=titular,
+                    periodo_administrativo=periodo_administrativo,
+                    administrativo=administrativo,
+                    cedula_resultados=cedula_resultados,
+                )
+                capture_counts[state] = capture_counts.get(state, 0) + 1
+
+        db.commit()
+        return {
+            "ok": True,
+            "message": "Carga titulares: Excel guardado en historial y bitácora.",
+            "backup_path": backup_path,
+            "history": history_counts,
+            "captures": capture_counts,
+            "tipo_auditoria_options": tipo_options,
+        }
+
     def resolve_fuente_catalogo(
         db,
         fuente_nombre: str,
         *,
         create_missing: bool = False,
     ) -> tuple[int | None, str]:
-        clean_name = normalize_fuente_financiamiento(fuente_nombre)
-        if not clean_name:
-            raise ValueError("Debes escribir la nueva fuente.")
-        row = db.execute(
-            """
-            SELECT id, TRIM(COALESCE(nombre, '')) AS nombre
-            FROM fuentes_financiamiento
-            WHERE LOWER(TRIM(nombre)) = LOWER(TRIM(?))
-            LIMIT 1
-            """,
-            (clean_name,),
-        ).fetchone()
-        if row:
-            return int(row["id"]), (row["nombre"] or "").strip()
-        if not create_missing:
-            return None, clean_name
-        cursor = db.execute(
-            """
-            INSERT INTO fuentes_financiamiento (nombre, created_at)
-            VALUES (?, ?)
-            """,
-            (
-                clean_name,
-                datetime.now().strftime("%Y-%m-%d %H:%M"),
-            ),
+        return financiamiento_service.resolve_fuente_catalogo(
+            db,
+            fuente_nombre,
+            normalizer=normalize_fuente_financiamiento,
+            create_missing=create_missing,
         )
-        return int(cursor.lastrowid), clean_name
+
+    def get_fuente_clasificacion(db, fuente_nombre: str, fuente_id: int | None = None) -> dict:
+        return financiamiento_service.get_fuente_clasificacion(
+            db,
+            fuente_nombre,
+            fuente_id=fuente_id,
+            normalizer=normalize_fuente_financiamiento,
+            si_no_normalizer=normalize_manual_si_no,
+            origen_normalizer=normalize_manual_origen_fuente,
+        )
+
+    def list_fuentes_financiamiento_admin(db, ejercicio: str) -> list[dict]:
+        return financiamiento_service.list_fuentes_financiamiento_admin(
+            db,
+            ejercicio,
+            normalizer=normalize_fuente_financiamiento,
+            si_no_normalizer=normalize_manual_si_no,
+            origen_normalizer=normalize_manual_origen_fuente,
+        )
 
     def register_fuente_for_ente(
         db,
@@ -1167,6 +1823,25 @@ def register_gabo_routes(app, deps):
         clean = " ".join((value or "").split()).lower()
         return "Convenio" if clean == "convenio" else "Fuente"
 
+    def normalize_manual_si_no(value: str, *, default: str = "No") -> str:
+        return financiamiento_service.normalize_si_no(value, default=default)
+
+    def normalize_manual_origen_fuente(
+        fuente_nombre: str,
+        raw_origen: str = "",
+        raw_remanente=None,
+    ) -> str:
+        if raw_origen:
+            return infer_origen_fuente(fuente_nombre, str(raw_origen))
+        if isinstance(raw_remanente, bool):
+            return "Remanentes" if raw_remanente else "Del Ejercicio"
+        remanente_key = normalize_text_key(str(raw_remanente or ""))
+        if remanente_key in {"si", "sí", "s", "1", "true", "verdadero", "remanente", "remanentes"}:
+            return "Remanentes"
+        if remanente_key in {"no", "n", "0", "false", "falso", "del ejercicio", "ejercicio"}:
+            return "Del Ejercicio"
+        return infer_origen_fuente(fuente_nombre, "")
+
     def _convenio_match_key(value: str) -> str:
         clean = unicodedata.normalize("NFD", value or "")
         clean = "".join(ch for ch in clean if unicodedata.category(ch) != "Mn")
@@ -1204,6 +1879,7 @@ def register_gabo_routes(app, deps):
         fuente_nombre: str,
         ramo_33: str,
         ramo_28: str,
+        origen_fuente: str,
         estado: str,
         periodo_cedula: str,
         periodo_titular: str,
@@ -1226,6 +1902,9 @@ def register_gabo_routes(app, deps):
         replace_scope: bool = False,
     ) -> None:
         fuente_nombre = normalize_fuente_financiamiento(fuente_nombre)
+        ramo_33 = normalize_manual_si_no(ramo_33)
+        ramo_28 = normalize_manual_si_no(ramo_28)
+        origen_fuente = normalize_manual_origen_fuente(fuente_nombre, origen_fuente)
         modalidad = normalize_observacion_modalidad(modalidad)
         convenio_nombre = normalize_convenio_text(convenio_nombre) if modalidad == "Convenio" else ""
         convenio_ente_nombre = normalize_convenio_text(convenio_ente_nombre) if modalidad == "Convenio" else ""
@@ -1320,6 +1999,7 @@ def register_gabo_routes(app, deps):
                         convenio_ente_id,
                         ramo_33,
                         ramo_28,
+                        origen_fuente,
                         periodo,
                         periodo_cedula,
                         periodo_titular,
@@ -1337,7 +2017,7 @@ def register_gabo_routes(app, deps):
                         pdp_subconcepto_irregularidad,
                         created_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         ejercicio,
@@ -1354,6 +2034,7 @@ def register_gabo_routes(app, deps):
                         convenio_ente_id,
                         ramo_33,
                         ramo_28,
+                        origen_fuente,
                         periodo_cedula,
                         periodo_cedula,
                         periodo_titular or periodo_cedula,
@@ -1422,15 +2103,22 @@ def register_gabo_routes(app, deps):
         convenio_nombre: str = "",
         convenio_ente_nombre: str = "",
         convenio_ente_id: str = "",
+        ramo_33: str = "No",
+        ramo_28: str = "No",
+        origen_fuente: str = "",
     ) -> dict[str, object]:
         modalidad = normalize_observacion_modalidad(modalidad)
+        fuente_nombre = normalize_fuente_financiamiento(fuente_nombre)
         return {
             "tipo_auditoria": tipo_auditoria,
-            "fuente_nombre": normalize_fuente_financiamiento(fuente_nombre),
+            "fuente_nombre": fuente_nombre,
             "modalidad": modalidad,
             "convenio_nombre": normalize_convenio_text(convenio_nombre) if modalidad == "Convenio" else "",
             "convenio_ente_nombre": normalize_convenio_text(convenio_ente_nombre) if modalidad == "Convenio" else "",
             "convenio_ente_id": normalize_ente_id(convenio_ente_id) if modalidad == "Convenio" else "",
+            "ramo_33": normalize_manual_si_no(ramo_33),
+            "ramo_28": normalize_manual_si_no(ramo_28),
+            "origen_fuente": normalize_manual_origen_fuente(fuente_nombre, origen_fuente),
             "cantidad_sa": int(cantidad_sa),
             "cantidad_pdp": int(cantidad_pdp),
             "cantidad_pras": int(cantidad_pras),
@@ -1575,6 +2263,7 @@ def register_gabo_routes(app, deps):
                 fuente_nombre=fuente_nombre,
                 ramo_33=(row["ramo_33"] or "").strip() or "No",
                 ramo_28=(row["ramo_28"] or "").strip() or "No",
+                origen_fuente=(row["origen_fuente"] or "").strip() or infer_origen_fuente(fuente_nombre, ""),
                 estado=(row["estado"] or "").strip() or infer_manual_estado(fuente_nombre),
                 periodo_cedula=" ".join((row["periodo"] or "").split()),
                 periodo_titular=" ".join((row["periodo_titular"] or "").split()),
@@ -1659,32 +2348,46 @@ def register_gabo_routes(app, deps):
             return []
         try:
             payload = json.loads(raw)
-        except json.JSONDecodeError:
-            return []
+        except json.JSONDecodeError as exc:
+            raise ValueError("El JSON del oficio no es válido.") from exc
         if not isinstance(payload, list):
-            return []
+            raise ValueError("El JSON del oficio debe contener una lista de fuentes.")
         rows: list[dict] = []
-        for item in payload:
+        for index, item in enumerate(payload, start=1):
             if not isinstance(item, dict):
-                continue
+                raise ValueError(f"La fuente {index} no tiene un formato válido.")
             fuente_nombre = normalize_fuente_financiamiento(
                 " ".join(str(item.get("fuente_nombre") or "").split())
             )
             tipo_auditoria = " ".join(str(item.get("tipo_auditoria") or "").split())
             if not fuente_nombre:
-                continue
+                raise ValueError(f"La fuente {index} no tiene nombre.")
             if tipo_auditoria not in {"Financiera", "Obra Pública"}:
                 tipo_auditoria = "Financiera"
             modalidad = normalize_observacion_modalidad(str(item.get("modalidad") or "Fuente"))
             convenio_nombre = normalize_convenio_text(str(item.get("convenio_nombre") or ""))
             convenio_ente_nombre = normalize_convenio_text(str(item.get("convenio_ente_nombre") or ""))
             convenio_ente_id = normalize_ente_id(str(item.get("convenio_ente_id") or ""))
+            ramo_33 = normalize_manual_si_no(str(item.get("ramo_33") or "No"))
+            ramo_28 = normalize_manual_si_no(str(item.get("ramo_28") or "No"))
+            raw_remanente = (
+                item["es_remanente"]
+                if "es_remanente" in item
+                else item["remanente"]
+                if "remanente" in item
+                else None
+            )
+            origen_fuente = normalize_manual_origen_fuente(
+                fuente_nombre,
+                str(item.get("origen_fuente") or ""),
+                raw_remanente,
+            )
             if modalidad != "Convenio":
                 convenio_nombre = ""
                 convenio_ente_nombre = ""
                 convenio_ente_id = ""
             elif not convenio_nombre:
-                continue
+                raise ValueError(f"La fuente {index} marcada como convenio no tiene nombre de convenio.")
             cantidad_sa = parse_non_negative_int(str(item.get("cantidad_sa", "0")), "Cantidad SA")
             cantidad_pdp = parse_non_negative_int(str(item.get("cantidad_pdp", "0")), "Cantidad PDP")
             cantidad_pras = parse_non_negative_int(str(item.get("cantidad_pras", "0")), "Cantidad PRAS")
@@ -1692,9 +2395,9 @@ def register_gabo_routes(app, deps):
             cantidad_r = parse_non_negative_int(str(item.get("cantidad_r", "0")), "Cantidad R")
             periodo = " ".join(str(item.get("periodo") or "").split())
             if not periodo:
-                continue
+                raise ValueError(f"La fuente {index} no tiene periodo.")
             if (cantidad_sa + cantidad_pdp + cantidad_pras + cantidad_pefcf + cantidad_r) <= 0:
-                continue
+                raise ValueError(f"La fuente {index} no tiene observaciones capturadas.")
             rows.append(
                 {
                     "fuente_nombre": fuente_nombre,
@@ -1703,6 +2406,9 @@ def register_gabo_routes(app, deps):
                     "convenio_nombre": convenio_nombre,
                     "convenio_ente_nombre": convenio_ente_nombre,
                     "convenio_ente_id": convenio_ente_id,
+                    "ramo_33": ramo_33,
+                    "ramo_28": ramo_28,
+                    "origen_fuente": origen_fuente,
                     "periodo": periodo,
                     "cantidad_sa": cantidad_sa,
                     "cantidad_pdp": cantidad_pdp,
@@ -2531,35 +3237,13 @@ def register_gabo_routes(app, deps):
             }
         )
 
-    @app.get("/carga/oficios-resumen")
-    @gabo_required
-    def carga_oficios_resumen():
-        ejercicio = (request.args.get("ejercicio") or "").strip()
-        ente_id = normalize_ente_id(request.args.get("ente_id", ""))
-        tipo_auditoria = (request.args.get("tipo_auditoria") or "").strip()
-        if not ejercicio:
-            return jsonify({"rows": [], "totals": {}})
-
-        params: list[str] = [ejercicio]
-        where_extra: list[str] = []
-        if ente_id:
-            where_extra.append(f"{normalize_ente_id_sql('ente_id')} = ?")
-            params.append(ente_id)
-        if tipo_auditoria:
-            tipo_options = _tipo_auditoria_options(tipo_auditoria)
-            if not tipo_options:
-                tipo_options = [tipo_auditoria]
-            tipo_placeholders = ", ".join(["?"] * len(tipo_options))
-            where_extra.append(
-                f"TRIM(COALESCE(tipo_auditoria, '')) IN ({tipo_placeholders})"
-            )
-            params.extend(tipo_options)
-
-        where_sql = ""
-        if where_extra:
-            where_sql = " AND " + " AND ".join(where_extra)
-
-        db = get_db()
+    def find_manual_cargas_repair_candidates(
+        db,
+        *,
+        ejercicio: str,
+        ente_id: str = "",
+        tipo_auditoria: str = "",
+    ) -> list[int]:
         repair_where = [
             "TRIM(COALESCE(cm.ejercicio, '')) = ?",
             "TRIM(COALESCE(cm.asunto, '')) = 'Notificación de Cédula de Resultados'",
@@ -2586,21 +3270,83 @@ def register_gabo_routes(app, deps):
             repair_params.extend(tipo_options)
         repair_rows = db.execute(
             f"""
-            SELECT cm.id
+            SELECT
+                cm.id,
+                TRIM(COALESCE(cm.ejercicio, '')) AS ejercicio,
+                TRIM(COALESCE(cm.ente_id, '')) AS ente_id,
+                TRIM(COALESCE(cm.tipo_auditoria, '')) AS tipo_auditoria,
+                TRIM(COALESCE(cm.fuente_nombre, ff.nombre, '')) AS fuente_nombre,
+                TRIM(COALESCE(cm.periodo, '')) AS periodo,
+                TRIM(COALESCE(cm.numero_oficio, '')) AS numero_oficio,
+                TRIM(COALESCE(cm.modalidad, 'Fuente')) AS modalidad,
+                TRIM(COALESCE(cm.convenio_nombre, '')) AS convenio_nombre
             FROM cargas_manuales AS cm
+            LEFT JOIN fuentes_financiamiento AS ff ON ff.id = cm.fuente_id
             WHERE {" AND ".join(repair_where)}
             ORDER BY cm.id ASC
             """,
             repair_params,
         ).fetchall()
-        if repair_rows:
-            repair_result = repair_missing_observaciones_from_cargas(
+        missing_ids: list[int] = []
+        for row in repair_rows:
+            existing_total = count_observaciones_for_manual_scope(
                 db,
-                carga_ids=[int(row["id"]) for row in repair_rows],
+                ejercicio=row["ejercicio"] or ejercicio,
+                ente_id=normalize_ente_id(row["ente_id"] or ""),
+                tipo_auditoria=row["tipo_auditoria"] or "",
+                fuente_nombre=normalize_fuente_financiamiento(row["fuente_nombre"] or ""),
+                periodo_cedula=row["periodo"] or "",
+                oficio=row["numero_oficio"] or "",
+                modalidad=row["modalidad"] or "Fuente",
+                convenio_nombre=row["convenio_nombre"] or "",
             )
-            if int(repair_result.get("repaired") or 0) > 0:
-                db.commit()
+            if existing_total <= 0:
+                missing_ids.append(int(row["id"]))
+        return missing_ids
 
+    def _empty_oficios_totals() -> dict:
+        return {
+            "sa": 0,
+            "pdp": 0,
+            "pras": 0,
+            "r": 0,
+            "pefcf": 0,
+            "total": 0,
+            "monto_emitido": 0.0,
+            "monto_solventado": 0.0,
+            "monto_pendiente": 0.0,
+        }
+
+    def _query_carga_oficios_resumen(
+        *,
+        ejercicio: str,
+        ente_id: str = "",
+        tipo_auditoria: str = "",
+        limit: int | None = 500,
+    ) -> tuple[list[dict], dict]:
+        params: list[str] = [ejercicio]
+        where_extra: list[str] = []
+        if ente_id:
+            where_extra.append(f"{normalize_ente_id_sql('ente_id')} = ?")
+            params.append(ente_id)
+        if tipo_auditoria:
+            tipo_options = _tipo_auditoria_options(tipo_auditoria)
+            if not tipo_options:
+                tipo_options = [tipo_auditoria]
+            tipo_placeholders = ", ".join(["?"] * len(tipo_options))
+            where_extra.append(
+                f"TRIM(COALESCE(tipo_auditoria, '')) IN ({tipo_placeholders})"
+            )
+            params.extend(tipo_options)
+
+        where_sql = ""
+        if where_extra:
+            where_sql = " AND " + " AND ".join(where_extra)
+
+        db = get_db()
+        limit_sql = ""
+        if limit is not None and int(limit) > 0:
+            limit_sql = f"LIMIT {int(limit)}"
         rows = db.execute(
             f"""
             SELECT
@@ -2651,23 +3397,13 @@ def register_gabo_routes(app, deps):
                 ELSE 2
               END ASC,
               TRIM(COALESCE(tipo_auditoria, '')) ASC
-            LIMIT 500
+            {limit_sql}
             """,
             params,
         ).fetchall()
 
         payload_rows = []
-        totals = {
-            "sa": 0,
-            "pdp": 0,
-            "pras": 0,
-            "r": 0,
-            "pefcf": 0,
-            "total": 0,
-            "monto_emitido": 0.0,
-            "monto_solventado": 0.0,
-            "monto_pendiente": 0.0,
-        }
+        totals = _empty_oficios_totals()
         for row in rows:
             item = dict(row)
             tipos = [
@@ -2683,8 +3419,239 @@ def register_gabo_routes(app, deps):
                 item[key] = float(item.get(key) or 0.0)
                 totals[key] += item[key]
             payload_rows.append(item)
+        return payload_rows, totals
 
-        return jsonify({"rows": payload_rows, "totals": totals})
+    @app.get("/carga/oficios-resumen")
+    @gabo_required
+    def carga_oficios_resumen():
+        ejercicio = (request.args.get("ejercicio") or "").strip()
+        ente_id = normalize_ente_id(request.args.get("ente_id", ""))
+        tipo_auditoria = (request.args.get("tipo_auditoria") or "").strip()
+        if not ejercicio:
+            return jsonify({"rows": [], "totals": {}, "repair_candidates": 0})
+
+        db = get_db()
+        repair_candidate_ids = find_manual_cargas_repair_candidates(
+            db,
+            ejercicio=ejercicio,
+            ente_id=ente_id,
+            tipo_auditoria=tipo_auditoria,
+        )
+        payload_rows, totals = _query_carga_oficios_resumen(
+            ejercicio=ejercicio,
+            ente_id=ente_id,
+            tipo_auditoria=tipo_auditoria,
+            limit=500,
+        )
+        return jsonify(
+            {
+                "rows": payload_rows,
+                "totals": totals,
+                "repair_candidates": len(repair_candidate_ids),
+            }
+        )
+
+    @app.get("/carga/oficios-resumen/exportar")
+    @gabo_required
+    def carga_oficios_resumen_exportar():
+        ejercicio = (request.args.get("ejercicio") or "").strip()
+        ente_id = normalize_ente_id(request.args.get("ente_id", ""))
+        tipo_auditoria = (request.args.get("tipo_auditoria") or "").strip()
+        if not ejercicio:
+            return jsonify({"ok": False, "error": "Selecciona un ejercicio para exportar."}), 400
+
+        rows, totals = _query_carga_oficios_resumen(
+            ejercicio=ejercicio,
+            ente_id=ente_id,
+            tipo_auditoria=tipo_auditoria,
+            limit=None,
+        )
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Oficios"
+        headers = [
+            "Oficio",
+            "Ente",
+            "Alcance",
+            "Fecha",
+            "SA",
+            "PDP",
+            "PRAS",
+            "R",
+            "PEFCF",
+            "Total",
+            "Monto emitido",
+            "Monto solventado",
+            "Monto pendiente",
+        ]
+        sheet.append(headers)
+
+        thin_border = Border(
+            left=Side(style="thin", color="D7DFD9"),
+            right=Side(style="thin", color="D7DFD9"),
+            top=Side(style="thin", color="D7DFD9"),
+            bottom=Side(style="thin", color="D7DFD9"),
+        )
+        header_fill = PatternFill("solid", fgColor="174C3A")
+        total_fill = PatternFill("solid", fgColor="DCEBE3")
+        subtotal_fill = PatternFill("solid", fgColor="F2F8F5")
+        zebra_fill = PatternFill("solid", fgColor="F8FBF9")
+        header_font = Font(bold=True, color="FFFFFF")
+        bold_font = Font(bold=True, color="1E5139")
+        normal_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        left_alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+        money_columns = {11, 12, 13}
+        count_columns = {5, 6, 7, 8, 9, 10}
+
+        for cell in sheet[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.border = thin_border
+            cell.alignment = normal_alignment
+
+        def ente_label(row: dict) -> str:
+            return " - ".join(
+                part for part in [
+                    str(row.get("ente_numero") or "").strip(),
+                    str(row.get("ente_nombre") or "").strip(),
+                ] if part
+            ) or "-"
+
+        def append_data_row(row: dict) -> None:
+            sheet.append([
+                row.get("oficio") or "-",
+                ente_label(row),
+                row.get("tipos_auditoria") or "-",
+                row.get("fecha_notificacion") or "-",
+                int(row.get("sa") or 0),
+                int(row.get("pdp") or 0),
+                int(row.get("pras") or 0),
+                int(row.get("r") or 0),
+                int(row.get("pefcf") or 0),
+                int(row.get("total") or 0),
+                float(row.get("monto_emitido") or 0.0),
+                float(row.get("monto_solventado") or 0.0),
+                float(row.get("monto_pendiente") or 0.0),
+            ])
+
+        def add_totals(target: dict, row: dict) -> None:
+            for key in ("sa", "pdp", "pras", "r", "pefcf", "total"):
+                target[key] += int(row.get(key) or 0)
+            for key in ("monto_emitido", "monto_solventado", "monto_pendiente"):
+                target[key] += float(row.get(key) or 0.0)
+
+        def append_total_row(label: str, target: dict, *, fill: PatternFill) -> None:
+            sheet.append([
+                label,
+                "",
+                "",
+                "",
+                int(target.get("sa") or 0),
+                int(target.get("pdp") or 0),
+                int(target.get("pras") or 0),
+                int(target.get("r") or 0),
+                int(target.get("pefcf") or 0),
+                int(target.get("total") or 0),
+                float(target.get("monto_emitido") or 0.0),
+                float(target.get("monto_solventado") or 0.0),
+                float(target.get("monto_pendiente") or 0.0),
+            ])
+            row_idx = sheet.max_row
+            for cell in sheet[row_idx]:
+                cell.fill = fill
+                cell.font = bold_font
+
+        groups: list[dict] = []
+        groups_by_ente: dict[str, dict] = {}
+        for item in rows:
+            group_key = str(item.get("ente_id") or "").strip() or ente_label(item).lower()
+            if group_key not in groups_by_ente:
+                group = {"ente": ente_label(item), "rows": [], "totals": _empty_oficios_totals()}
+                groups_by_ente[group_key] = group
+                groups.append(group)
+            group = groups_by_ente[group_key]
+            group["rows"].append(item)
+            add_totals(group["totals"], item)
+
+        for group in groups:
+            for item in group["rows"]:
+                append_data_row(item)
+            if len(groups) > 1:
+                append_total_row(f"Subtotal {group['ente']}", group["totals"], fill=subtotal_fill)
+        append_total_row("Total general", totals, fill=total_fill)
+
+        for row_idx in range(2, sheet.max_row + 1):
+            is_total_row = str(sheet.cell(row=row_idx, column=1).value or "").startswith(("Subtotal", "Total general"))
+            for col_idx in range(1, len(headers) + 1):
+                cell = sheet.cell(row=row_idx, column=col_idx)
+                cell.border = thin_border
+                cell.alignment = left_alignment if col_idx in {1, 2, 3} else normal_alignment
+                if col_idx in money_columns:
+                    cell.number_format = '$#,##0.00'
+                if col_idx in count_columns:
+                    cell.number_format = '#,##0'
+                if row_idx % 2 == 0 and not is_total_row:
+                    cell.fill = zebra_fill
+
+        sheet.freeze_panes = "A2"
+        sheet.auto_filter.ref = f"A1:M{max(sheet.max_row, 1)}"
+        widths = [18, 46, 22, 16, 9, 9, 9, 9, 9, 10, 18, 18, 18]
+        for col_idx, width in enumerate(widths, start=1):
+            sheet.column_dimensions[get_column_letter(col_idx)].width = width
+
+        stream = BytesIO()
+        workbook.save(stream)
+        stream.seek(0)
+        scope_bits = [ejercicio]
+        if ente_id:
+            scope_bits.append(ente_id.replace(".", "_"))
+        if tipo_auditoria:
+            scope_bits.append(tipo_auditoria.lower().replace(" ", "_").replace("ú", "u"))
+        filename = f"oficios_capturados_{'_'.join(scope_bits)}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        return send_file(
+            stream,
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    @app.post("/carga/oficios-resumen/reparar")
+    @gabo_required
+    def carga_oficios_resumen_reparar():
+        user = get_current_user()
+        payload = request.get_json(silent=True) if request.is_json else None
+        source = payload if isinstance(payload, dict) else request.form
+        ejercicio = (source.get("ejercicio") or "").strip()
+        ente_id = normalize_ente_id(source.get("ente_id", ""))
+        tipo_auditoria = (source.get("tipo_auditoria") or "").strip()
+        if not ejercicio:
+            return jsonify({"ok": False, "message": "Debes seleccionar el ejercicio."}), 400
+        try:
+            _ensure_editable_ejercicio(ejercicio, user=user)
+        except ValueError as exc:
+            return jsonify({"ok": False, "message": str(exc)}), 403
+
+        db = get_db()
+        carga_ids = find_manual_cargas_repair_candidates(
+            db,
+            ejercicio=ejercicio,
+            ente_id=ente_id,
+            tipo_auditoria=tipo_auditoria,
+        )
+        if not carga_ids:
+            return jsonify({"ok": True, "repaired": 0, "observaciones": 0})
+
+        repair_result = repair_missing_observaciones_from_cargas(db, carga_ids=carga_ids)
+        if int(repair_result.get("repaired") or 0) > 0:
+            db.commit()
+        return jsonify(
+            {
+                "ok": True,
+                "repaired": int(repair_result.get("repaired") or 0),
+                "observaciones": int(repair_result.get("observaciones") or 0),
+            }
+        )
 
     @app.get("/carga/pdp-catalogo")
     @gabo_required
@@ -2920,8 +3887,7 @@ def register_gabo_routes(app, deps):
             _ensure_editable_ejercicio(ejercicio)
             _validate_observacion_matches_scope(current, raw_scope)
         except ValueError as exc:
-            status_code = 403 if "concluido" in str(exc).lower() else 400
-            return jsonify({"ok": False, "error": str(exc)}), status_code
+            return jsonify({"ok": False, "error": str(exc)}), _readonly_error_status(exc)
         if accion in {"reclasificar_pdp_pras", "reclasificar_pras", "pdp_a_pras"}:
             if tipo_anexo != "PDP":
                 return jsonify(
@@ -3059,6 +4025,77 @@ def register_gabo_routes(app, deps):
             read_only_ejercicios=sorted(_readonly_ejercicios_for_user(user)),
         )
 
+    @app.get("/carga/herramientas")
+    @gabo_required
+    def carga_herramientas():
+        user = get_current_user()
+        db = get_db()
+        ejercicios_rows = db.execute(
+            """
+            SELECT DISTINCT ejercicio
+            FROM (
+                SELECT TRIM(COALESCE(ejercicio, '')) AS ejercicio
+                FROM entes_detalle
+                UNION
+                SELECT TRIM(COALESCE(ejercicio, '')) AS ejercicio
+                FROM observaciones
+                UNION
+                SELECT TRIM(COALESCE(ejercicio, '')) AS ejercicio
+                FROM cargas_manuales
+            )
+            WHERE ejercicio != ''
+            ORDER BY CAST(ejercicio AS INTEGER) DESC, ejercicio DESC
+            """
+        ).fetchall()
+        ejercicios = [row["ejercicio"] for row in ejercicios_rows if (row["ejercicio"] or "").strip()]
+        if not ejercicios:
+            ejercicios = [TITULAR_EJERCICIO_FIJO]
+        requested_ejercicio = " ".join((request.args.get("ejercicio") or "").split())
+        ejercicio_default = requested_ejercicio if requested_ejercicio in ejercicios else ejercicios[0]
+        fuentes_admin = list_fuentes_financiamiento_admin(db, ejercicio_default)
+        return render_template(
+            "carga_herramientas.html",
+            user=user,
+            ejercicios=ejercicios,
+            ejercicio_default=ejercicio_default,
+            fuentes_admin=fuentes_admin,
+            read_only_ejercicios=sorted(_readonly_ejercicios_for_user(user)),
+        )
+
+    @app.post("/carga/fuentes-financiamiento/clasificacion")
+    @gabo_required
+    def carga_fuente_financiamiento_clasificacion():
+        user = get_current_user()
+        db = get_db()
+        payload = request.get_json(silent=True) or request.form
+        try:
+            ejercicio = " ".join(str(payload.get("ejercicio") or "").split())
+            if not ejercicio:
+                raise ValueError("Selecciona un ejercicio editable para actualizar la fuente.")
+            _ensure_editable_ejercicio(ejercicio, user=user)
+
+            fuente_id_raw = " ".join(str(payload.get("fuente_id") or "").split())
+            fuente_id = None
+            if fuente_id_raw:
+                try:
+                    fuente_id = int(fuente_id_raw)
+                except ValueError as exc:
+                    raise ValueError("La fuente seleccionada no es válida.") from exc
+            result = financiamiento_service.update_fuente_clasificacion(
+                db,
+                fuente_id=fuente_id,
+                fuente_nombre=" ".join(str(payload.get("fuente_nombre") or "").split()),
+                normalizer=normalize_fuente_financiamiento,
+                ejercicio=ejercicio,
+                ramo_33=str(payload.get("ramo_33") or "No"),
+                ramo_28=str(payload.get("ramo_28") or "No"),
+                origen_fuente=str(payload.get("origen_fuente") or ""),
+            )
+            db.commit()
+            return jsonify({"ok": True, **result})
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), _readonly_error_status(exc)
+
     @app.get("/carga/observaciones-admin/carga-masiva")
     @gabo_required
     def carga_observaciones_admin_carga_masiva():
@@ -3095,7 +4132,7 @@ def register_gabo_routes(app, deps):
             _ensure_editable_ejercicio(ejercicio)
             csv_rows, file_name = _read_mass_upload_file_rows(upload_file)
         except ValueError as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 400
+            return jsonify({"ok": False, "error": str(exc)}), _readonly_error_status(exc)
 
         db = get_db()
         try:
@@ -3306,20 +4343,24 @@ def register_gabo_routes(app, deps):
             or TITULAR_EJERCICIO_FIJO
         )
         default_ejercicio = " ".join((requested_default or "").split())
-        if default_ejercicio not in ejercicios:
+        if request.method != "POST" and default_ejercicio not in ejercicios:
+            default_ejercicio = ejercicios[0]
+        elif request.method == "POST" and not default_ejercicio:
             default_ejercicio = ejercicios[0]
 
         form_data = _build_titular_form_data(
             form_source,
             default_ejercicio=default_ejercicio,
         )
-        if form_data["titular_ejercicio"] not in ejercicios:
+        if request.method != "POST" and form_data["titular_ejercicio"] not in ejercicios:
             form_data["titular_ejercicio"] = default_ejercicio
 
         titular_result = None
         if request.method == "POST":
             try:
                 _ensure_editable_ejercicio(form_data["titular_ejercicio"], user=user)
+                if form_data["titular_ejercicio"] not in ejercicios:
+                    raise ValueError("Titulares: el ejercicio seleccionado no está disponible.")
                 backup_path = _create_db_snapshot("titulares-save")
                 titular_result = _save_titulares_capture(db, user, form_data)
                 if titular_result.get("ok"):
@@ -3345,7 +4386,44 @@ def register_gabo_routes(app, deps):
             entes=entes,
             form_data=form_data,
             titular_result=titular_result,
+            read_only_ejercicios=sorted(_readonly_ejercicios_for_user(user)),
         )
+
+    @app.post("/carga/titulares/excel/preview")
+    @gabo_required
+    def carga_titulares_excel_preview():
+        upload = request.files.get("titulares_file")
+        if not upload or not (upload.filename or "").strip():
+            return jsonify({"ok": False, "error": "Selecciona un archivo .xlsx."}), 400
+        ejercicio = " ".join((request.form.get("ejercicio") or "").split())
+        ente_id = normalize_ente_id(request.form.get("ente_id") or "")
+        tipo_auditoria_destino = normalize_tipo_auditoria(
+            request.form.get("tipo_auditoria_destino") or request.form.get("tipo_auditoria") or ""
+        )
+        db = get_db()
+        try:
+            preview = _build_titulares_excel_preview(
+                db,
+                upload,
+                ejercicio=ejercicio,
+                ente_id_norm=ente_id,
+                tipo_auditoria_destino=tipo_auditoria_destino,
+            )
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), _readonly_error_status(exc)
+        return jsonify(preview)
+
+    @app.post("/carga/titulares/excel/aplicar")
+    @gabo_required
+    def carga_titulares_excel_aplicar():
+        user = get_current_user()
+        payload = request.get_json(silent=True) or {}
+        db = get_db()
+        try:
+            result = _apply_titulares_excel_import(db, user, payload)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), _readonly_error_status(exc)
+        return jsonify(result)
 
     @app.get("/carga/titulares/historial")
     @gabo_required
@@ -3363,7 +4441,13 @@ def register_gabo_routes(app, deps):
             ente_id_norm=ente_id,
             tipo_auditoria=tipo_auditoria,
         )
-        return jsonify({"ok": True, "rows": rows})
+        capture_rows = _list_cargas_titulares_rows(
+            db,
+            ejercicio=ejercicio,
+            ente_id_norm=ente_id,
+            tipo_auditoria=tipo_auditoria,
+        )
+        return jsonify({"ok": True, "rows": rows, "capture_rows": capture_rows})
 
     @app.post("/carga/titulares/historial/<int:historial_id>/actualizar")
     @gabo_required
@@ -3408,11 +4492,20 @@ def register_gabo_routes(app, deps):
 
         db = get_db()
         existing_row = db.execute(
-            "SELECT id FROM historial_titulares WHERE id = ? LIMIT 1",
+            """
+            SELECT id, CAST(ejercicio AS TEXT) AS ejercicio
+            FROM historial_titulares
+            WHERE id = ?
+            LIMIT 1
+            """,
             (historial_id,),
         ).fetchone()
         if not existing_row:
             return jsonify({"ok": False, "error": "El registro solicitado no existe."}), 404
+        try:
+            _ensure_editable_ejercicio(existing_row["ejercicio"])
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), _readonly_error_status(exc)
 
         ente_row = _get_ente_row_by_ejercicio_id(db, ejercicio, ente_id)
         if not ente_row:
@@ -3630,8 +4723,7 @@ def register_gabo_routes(app, deps):
             _ensure_editable_ejercicio(found["ejercicio"])
             _validate_observacion_matches_scope(found, raw_scope)
         except ValueError as exc:
-            status_code = 403 if "concluido" in str(exc).lower() else 400
-            return jsonify({"ok": False, "error": str(exc)}), status_code
+            return jsonify({"ok": False, "error": str(exc)}), _readonly_error_status(exc)
         backup_path = _create_db_snapshot(f"observacion-{observacion_id}-borrar")
         db.execute("DELETE FROM observaciones WHERE id = ?", (observacion_id,))
         db.commit()
@@ -3664,7 +4756,7 @@ def register_gabo_routes(app, deps):
                 where_clauses, params, scope, _ = build_observaciones_admin_scope(raw_scope)
                 _require_observaciones_admin_edit_scope(scope, action_label="borrar observaciones")
             except ValueError as exc:
-                return jsonify({"ok": False, "error": str(exc)}), 400
+                return jsonify({"ok": False, "error": str(exc)}), _readonly_error_status(exc)
             if _count_scope_ids(db, ids, where_clauses, params) != len(ids):
                 return jsonify(
                     {
@@ -3715,7 +4807,7 @@ def register_gabo_routes(app, deps):
             where_clauses, params, scope, _ = build_observaciones_admin_scope(raw_scope)
             _require_safe_bulk_scope(scope, action_label="solventar en bloque")
         except ValueError as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 400
+            return jsonify({"ok": False, "error": str(exc)}), _readonly_error_status(exc)
         if _count_scope_ids(db, ids, where_clauses, params) != len(ids):
             return jsonify(
                 {
@@ -3794,7 +4886,7 @@ def register_gabo_routes(app, deps):
             where_clauses, params, scope, _ = build_observaciones_admin_scope(raw_scope)
             _require_safe_bulk_scope(scope, action_label="dejar pendientes en bloque")
         except ValueError as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 400
+            return jsonify({"ok": False, "error": str(exc)}), _readonly_error_status(exc)
         if _count_scope_ids(db, ids, where_clauses, params) != len(ids):
             return jsonify(
                 {
@@ -3861,7 +4953,7 @@ def register_gabo_routes(app, deps):
         try:
             _require_safe_bulk_scope(scope, action_label="borrar por filtros")
         except ValueError as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 400
+            return jsonify({"ok": False, "error": str(exc)}), _readonly_error_status(exc)
 
         where_sql = " AND ".join(where_clauses)
         db = get_db()
@@ -4065,8 +5157,9 @@ def register_gabo_routes(app, deps):
                     raw_periodo = form_data["manual_periodo"]
                     periodo = raw_periodo if user and user.get("username") == "gabo" else " ".join(raw_periodo.split())
                     periodo_titular = form_data["manual_periodo_titular"]
-                    ramo_33 = "No"
-                    ramo_28 = "No"
+                    ramo_33 = normalize_manual_si_no(form_data["manual_ramo_33"])
+                    ramo_28 = normalize_manual_si_no(form_data["manual_ramo_28"])
+                    origen_fuente = "Del Ejercicio"
                     estado = "Emitido"
                     fecha_notificacion = form_data["manual_fecha_notificacion"]
                     raw_montos_pdp = form_data["manual_montos_pdp"]
@@ -4098,9 +5191,9 @@ def register_gabo_routes(app, deps):
                         raise ValueError("Debes seleccionar un asunto válido.")
                     if not ejercicio:
                         raise ValueError("Debes capturar el ejercicio.")
+                    _ensure_editable_ejercicio(ejercicio, user=user)
                     if ejercicio not in manual_ejercicios:
                         raise ValueError("El ejercicio seleccionado no está disponible.")
-                    _ensure_editable_ejercicio(ejercicio, user=user)
                     if not fecha_notificacion:
                         raise ValueError("Debes capturar la fecha de notificación.")
                     try:
@@ -4236,8 +5329,11 @@ def register_gabo_routes(app, deps):
                     elif not fuente_nombre:
                         raise ValueError("No se pudo resolver el nombre de la fuente seleccionada.")
 
-                    # Regla automática para carga Gabo:
-                    # Ramo XXXIII fijo en "No" y el estado inicial queda como Emitido.
+                    fuente_clasificacion = get_fuente_clasificacion(db, fuente_nombre, fuente_id)
+                    ramo_33 = fuente_clasificacion["ramo_33"]
+                    ramo_28 = fuente_clasificacion["ramo_28"]
+                    origen_fuente = fuente_clasificacion["origen_fuente"]
+                    # Regla automática para carga Gabo: el estado inicial queda como Emitido.
                     estado = "Emitido"
                     if asunto == "Notificación de Cédula de Resultados":
                         pdp_details_by_fuente: list[list[dict]] = []
@@ -4323,6 +5419,9 @@ def register_gabo_routes(app, deps):
                         convenio_nombre=convenio_nombre,
                         convenio_ente_nombre=convenio_ente_nombre,
                         convenio_ente_id=convenio_ente_id,
+                        ramo_33=ramo_33,
+                        ramo_28=ramo_28,
+                        origen_fuente=origen_fuente,
                     )
                     fuente_detalle_json = serialize_manual_snapshot(fuente_detalle_snapshot)
                     pdp_detalle_json = serialize_manual_snapshot(pdp_details if cantidad_pdp > 0 else [])
@@ -4464,6 +5563,7 @@ def register_gabo_routes(app, deps):
                                         fecha_notificacion = ?,
                                         ramo_33 = ?,
                                         ramo_28 = ?,
+                                        origen_fuente = ?,
                                         estado = ?,
                                         cantidad_sa = ?,
                                         cantidad_pdp = ?,
@@ -4499,6 +5599,7 @@ def register_gabo_routes(app, deps):
                                         fecha_notificacion,
                                         ramo_33,
                                         ramo_28,
+                                        origen_fuente,
                                         estado,
                                         cantidad_sa,
                                         cantidad_pdp,
@@ -4533,6 +5634,7 @@ def register_gabo_routes(app, deps):
                                     fuente_nombre=fuente_nombre,
                                     ramo_33=ramo_33,
                                     ramo_28=ramo_28,
+                                    origen_fuente=origen_fuente,
                                     estado=estado,
                                     periodo_cedula=periodo,
                                     periodo_titular=periodo_titular,
@@ -4633,6 +5735,7 @@ def register_gabo_routes(app, deps):
                                             fecha_notificacion,
                                             ramo_33,
                                             ramo_28,
+                                            origen_fuente,
                                             estado,
                                             cantidad_sa,
                                             cantidad_pdp,
@@ -4647,7 +5750,7 @@ def register_gabo_routes(app, deps):
                                             created_by,
                                             created_at
                                         )
-                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                         """,
                                         (
                                             manual_ente_id,
@@ -4670,6 +5773,7 @@ def register_gabo_routes(app, deps):
                                             fecha_notificacion,
                                             ramo_33,
                                             ramo_28,
+                                            origen_fuente,
                                             estado,
                                             cantidad_sa,
                                             cantidad_pdp,
@@ -4696,6 +5800,7 @@ def register_gabo_routes(app, deps):
                                         fuente_nombre=fuente_nombre,
                                         ramo_33=ramo_33,
                                         ramo_28=ramo_28,
+                                        origen_fuente=origen_fuente,
                                         estado=estado,
                                         periodo_cedula=periodo,
                                         periodo_titular=periodo_titular,
@@ -4815,6 +5920,14 @@ def register_gabo_routes(app, deps):
                                                 ejercicio,
                                                 extra_convenio_ente_nombre,
                                             )
+                                        extra_clasificacion = get_fuente_clasificacion(
+                                            db,
+                                            extra_fuente_nombre,
+                                            extra_fuente_id,
+                                        )
+                                        extra_ramo_33 = extra_clasificacion["ramo_33"]
+                                        extra_ramo_28 = extra_clasificacion["ramo_28"]
+                                        extra_origen_fuente = extra_clasificacion["origen_fuente"]
                                         extra_tipos = [extra_tipo]
                                         for extra_tipo_item in extra_tipos:
                                             register_fuente_for_ente(
@@ -4882,6 +5995,9 @@ def register_gabo_routes(app, deps):
                                                     convenio_nombre=extra_convenio_nombre,
                                                     convenio_ente_nombre=extra_convenio_ente_nombre,
                                                     convenio_ente_id=extra_convenio_ente_id,
+                                                    ramo_33=extra_ramo_33,
+                                                    ramo_28=extra_ramo_28,
+                                                    origen_fuente=extra_origen_fuente,
                                                 )
                                             )
                                             extra_pdp_detalle_json = serialize_manual_snapshot(
@@ -4910,6 +6026,7 @@ def register_gabo_routes(app, deps):
                                                     fecha_notificacion,
                                                     ramo_33,
                                                     ramo_28,
+                                                    origen_fuente,
                                                     estado,
                                                     cantidad_sa,
                                                     cantidad_pdp,
@@ -4924,7 +6041,7 @@ def register_gabo_routes(app, deps):
                                                     created_by,
                                                     created_at
                                                 )
-                                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                                 """,
                                                 (
                                                     manual_ente_id,
@@ -4945,8 +6062,9 @@ def register_gabo_routes(app, deps):
                                                     extra_periodo,
                                                     extra_periodo,
                                                     fecha_notificacion,
-                                                    ramo_33,
-                                                    ramo_28,
+                                                    extra_ramo_33,
+                                                    extra_ramo_28,
+                                                    extra_origen_fuente,
                                                     estado,
                                                     cantidad_sa_extra,
                                                     cantidad_pdp_extra,
@@ -4971,8 +6089,9 @@ def register_gabo_routes(app, deps):
                                                 ente_nombre=(ente_row["ente_nombre"] or "").strip(),
                                                 tipo_auditoria=extra_tipo_item,
                                                 fuente_nombre=extra_fuente_nombre,
-                                                ramo_33=ramo_33,
-                                                ramo_28=ramo_28,
+                                                ramo_33=extra_ramo_33,
+                                                ramo_28=extra_ramo_28,
+                                                origen_fuente=extra_origen_fuente,
                                                 estado=estado,
                                                 periodo_cedula=extra_periodo,
                                                 periodo_titular=extra_periodo,
@@ -5054,6 +6173,12 @@ def register_gabo_routes(app, deps):
                             ]
                         )
                     elif action in {"csv_validate", "csv_import"}:
+                        if action == "csv_import":
+                            if not form_data["csv_ejercicio"]:
+                                raise ValueError(
+                                    "Debes indicar un ejercicio editable para importar titulares por CSV."
+                                )
+                            _ensure_editable_ejercicio(form_data["csv_ejercicio"], user=user)
                         csv_path = resolve_project_path(form_data["csv_path"], must_exist=True)
                         command.extend(
                             [
@@ -5071,6 +6196,12 @@ def register_gabo_routes(app, deps):
                         if action == "csv_validate":
                             command.append("--dry-run")
                     elif action in {"json_validate", "json_import"}:
+                        if action == "json_import":
+                            if not form_data["json_ejercicio"]:
+                                raise ValueError(
+                                    "Debes indicar un ejercicio editable para importar titulares por JSON."
+                                )
+                            _ensure_editable_ejercicio(form_data["json_ejercicio"], user=user)
                         json_path = resolve_project_path(form_data["json_path"], must_exist=True)
                         command.extend(
                             [
@@ -5217,6 +6348,7 @@ def register_gabo_routes(app, deps):
             manual_fuentes=manual_fuentes,
             manual_ejercicios=manual_ejercicios,
             titular_ejercicios=titular_ejercicios,
+            read_only_ejercicios=sorted(_readonly_ejercicios_for_user(user)),
             titular_entes=[dict(row) for row in titular_entes_rows],
             manual_entes=[dict(row) for row in manual_entes_rows],
             asuntos=[

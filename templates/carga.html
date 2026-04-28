@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Registro Observaciones · Carga de Datos</title>
+  <title>Registro Observaciones · Oficios</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
 </head>
@@ -15,7 +15,7 @@
       <div class="header-text">
         <p class="eyebrow">Órgano de Fiscalización Superior del Estado de Tlaxcala</p>
         <h1>Registro Observaciones</h1>
-        <p class="subtitle">Centro de carga de información</p>
+        <p class="subtitle">Oficios de captura</p>
       </div>
       <div class="header-badge user-badge">
         <div class="user-meta">
@@ -23,7 +23,6 @@
           <strong>{{ user_display_names.get(user.username, user.username) }}</strong>
         </div>
         <div class="user-actions">
-          <span class="user-role">Carga</span>
           <form
             id="gaboLogoutForm"
             class="logout-form"
@@ -38,33 +37,27 @@
   </header>
 
   <main class="page-content loader-content">
+    {% set gabo_module_active = 'carga' %}
+    {% include "_gabo_module_nav.html" %}
     {% set principal_tipo = form_data.manual_tipo_auditoria or form_data.titular_tipo_auditoria %}
 
-    <section class="panel loader-mode-panel loader-expediente-panel">
-      <div class="panel-header panel-header-compact">
-        <h2>Contexto de captura</h2>
-        <p>Define el oficio una vez y sigue capturando fuente por fuente.</p>
-      </div>
+    <section class="panel loader-mode-panel loader-expediente-panel" id="gaboOficioContextPanel">
       <div class="loader-expediente-shell">
         <div class="record-form filters-form loader-principal-form">
-            <div class="loader-expediente-inline-head">
-              <div class="loader-expediente-inline-title">
-                <span class="loader-current-mode-label">Carga activa</span>
-                <strong>{{ "Carga de titulares" if initial_loader_mode == "titulares" else "Notificación de Cédula de Resultados" }}</strong>
-              </div>
-            </div>
           <div class="loader-expediente-collection">
             <section class="loader-expediente-group">
               <div class="loader-expediente-group-head">
-                <span>Oficio</span>
-                <p>Filtros del oficio.</p>
+                <span>Filtros</span>
+                <p>La captura se abre desde el botón al final de la tabla.</p>
               </div>
-              <div class="form-grid loader-expediente-grid loader-base-grid">
+              <div class="form-grid loader-expediente-grid loader-base-grid gabo-oficios-filter-grid">
                 <div class="field">
                   <label for="principal_ejercicio">Ejercicio</label>
                   <select id="principal_ejercicio">
                     {% for ejercicio in manual_ejercicios %}
-                      <option value="{{ ejercicio }}" {% if form_data.manual_ejercicio == ejercicio %}selected{% endif %}>{{ ejercicio }}</option>
+                      <option value="{{ ejercicio }}" {% if form_data.manual_ejercicio == ejercicio %}selected{% endif %}>
+                        {{ ejercicio }}{% if ejercicio in read_only_ejercicios %} · solo consulta{% endif %}
+                      </option>
                     {% endfor %}
                   </select>
                 </div>
@@ -85,36 +78,12 @@
                   </div>
                 </div>
                 <div class="field">
-                  <label for="principal_tipo_auditoria">Alcance del oficio</label>
-                  <select id="principal_tipo_auditoria" required>
-                    <option value="" {% if not principal_tipo %}selected{% endif %}>Selecciona el alcance</option>
-                    <option value="Financiera" {% if principal_tipo == "Financiera" %}selected{% endif %}>Financiera</option>
-                    <option value="Obra Pública" {% if principal_tipo == "Obra Pública" %}selected{% endif %}>Obra Pública</option>
-                    <option value="Financiera y Obra Pública" {% if principal_tipo == "Financiera y Obra Pública" %}selected{% endif %}>Financiera y Obra Pública</option>
+                  <label for="gabo_oficios_alcance_filter">Alcance</label>
+                  <select id="gabo_oficios_alcance_filter">
+                    <option value="">Todas las Auditorías</option>
+                    <option value="Financiera">Financiera</option>
+                    <option value="Obra Pública">Obra Pública</option>
                   </select>
-                </div>
-                <div class="field loader-oficio-picker-field">
-                  <label for="principal_numero_oficio_input">Oficio</label>
-                  <input
-                    id="principal_numero_oficio_input"
-                    type="text"
-                    inputmode="numeric"
-                    autocomplete="off"
-                    placeholder="OFS/0000/2025"
-                    aria-label="Número de oficio"
-                    value="{{ form_data.manual_numero_oficio }}"
-                    maxlength="13"
-                    pattern="^OFS/[0-9]{4}/20[0-9]{2}$"
-                    title="Usa el formato OFS/0000/2025"
-                    required
-                  >
-                  <input id="principal_numero_oficio" type="hidden" value="{{ form_data.manual_numero_oficio }}">
-                </div>
-                <div class="field">
-                  <label for="principal_fecha_notificacion">Fecha de notificación</label>
-                  <div class="loader-date-inline">
-                    <input id="principal_fecha_notificacion" type="date" value="{{ form_data.manual_fecha_notificacion }}" required>
-                  </div>
                 </div>
               </div>
             </section>
@@ -131,16 +100,12 @@
         </div>
       </div>
 
-      <div class="status status-info" id="principal_scope_info" hidden>
-        Primero selecciona ejercicio, ente y alcance del oficio.
-      </div>
       <div class="status status-info" id="wizardToast" hidden></div>
     </section>
 
     <section class="panel loader-oficios-summary-panel" id="gaboOficiosResumenPanel">
       <div class="panel-header panel-header-compact">
-        <h2>Observaciones por oficio</h2>
-        <p>Conteo de observaciones y montos por oficio para el contexto activo.</p>
+        <h2>Oficios capturados</h2>
       </div>
       <div class="table-wrap gabo-oficios-table-wrap">
         <table class="table-compact gabo-oficios-table">
@@ -164,17 +129,53 @@
           </thead>
           <tbody id="gaboOficiosResumenBody">
             <tr>
-              <td colspan="14" class="muted">Selecciona un ejercicio para consultar los oficios registrados.</td>
+              <td colspan="14" class="muted">Cargando oficios capturados...</td>
             </tr>
           </tbody>
         </table>
       </div>
+      <div class="gabo-oficios-table-actions" id="gaboOficiosTableActions">
+        <a class="btn-secondary btn-compact" id="gaboExportOficiosBtn" href="{{ url_for('carga_oficios_resumen_exportar') }}">Exportar Excel</a>
+        <button type="button" class="btn-primary btn-compact" id="gaboNuevoOficioBtn" hidden>Agregar Oficio</button>
+      </div>
     </section>
 
-    <section class="panel loader-card loader-manual-workspace" data-loader-mode-panel="manual">
-      <div class="panel-header panel-header-compact loader-manual-header">
-        <h2 id="manualPanelTitle">Notificación de Cédula de Resultados</h2>
-        <p>Resumen de Observaciones</p>
+    <section class="panel loader-card loader-manual-workspace" id="gaboOficioCaptureWorkspace" data-loader-mode-panel="manual" data-defer-oficio-capture="true" hidden>
+      <div class="record-form filters-form gabo-oficio-capture-context">
+        <div class="form-grid loader-expediente-grid loader-base-grid">
+          <div class="field">
+            <label for="principal_tipo_auditoria">Alcance del oficio</label>
+            <select id="principal_tipo_auditoria" required>
+              <option value="" {% if not principal_tipo %}selected{% endif %}>Selecciona el alcance</option>
+              <option value="Financiera" {% if principal_tipo == "Financiera" %}selected{% endif %}>Financiera</option>
+              <option value="Obra Pública" {% if principal_tipo == "Obra Pública" %}selected{% endif %}>Obra Pública</option>
+              <option value="Financiera y Obra Pública" {% if principal_tipo == "Financiera y Obra Pública" %}selected{% endif %}>Financiera y Obra Pública</option>
+            </select>
+          </div>
+          <div class="field loader-oficio-picker-field">
+            <label for="principal_numero_oficio_input">Oficio</label>
+            <input
+              id="principal_numero_oficio_input"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              placeholder="OFS/0000/2025"
+              aria-label="Número de oficio"
+              value="{{ form_data.manual_numero_oficio }}"
+              maxlength="13"
+              pattern="^OFS/[0-9]{4}/20[0-9]{2}$"
+              title="Usa el formato OFS/0000/2025"
+              required
+            >
+            <input id="principal_numero_oficio" type="hidden" value="{{ form_data.manual_numero_oficio }}">
+          </div>
+          <div class="field">
+            <label for="principal_fecha_notificacion">Fecha de notificación</label>
+            <div class="loader-date-inline">
+              <input id="principal_fecha_notificacion" type="date" value="{{ form_data.manual_fecha_notificacion }}" required>
+            </div>
+          </div>
+        </div>
       </div>
       {% if manual_result %}
         <div id="manualResultMsg" class="status {% if manual_result.level == 'info' %}status-info{% elif manual_result.ok %}status-success{% else %}status-error{% endif %}" style="overflow:visible;">
@@ -492,36 +493,6 @@
                     </div>
                   </summary>
                   <div class="loader-pdp-panel-body">
-                    <details id="manual-pdp-bulk-details" class="loader-pdp-bulk-card" open>
-                      <summary class="loader-pdp-bulk-summary">
-                        <div class="loader-pdp-bulk-summary-main">
-                          <strong>Carga masiva</strong>
-                          <span>Pega texto por línea para llenar conceptos y montos PDP más rápido.</span>
-                        </div>
-                      </summary>
-                      <div class="loader-pdp-bulk-body">
-                        <p class="helper">
-                          Pega una línea por observación. Ejemplos: <code>7. Volúmenes de obra pagados no ejecutados 7542.75</code>
-                          o <code>7 — Volúmenes de obra pagados no ejecutados — $7,542.75</code>. Si esta fuente está dentro de un acumulado, también puedes numerar desde <code>1</code>.
-                        </p>
-                        <div class="loader-pdp-bulk-head">
-                          <div class="loader-pdp-bulk-actions">
-                            <button type="button" class="btn-secondary btn-compact" id="manualPdpBulkOverwriteBtn">Reemplazar todo</button>
-                          </div>
-                        </div>
-                        <div class="field">
-                          <label for="manual_pdp_bulk_text">Texto masivo</label>
-                          <textarea
-                            id="manual_pdp_bulk_text"
-                            rows="6"
-                            placeholder="7. Volúmenes de obra pagados no ejecutados 7542.75&#10;8. Procesos constructivos deficientes que causan afectaciones físicas en las obras públicas 99,379.22"
-                          ></textarea>
-                        </div>
-                        <p class="helper loader-pdp-bulk-feedback" id="manual_pdp_bulk_feedback">
-                          Puedes usar número con <code>—</code>, tabulador, <code>|</code> o solo dejar el monto al final de cada línea. La numeración puede ser local de la fuente activa.
-                        </p>
-                      </div>
-                    </details>
                     <div id="manual_pdp_breakdown" class="loader-fuentes-list"></div>
                   </div>
                 </details>
@@ -654,60 +625,6 @@
   <footer class="site-footer">
     © Órgano de Fiscalización Superior del Estado de Tlaxcala · Registro Observaciones
   </footer>
-  <a
-    id="loaderOpenTitularesBtn"
-    class="floating-clear-btn loader-titulares-btn"
-    href="{% if initial_loader_mode == 'titulares' %}{{ url_for('carga') }}{% else %}{{ url_for('carga_titulares') }}{% endif %}"
-    {% if initial_loader_mode != 'titulares' %}
-      data-base-href="{{ url_for('carga_titulares') }}"
-    {% endif %}
-    aria-label="{% if initial_loader_mode == 'titulares' %}Regresar a notificación de cédula{% else %}Abrir carga de titulares{% endif %}"
-  >
-    <span class="floating-clear-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none">
-        {% if initial_loader_mode == 'titulares' %}
-          <path d="M14.5 5L7.5 12L14.5 19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M8 12H20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-        {% else %}
-          <path d="M12 4V20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-          <path d="M4 12H20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-          <path d="M7.5 7.5H16.5V16.5H7.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-        {% endif %}
-      </svg>
-    </span>
-    <span>{% if initial_loader_mode == 'titulares' %}Volver a cédula{% else %}Cargar titulares{% endif %}</span>
-  </a>
-  <a
-    id="loaderOpenObsAdminBtn"
-    class="floating-clear-btn loader-obs-admin-btn"
-    href="{{ url_for('carga_observaciones_admin') }}"
-    data-base-href="{{ url_for('carga_observaciones_admin') }}"
-    aria-label="Abrir resultados de solventación"
-  >
-    <span class="floating-clear-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none">
-        <path d="M5 19H9L18 10L14 6L5 15V19Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-        <path d="M12.8 7.2L16.8 11.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-      </svg>
-    </span>
-    <span data-loader-obs-admin-label>Resultados de Solventación</span>
-  </a>
-  <a
-    id="loaderOpenBulkUploadBtn"
-    class="floating-clear-btn loader-bulk-upload-btn"
-    href="{{ url_for('carga_observaciones_admin_carga_masiva') }}"
-    data-base-href="{{ url_for('carga_observaciones_admin_carga_masiva') }}"
-    aria-label="Abrir carga masiva"
-  >
-    <span class="floating-clear-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none">
-        <path d="M12 4V15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-        <path d="M8.5 11.5L12 15L15.5 11.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M5 18.5H19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-      </svg>
-    </span>
-    <span>Carga masiva</span>
-  </a>
   <script>
     const loaderModeButtons = Array.from(document.querySelectorAll("[data-loader-mode-target]"));
     const loaderModePanels = Array.from(document.querySelectorAll("[data-loader-mode-panel]"));
@@ -777,6 +694,10 @@
       loaderModePanels.forEach((panel) => {
         const panelMode = panel.dataset.loaderModePanel || "";
         const isActive = panelMode === mode;
+        if (panel.dataset.deferOficioCapture === "true" && !document.body.classList.contains("gabo-oficio-capture-open")) {
+          panel.hidden = true;
+          return;
+        }
         panel.hidden = !isActive;
       });
     };
@@ -784,9 +705,6 @@
 
     const titularEjercicio = document.getElementById("titular_ejercicio");
     const titularEnte = document.getElementById("titular_ente_id");
-    const loaderOpenTitularesBtn = document.getElementById("loaderOpenTitularesBtn");
-    const loaderOpenObsAdminBtn = document.getElementById("loaderOpenObsAdminBtn");
-    const loaderOpenBulkUploadBtn = document.getElementById("loaderOpenBulkUploadBtn");
     const gaboLogoutForm = document.getElementById("gaboLogoutForm");
 
     const principalEjercicio = document.getElementById("principal_ejercicio");
@@ -805,6 +723,12 @@
     const principalFechaNotificacion = document.getElementById("principal_fecha_notificacion");
     const principalScopeInfo = document.getElementById("principal_scope_info");
     const gaboOficiosResumenBody = document.getElementById("gaboOficiosResumenBody");
+    const gaboOficioContextPanel = document.getElementById("gaboOficioContextPanel");
+    const gaboOficioCaptureWorkspace = document.getElementById("gaboOficioCaptureWorkspace");
+    const gaboOficiosTableActions = document.getElementById("gaboOficiosTableActions");
+    const gaboNuevoOficioBtn = document.getElementById("gaboNuevoOficioBtn");
+    const gaboExportOficiosBtn = document.getElementById("gaboExportOficiosBtn");
+    const gaboOficiosAlcanceFilter = document.getElementById("gabo_oficios_alcance_filter");
     const manualAsunto = document.getElementById("manual_asunto");
     const manualEjercicio = document.getElementById("manual_ejercicio");
     const manualEnte = document.getElementById("manual_ente_id");
@@ -856,9 +780,6 @@
     const manualPdpSelector = document.getElementById("manual_pdp_selector");
     const manualPdpConcepto = document.getElementById("manual_pdp_concepto");
     const manualPdpMonto = document.getElementById("manual_pdp_monto");
-    const manualPdpBulkText = document.getElementById("manual_pdp_bulk_text");
-    const manualPdpBulkFeedback = document.getElementById("manual_pdp_bulk_feedback");
-    const manualPdpBulkOverwriteBtn = document.getElementById("manualPdpBulkOverwriteBtn");
     const manualPdpBreakdown = document.getElementById("manual_pdp_breakdown");
     const manualSolventacionDetalleBlock = document.getElementById("manual-solventacion-detalle");
     const manualSolventacionDetalleJson = document.getElementById("manual_solventacion_detalle_json");
@@ -895,6 +816,8 @@
     const asuntoCedula = "Notificación de Cédula de Resultados";
     const asuntoSolventacion = "__disabled_solventacion__";
     const pdpFields = [manualPdpSelector, manualPdpConcepto, manualPdpMonto];
+    const readOnlyEjercicios = new Set({{ read_only_ejercicios | default([]) | tojson }});
+    const isReadOnlyEjercicio = (value) => readOnlyEjercicios.has(String(value || "").trim());
     if (manualTipoAuditoria) {
       manualTipoAuditoria.required = false;
     }
@@ -964,6 +887,69 @@
       return amount.toLocaleString("es-MX", { style: "currency", currency: "MXN", minimumFractionDigits: 2 });
     };
 
+    const setOficioCaptureVisible = (visible, { scroll = false } = {}) => {
+      document.body.classList.toggle("gabo-oficio-capture-open", !!visible);
+      if (gaboOficioContextPanel) {
+        gaboOficioContextPanel.classList.toggle("is-capture-visible", !!visible);
+      }
+      if (gaboOficioCaptureWorkspace) {
+        const panelMode = gaboOficioCaptureWorkspace.dataset.loaderModePanel || "";
+        const activeMode = document.body.dataset.loaderMode || "manual";
+        gaboOficioCaptureWorkspace.hidden = !visible || panelMode !== activeMode;
+      }
+      if (visible && scroll && gaboOficioCaptureWorkspace && typeof gaboOficioCaptureWorkspace.scrollIntoView === "function") {
+        gaboOficioCaptureWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    };
+
+    const updateGaboNewOficioAction = () => {
+      const hasEnte = !!(principalEnte && String(principalEnte.value || "").trim());
+      if (gaboOficiosTableActions) {
+        gaboOficiosTableActions.hidden = false;
+      }
+      updateGaboOficiosExportHref();
+      if (gaboNuevoOficioBtn) {
+        gaboNuevoOficioBtn.hidden = !hasEnte;
+        gaboNuevoOficioBtn.disabled = !hasEnte;
+        gaboNuevoOficioBtn.title = hasEnte
+          ? "Abrir captura para registrar un nuevo oficio."
+          : "Selecciona un ente para registrar un nuevo oficio.";
+      }
+    };
+
+    const buildGaboOficiosResumenParams = () => {
+      const ejercicio = principalEjercicio ? String(principalEjercicio.value || "").trim() : "";
+      const enteId = principalEnte ? String(principalEnte.value || "").trim() : "";
+      const tipoAuditoria = gaboOficiosAlcanceFilter ? String(gaboOficiosAlcanceFilter.value || "").trim() : "";
+      const params = new URLSearchParams();
+      if (ejercicio) {
+        params.set("ejercicio", ejercicio);
+      }
+      if (enteId) {
+        params.set("ente_id", enteId);
+      }
+      if (tipoAuditoria) {
+        params.set("tipo_auditoria", tipoAuditoria);
+      }
+      return params;
+    };
+
+    const updateGaboOficiosExportHref = () => {
+      if (!gaboExportOficiosBtn) {
+        return;
+      }
+      const params = buildGaboOficiosResumenParams();
+      const hasEjercicio = !!params.get("ejercicio");
+      gaboExportOficiosBtn.href = hasEjercicio
+        ? `{{ url_for('carga_oficios_resumen_exportar') }}?${params.toString()}`
+        : "#";
+      gaboExportOficiosBtn.setAttribute("aria-disabled", hasEjercicio ? "false" : "true");
+      gaboExportOficiosBtn.classList.toggle("is-disabled", !hasEjercicio);
+      gaboExportOficiosBtn.title = hasEjercicio
+        ? "Exportar la lista de oficios capturados con los filtros actuales."
+        : "Selecciona un ejercicio para exportar.";
+    };
+
     let gaboOficiosResumenFetchId = 0;
     let gaboOficiosResumenTimer = null;
     let gaboOficiosResumenRows = [];
@@ -980,7 +966,7 @@
       if (tipos.length === 1) {
         return tipos[0];
       }
-      const currentTipo = principalTipoAuditoria ? String(principalTipoAuditoria.value || "").trim() : "";
+      const currentTipo = gaboOficiosAlcanceFilter ? String(gaboOficiosAlcanceFilter.value || "").trim() : "";
       if (currentTipo && !isMixedScopeTipo(currentTipo) && tipos.includes(currentTipo)) {
         return currentTipo;
       }
@@ -988,9 +974,7 @@
     };
 
     const buildGaboOficioEditHref = (row) => {
-      const baseHref = loaderOpenObsAdminBtn && loaderOpenObsAdminBtn.dataset.baseHref
-        ? loaderOpenObsAdminBtn.dataset.baseHref
-        : "/carga/observaciones-admin";
+      const baseHref = "{{ url_for('carga_observaciones_admin') }}";
       const url = new URL(baseHref, window.location.origin);
       url.searchParams.set("return_vista", "manual");
       const ejercicio = principalEjercicio ? String(principalEjercicio.value || "").trim() : "";
@@ -1027,7 +1011,7 @@
       if (!list.length) {
         gaboOficiosResumenRows = [];
         gaboOficiosResumenBody.innerHTML = (
-          '<tr><td colspan="14" class="muted">Sin oficios registrados para el contexto activo.</td></tr>'
+          '<tr><td colspan="14" class="muted">Sin oficios registrados para el ente seleccionado.</td></tr>'
         );
         return;
       }
@@ -1110,7 +1094,7 @@
           `<details class="gabo-oficios-menu">` +
           `<summary>Opciones</summary>` +
           `<div class="gabo-oficios-menu-list">` +
-          `<a class="btn-secondary btn-compact" href="${escapeHtml(editHref)}">Cargar Resultados de Solventación</a>` +
+          `<a class="btn-secondary btn-compact" href="${escapeHtml(editHref)}" target="_blank" rel="noopener noreferrer">Solventación</a>` +
           `<button type="button" class="btn-danger btn-compact" data-gabo-oficio-delete="${rowIndex}">Eliminar</button>` +
           `</div>` +
           `</details>` +
@@ -1130,7 +1114,7 @@
       )).join("");
       const totalRow = (
         `<tr class="gabo-oficios-total">` +
-        `<th colspan="4">Total</th>` +
+        `<th colspan="4">Total general</th>` +
         renderGaboOficiosTotalCells(totals) +
         `</tr>`
       );
@@ -1184,6 +1168,95 @@
       }
     };
 
+    const startNewOficioCapture = () => {
+      const selectedEnte = principalEnte ? String(principalEnte.value || "").trim() : "";
+      if (!selectedEnte) {
+        showWizardToast("Selecciona un ente antes de crear un nuevo oficio.", "error");
+        updateGaboNewOficioAction();
+        return;
+      }
+      clearGaboDraftState();
+      setOficioCaptureVisible(true, { scroll: true });
+      clearManualEditState();
+      editingFuenteIndex = null;
+      fuentesDetalleState = [];
+      pdpDetalleState = [];
+      pdpSelectorLabels = [];
+      observacionesAllRows = [];
+      currentManualStep = 1;
+      if (principalTipoAuditoria) {
+        principalTipoAuditoria.value = "";
+      }
+      if (manualTipoAuditoria) {
+        manualTipoAuditoria.value = "";
+      }
+      if (principalNumeroOficioInput) {
+        principalNumeroOficioInput.value = "";
+      }
+      if (principalNumeroOficio) {
+        principalNumeroOficio.value = "";
+      }
+      if (manualNumeroOficio) {
+        manualNumeroOficio.value = "";
+      }
+      if (principalFechaNotificacion) {
+        principalFechaNotificacion.value = "";
+      }
+      if (manualFechaNotificacion) {
+        manualFechaNotificacion.value = "";
+      }
+      if (principalPeriodoSelector) {
+        principalPeriodoSelector.value = "";
+      }
+      if (principalPeriodoNuevo) {
+        principalPeriodoNuevo.value = "";
+      }
+      if (principalPeriodo) {
+        principalPeriodo.value = "";
+      }
+      if (manualPeriodo) {
+        manualPeriodo.value = "";
+      }
+      if (manualFuenteNuevaInput) {
+        manualFuenteNuevaInput.value = "";
+      }
+      ["manual_cantidad_sa", "manual_cantidad_pdp", "manual_cantidad_pras", "manual_cantidad_pefcf", "manual_cantidad_r"].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) {
+          input.value = "0";
+        }
+      });
+      if (manualResumenJsonInput) {
+        manualResumenJsonInput.value = "";
+      }
+      if (manualResumenJsonFeedback) {
+        manualResumenJsonFeedback.textContent = "";
+      }
+      if (manualFuentesDetalleJson) {
+        manualFuentesDetalleJson.value = "[]";
+      }
+      if (manualPdpDetalleJson) {
+        manualPdpDetalleJson.value = "[]";
+      }
+      if (manualPdpBreakdown) {
+        manualPdpBreakdown.innerHTML = "";
+      }
+      if (manualResumenJsonImport && "open" in manualResumenJsonImport) {
+        manualResumenJsonImport.open = true;
+      }
+      syncFuentesDetalleState();
+      syncPdpDetalleJson();
+      clearOficioUpload();
+      clearFuenteEditor({ clearFeedback: true });
+      setManualStep(1);
+      renderFuentesDetalleRows();
+      renderPdpDetalleMenu();
+      renderResumenFuentes();
+      updateContextSummary();
+      updateManualSaveState();
+      showWizardToast("Listo para capturar un nuevo oficio.", "info");
+    };
+
     const loadGaboOficiosResumen = async () => {
       if (!gaboOficiosResumenBody) {
         return;
@@ -1191,15 +1264,13 @@
       const ejercicio = principalEjercicio ? String(principalEjercicio.value || "").trim() : "";
       if (!ejercicio) {
         renderGaboOficiosResumen([], {}, "Selecciona un ejercicio para consultar los oficios registrados.");
+        updateGaboOficiosExportHref();
         return;
       }
       const requestId = ++gaboOficiosResumenFetchId;
       renderGaboOficiosResumen([], {}, "Consultando oficios registrados...");
-      const params = new URLSearchParams({ ejercicio });
-      const enteId = principalEnte ? String(principalEnte.value || "").trim() : "";
-      if (enteId) {
-        params.set("ente_id", enteId);
-      }
+      const params = buildGaboOficiosResumenParams();
+      updateGaboOficiosExportHref();
       try {
         const response = await fetch(`/carga/oficios-resumen?${params.toString()}`);
         if (!response.ok) {
@@ -2084,106 +2155,6 @@
       return true;
     };
 
-    const updateTitularesOpenLink = () => {
-      if (!loaderOpenTitularesBtn || !loaderOpenTitularesBtn.dataset.baseHref) {
-        return;
-      }
-      const params = new URLSearchParams();
-      const ejercicio = principalEjercicio ? String(principalEjercicio.value || "").trim() : "";
-      const enteId = principalEnte ? String(principalEnte.value || "").trim() : "";
-      const tipoAuditoria = principalTipoAuditoria ? String(principalTipoAuditoria.value || "").trim() : "";
-      if (ejercicio) {
-        params.set("ejercicio", ejercicio);
-      }
-      if (enteId) {
-        params.set("ente_id", enteId);
-      }
-      if (tipoAuditoria && !isMixedScopeTipo(tipoAuditoria)) {
-        params.set("tipo_auditoria", tipoAuditoria);
-      }
-      const baseHref = loaderOpenTitularesBtn.dataset.baseHref;
-      loaderOpenTitularesBtn.href = params.toString()
-        ? `${baseHref}?${params.toString()}`
-        : baseHref;
-    };
-
-    const resolveObsAdminTipoAuditoria = () => {
-      const manualTipo = manualTipoAuditoria ? String(manualTipoAuditoria.value || "").trim() : "";
-      if (manualTipo) {
-        return manualTipo;
-      }
-      const principalTipo = principalTipoAuditoria ? String(principalTipoAuditoria.value || "").trim() : "";
-      return isMixedScopeTipo(principalTipo) ? "" : principalTipo;
-    };
-
-    const updateObsAdminOpenLink = () => {
-      if (!loaderOpenObsAdminBtn || !loaderOpenObsAdminBtn.dataset.baseHref) {
-        return;
-      }
-      const url = new URL(loaderOpenObsAdminBtn.dataset.baseHref, window.location.origin);
-      const returnVista = (document.body.dataset.loaderMode || "manual") === "titulares" ? "titulares" : "manual";
-      url.searchParams.set("return_vista", returnVista);
-
-      const ejercicio = principalEjercicio ? String(principalEjercicio.value || "").trim() : "";
-      const enteId = principalEnte ? String(principalEnte.value || "").trim() : "";
-      const tipoAuditoria = resolveObsAdminTipoAuditoria();
-      const oficio = principalNumeroOficio ? String(principalNumeroOficio.value || "").trim() : "";
-      const periodo = principalPeriodo ? String(principalPeriodo.value || "").trim() : "";
-      const fuenteNombre = resolveManualFuenteNombre() || resolvePrincipalFuenteNombre();
-
-      if (ejercicio) {
-        url.searchParams.set("ejercicio", ejercicio);
-      }
-      if (enteId) {
-        url.searchParams.set("ente_id", enteId);
-      }
-      if (tipoAuditoria) {
-        url.searchParams.set("tipo_auditoria", tipoAuditoria);
-      }
-      if (oficio) {
-        url.searchParams.set("oficio", oficio);
-      }
-      if (periodo) {
-        url.searchParams.set("periodo", periodo);
-      }
-      if (fuenteNombre) {
-        url.searchParams.set("fuente", fuenteNombre);
-      }
-
-      loaderOpenObsAdminBtn.href = `${url.pathname}?${url.searchParams.toString()}`;
-      const label = loaderOpenObsAdminBtn.querySelector("[data-loader-obs-admin-label]");
-      const hasDirectScope = !!(ejercicio && enteId && tipoAuditoria && oficio && (fuenteNombre || periodo));
-      if (label) {
-        label.textContent = "Resultados de Solventación";
-      }
-      loaderOpenObsAdminBtn.title = hasDirectScope
-        ? "Abrir resultados de solventación con los filtros del contexto activo."
-        : "Abrir resultados de solventación.";
-    };
-
-    const updateBulkUploadOpenLink = () => {
-      if (!loaderOpenBulkUploadBtn || !loaderOpenBulkUploadBtn.dataset.baseHref) {
-        return;
-      }
-      const url = new URL(loaderOpenBulkUploadBtn.dataset.baseHref, window.location.origin);
-      const returnVista = (document.body.dataset.loaderMode || "manual") === "titulares" ? "titulares" : "manual";
-      url.searchParams.set("return_vista", returnVista);
-
-      const ejercicio = principalEjercicio ? String(principalEjercicio.value || "").trim() : "";
-      const enteId = principalEnte ? String(principalEnte.value || "").trim() : "";
-      if (ejercicio === "2025") {
-        url.searchParams.set("ejercicio", ejercicio);
-      }
-      if (enteId && ejercicio === "2025") {
-        url.searchParams.set("ente_id", enteId);
-      }
-
-      loaderOpenBulkUploadBtn.href = `${url.pathname}?${url.searchParams.toString()}`;
-      loaderOpenBulkUploadBtn.title = enteId && ejercicio === "2025"
-        ? "Abrir carga masiva con el ente actual."
-        : "Abrir carga masiva para comparar un archivo contra observaciones 2025.";
-    };
-
     const updateContextSummary = () => {
       const enteLabel = getSelectedOptionLabel(principalEnte);
       const fuenteLabel = resolveManualFuenteNombre() || resolvePrincipalFuenteNombre() || "-";
@@ -2211,9 +2182,7 @@
       if (manualContextSummaryFecha) {
         manualContextSummaryFecha.textContent = formatFechaForSummary(principalFechaNotificacion ? principalFechaNotificacion.value : "");
       }
-      updateTitularesOpenLink();
-      updateObsAdminOpenLink();
-      updateBulkUploadOpenLink();
+      updateGaboNewOficioAction();
       renderManualReviewSummary();
     };
 
@@ -2225,7 +2194,7 @@
     };
 
     const showPrincipalScopeMessage = () => {
-      showWizardToast("Primero selecciona ejercicio, ente y alcance del oficio.", "info");
+      showWizardToast("Completa los datos del oficio para continuar.", "info");
     };
 
     const validateContextStep = ({ showFeedback = true } = {}) => {
@@ -2360,14 +2329,13 @@
       applyNamedFields(payload.manual_form);
       applyNamedFields(payload.titular_form);
       syncTitularAdminPeriodoToggle({ infer: true });
-      if (Array.isArray(payload.fuentes_detalle) && manualFuentesDetalleJson) {
-        manualFuentesDetalleJson.value = JSON.stringify(payload.fuentes_detalle);
-        fuentesDetalleState = parseFuentesDetalleState();
-        syncFuentesDetalleState();
+      fuentesDetalleState = [];
+      pdpDetalleState = [];
+      if (manualFuentesDetalleJson) {
+        manualFuentesDetalleJson.value = "[]";
       }
-      if (Array.isArray(payload.pdp_detalle) && manualPdpDetalleJson) {
-        manualPdpDetalleJson.value = JSON.stringify(payload.pdp_detalle);
-        pdpDetalleState = parsePdpDetalleState();
+      if (manualPdpDetalleJson) {
+        manualPdpDetalleJson.value = "[]";
       }
       if (typeof payload.solventacion_detalle_json === "string" && manualSolventacionDetalleJson) {
         manualSolventacionDetalleJson.value = payload.solventacion_detalle_json;
@@ -2687,9 +2655,18 @@
         if (!Array.isArray(parsed)) {
           return [];
         }
-        return parsed.map((item) => ({
+        return parsed.map((item) => normalizeSourceFlags({
           tipo_auditoria: String(item.tipo_auditoria || "").trim(),
           fuente_nombre: String(item.fuente_nombre || "").trim(),
+          modalidad: String(item.modalidad || "Fuente").trim() === "Convenio" ? "Convenio" : "Fuente",
+          convenio_nombre: String(item.convenio_nombre || "").trim(),
+          convenio_ente_nombre: String(item.convenio_ente_nombre || "").trim(),
+          convenio_ente_id: String(item.convenio_ente_id || "").trim(),
+          ramo_33: item.ramo_33,
+          ramo_28: item.ramo_28,
+          origen_fuente: item.origen_fuente,
+          remanente: item.remanente,
+          es_remanente: item.es_remanente,
           periodo: preservePeriodoWhitespace
             ? String(item.periodo || "")
             : normalizePeriodoValue(String(item.periodo || "")),
@@ -2731,6 +2708,8 @@
       if (!manualFuentesDetalleJson) {
         return;
       }
+      fuentesDetalleState = (Array.isArray(fuentesDetalleState) ? fuentesDetalleState : [])
+        .map((row) => normalizeSourceFlags(row));
       manualFuentesDetalleJson.value = JSON.stringify(fuentesDetalleState);
       scheduleDraftAutosave();
     };
@@ -2897,13 +2876,8 @@
       updateResumenToolbarState();
     };
 
-    const renderManualReviewSummary = () => {
-      if (!manualReviewChecklist) {
-        return;
-      }
-      const statusLabel = getManualMode() === "solventacion" ? "Solventación" : "Emitido";
-      const capturadas = countCapturedFuenteScopes();
-      const totalObs = (Array.isArray(fuentesDetalleState) ? fuentesDetalleState : []).reduce(
+    const getTotalObservacionesCapturadas = () => (
+      (Array.isArray(fuentesDetalleState) ? fuentesDetalleState : []).reduce(
         (sum, item) => sum
           + Number(item.cantidad_sa || 0)
           + Number(item.cantidad_pdp || 0)
@@ -2911,73 +2885,109 @@
           + Number(item.cantidad_pefcf || 0)
           + Number(item.cantidad_r || 0),
         0,
-      );
+      )
+    );
+
+    const getPdpChecklistSummary = () => {
       const totalPdp = getTotalPdpTargetCount();
-      const totalPdpMonto = getTotalPdpMonto();
       const normalizedPdp = normalizePdpDetalleState(
         totalPdp,
         pdpDetalleState.length ? pdpDetalleState : parsePdpDetalleState(),
       );
-      const pdpCompletas = normalizedPdp.reduce((sum, item) => {
+      const completas = normalizedPdp.reduce((sum, item) => {
         const concepto = String(item.concepto || "").trim();
         const monto = parseMoneyInput(item.monto);
         return sum + ((concepto && monto !== null) ? 1 : 0);
       }, 0);
+      return {
+        ok: totalPdp === 0 || completas === totalPdp,
+        total: totalPdp,
+        completas,
+        monto: getTotalPdpMonto(),
+      };
+    };
+
+    const getManualChecklistState = () => {
+      const mode = getManualMode();
+      const rows = Array.isArray(fuentesDetalleState) ? fuentesDetalleState : [];
+      const capturadas = countCapturedFuenteScopes();
+      const totalObs = getTotalObservacionesCapturadas();
+      const pdpSummary = getPdpChecklistSummary();
+      const duplicateLabels = getFuenteDuplicateLabels(rows);
       const scopeTipo = principalTipoAuditoria ? String(principalTipoAuditoria.value || "").trim() : "";
+      const ejercicio = principalEjercicio ? String(principalEjercicio.value || "").trim() : "";
+      const enteId = principalEnte ? String(principalEnte.value || "").trim() : "";
       const oficio = principalNumeroOficio ? String(principalNumeroOficio.value || "").trim() : "";
-      const periodo = principalPeriodo ? String(principalPeriodo.value || "").trim() : "";
       const fecha = principalFechaNotificacion ? String(principalFechaNotificacion.value || "").trim() : "";
-      const fuenteActiva = resolveManualFuenteNombre();
-      const editingItem = Array.isArray(fuentesDetalleState)
-        && Number.isInteger(editingFuenteIndex)
-        && editingFuenteIndex >= 0
-        && editingFuenteIndex < fuentesDetalleState.length
-        ? (fuentesDetalleState[editingFuenteIndex] || null)
-        : null;
-      const oficioDetail = oficio && periodo && fecha
-        ? `${oficio} · ${periodo} · ${formatFechaForSummary(fecha)}`
-        : "Faltan datos";
-      const activaDetail = editingItem
-        ? `Editando #${editingFuenteIndex + 1} · ${editingItem.fuente_nombre}`
-        : (fuenteActiva || "Sin fuente");
-      const pdpDetail = totalPdp > 0
-        ? `${pdpCompletas} / ${totalPdp} completas · ${formatMoney(totalPdpMonto)}`
-        : "Sin PDP";
+      const contextoOk = !!(ejercicio && enteId && scopeTipo && oficio && fecha);
+      const fuentesOk = capturadas > 0 && totalObs > 0;
+      const duplicadosOk = duplicateLabels.length === 0;
+      const solventacionOk = mode !== "solventacion" || (!isObservacionesLoading && hasSolventacionObservacionesBase());
+      const ready = contextoOk
+        && fuentesOk
+        && pdpSummary.ok
+        && duplicadosOk
+        && solventacionOk;
+      return {
+        ready,
+        mode,
+        rows,
+        capturadas,
+        totalObs,
+        contextoOk,
+        fuentesOk,
+        pdpSummary,
+        duplicadosOk,
+        duplicateLabels,
+        solventacionOk,
+        details: {
+          contexto: contextoOk
+            ? `${oficio} · ${scopeTipo} · ${formatFechaForSummary(fecha)}`
+            : "Faltan ejercicio, ente, alcance, oficio o fecha",
+          fuentes: fuentesOk ? `${capturadas} fuente(s), ${totalObs} observación(es)` : "Agrega una fuente con observaciones",
+          pdp: pdpSummary.total > 0
+            ? `${pdpSummary.completas} / ${pdpSummary.total} completas · ${formatMoney(pdpSummary.monto)}`
+            : "Sin PDP por completar",
+          duplicados: duplicadosOk
+            ? "Sin claves repetidas"
+            : duplicateLabels.slice(0, 2).join(" | "),
+          listo: ready
+            ? "Listo para guardar"
+            : (mode === "solventacion" && !solventacionOk ? "Falta consultar observaciones base" : "Hay pendientes"),
+        },
+      };
+    };
+
+    const renderManualReviewSummary = () => {
+      if (!manualReviewChecklist) {
+        return;
+      }
+      const state = getManualChecklistState();
       const rows = [
         {
-          ok: true,
-          label: "Estado",
-          detail: statusLabel,
+          ok: state.contextoOk,
+          label: "Contexto completo",
+          detail: state.details.contexto,
         },
         {
-          ok: !!scopeTipo,
-          label: "Alcance",
-          detail: scopeTipo || "Pendiente",
+          ok: state.fuentesOk,
+          label: "Al menos una fuente",
+          detail: state.details.fuentes,
         },
         {
-          ok: !!oficio && !!periodo && !!fecha,
-          label: "Oficio",
-          detail: oficioDetail,
+          ok: state.pdpSummary.ok,
+          label: "PDP completos",
+          detail: state.details.pdp,
         },
         {
-          ok: capturadas > 0,
-          label: "Fuentes",
-          detail: `${capturadas} capturada(s)`,
+          ok: state.duplicadosOk,
+          label: "Sin duplicados detectados",
+          detail: state.details.duplicados,
         },
         {
-          ok: totalObs > 0,
-          label: "Obs.",
-          detail: String(totalObs),
-        },
-        {
-          ok: totalPdp === 0 || pdpCompletas === totalPdp,
-          label: "PDP",
-          detail: pdpDetail,
-        },
-        {
-          ok: !!fuenteActiva || !!editingItem || capturadas > 0,
-          label: "Activa",
-          detail: activaDetail,
+          ok: state.ready,
+          label: "Listo para guardar",
+          detail: state.details.listo,
         },
       ];
       manualReviewChecklist.innerHTML = rows.map((row) => (
@@ -3157,6 +3167,9 @@
         cantidad_pras: 0,
         cantidad_pefcf: 0,
         cantidad_r: 0,
+        ramo_33: "No",
+        origen_fuente: "Del Ejercicio",
+        ramo_28: "No",
       });
       ensurePdpDetalleAlignedToFuentes();
       syncFuentesDetalleState();
@@ -3240,9 +3253,20 @@
         const targetTipo = String(rawValue || "").trim();
         row.tipo_auditoria = allowedTipos.includes(targetTipo) ? targetTipo : (allowedTipos[0] || "Financiera");
       } else if (field === "fuente_nombre") {
+        const previousSource = row.fuente_nombre || "";
+        const previousOrigen = normalizeOrigenFuenteChoice(row.origen_fuente, previousSource);
         row.fuente_nombre = normalizeInlineText(rawValue);
+        if (!row.origen_fuente || previousOrigen === inferOrigenFuenteChoice(previousSource)) {
+          row.origen_fuente = inferOrigenFuenteChoice(row.fuente_nombre);
+        }
       } else if (field === "convenio_nombre") {
         row.convenio_nombre = normalizeInlineText(rawValue);
+      } else if (field === "ramo_33") {
+        row.ramo_33 = normalizeChoiceSiNo(rawValue);
+      } else if (field === "ramo_28") {
+        row.ramo_28 = normalizeChoiceSiNo(rawValue);
+      } else if (field === "origen_fuente") {
+        row.origen_fuente = normalizeOrigenFuenteChoice(rawValue, row.fuente_nombre);
       } else if (field === "periodo") {
         row.periodo = normalizeResumenPeriodoForStore(rawValue);
       } else if (field === "cantidad_sa" || field === "cantidad_pdp" || field === "cantidad_pras" || field === "cantidad_pefcf" || field === "cantidad_r") {
@@ -3286,6 +3310,100 @@
       renderManualReviewSummary();
       updateManualSaveState();
       updateWizardModeAvailability();
+    };
+
+    const parsePdpBulkMonto = (rawValue) => (
+      parseMoneyInput(String(rawValue || "").replace(/\bmxn\b/gi, "").trim())
+    );
+
+    const splitPdpBulkParts = (rawValue, pattern) => (
+      String(rawValue || "")
+        .split(pattern)
+        .map((part) => normalizeInlineText(part))
+        .filter(Boolean)
+    );
+
+    const splitPdpBulkDashParts = (rawValue) => (
+      splitPdpBulkParts(rawValue, /\s+[—–-]\s+/)
+    );
+
+    const parsePdpBulkLine = (rawLine, lineNumber) => {
+      let line = String(rawLine || "").trim();
+      if (!line) {
+        return null;
+      }
+
+      let targetIndex = null;
+      const tabPartsWithIndex = splitPdpBulkParts(line, /\t+/);
+      if (tabPartsWithIndex.length >= 3 && /^\d+$/.test(tabPartsWithIndex[0] || "")) {
+        targetIndex = Number.parseInt(tabPartsWithIndex[0], 10) - 1;
+        line = tabPartsWithIndex.slice(1).join("\t");
+      } else {
+        const pipePartsWithIndex = splitPdpBulkParts(line, /\s*[|;]\s*/);
+        if (pipePartsWithIndex.length >= 3 && /^\d+$/.test(pipePartsWithIndex[0] || "")) {
+          targetIndex = Number.parseInt(pipePartsWithIndex[0], 10) - 1;
+          line = pipePartsWithIndex.slice(1).join(" | ");
+        } else {
+          const dashPartsWithIndex = splitPdpBulkDashParts(line);
+          if (dashPartsWithIndex.length >= 3 && /^\d+$/.test(dashPartsWithIndex[0] || "")) {
+            targetIndex = Number.parseInt(dashPartsWithIndex[0], 10) - 1;
+            line = dashPartsWithIndex.slice(1).join(" — ");
+          } else {
+            const numberedMatch = line.match(/^(\d{1,4})\s*[\.\)\-:]+\s*(.+)$/);
+            if (numberedMatch) {
+              targetIndex = Number.parseInt(numberedMatch[1], 10) - 1;
+              line = String(numberedMatch[2] || "").trim();
+            }
+          }
+        }
+      }
+
+      let concepto = "";
+      let montoRaw = "";
+      const tabParts = splitPdpBulkParts(line, /\t+/);
+      if (tabParts.length >= 2) {
+        montoRaw = tabParts.pop() || "";
+        concepto = tabParts.join(" ");
+      } else {
+        const delimitedParts = splitPdpBulkParts(line, /\s*[|;]\s*/);
+        if (delimitedParts.length >= 2) {
+          montoRaw = delimitedParts.pop() || "";
+          concepto = delimitedParts.join(" ");
+        } else {
+          const dashParts = splitPdpBulkDashParts(line);
+          if (dashParts.length >= 2) {
+            montoRaw = dashParts.pop() || "";
+            concepto = dashParts.join(" — ");
+          } else {
+            const trailingAmountMatch = line.match(
+              /^(.*?)(?:\s+)(\$?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?(?:\s*MXN)?)$/i
+            );
+            if (trailingAmountMatch) {
+              concepto = normalizeInlineText(trailingAmountMatch[1]);
+              montoRaw = String(trailingAmountMatch[2] || "").trim();
+            }
+          }
+        }
+      }
+
+      if (!concepto || !montoRaw) {
+        throw new Error(
+          `Línea ${lineNumber}: usa "1 — Concepto — $123.45", "1. Concepto 123.45" o "Concepto | 123.45".`
+        );
+      }
+
+      const monto = parsePdpBulkMonto(montoRaw);
+      if (monto === null) {
+        throw new Error(`Línea ${lineNumber}: el monto PDP no es válido.`);
+      }
+
+      return {
+        targetIndex,
+        targetNumber: targetIndex === null ? null : targetIndex + 1,
+        concepto: normalizeInlineText(concepto),
+        subconcepto: "",
+        monto: monto.toFixed(2),
+      };
     };
 
     const setInlinePdpBulkFeedback = (rowIndex, message, level = "info") => {
@@ -3575,7 +3693,7 @@
         const tipoLabel = formatResumenSectionLabel(section, index);
         const tipoTotals = { sa: 0, pdp: 0, pras: 0, pefcf: 0, r: 0, total: 0, monto_pdp_emitido: 0 };
         const rowsHtml = rowIndexes.map((rowIndex) => {
-          const row = fuentesDetalleState[rowIndex] || {};
+          const row = normalizeSourceFlags(fuentesDetalleState[rowIndex] || {});
           const fuenteNombre = String(row.fuente_nombre || "").trim();
           const convenioNombre = String(row.convenio_nombre || "").trim();
           const convenioEnte = String(row.convenio_ente_nombre || "").trim();
@@ -3841,6 +3959,9 @@
           convenio_nombre: existingScope.convenio_nombre || "",
           convenio_ente_nombre: existingScope.convenio_ente_nombre || "",
           convenio_ente_id: existingScope.convenio_ente_id || "",
+          ramo_33: normalizeChoiceSiNo(existingScope.ramo_33),
+          ramo_28: normalizeChoiceSiNo(existingScope.ramo_28),
+          origen_fuente: normalizeOrigenFuenteChoice(existingScope.origen_fuente, fuenteNombre),
           periodo: targetPeriodo,
           cantidad_sa: cantidadSa,
           cantidad_pdp: cantidadPdp,
@@ -4147,6 +4268,105 @@
       String(value || "").split(/\s+/).filter(Boolean).join(" ")
     );
 
+    const normalizeChoiceKey = (value) => (
+      String(value ?? "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .trim()
+    );
+
+    const normalizeChoiceSiNo = (value, fallback = "No") => {
+      const key = normalizeChoiceKey(value);
+      if (["si", "s", "1", "true", "verdadero"].includes(key)) {
+        return "Si";
+      }
+      if (["no", "n", "0", "false", "falso"].includes(key)) {
+        return "No";
+      }
+      return fallback === "Si" ? "Si" : "No";
+    };
+
+    const inferOrigenFuenteChoice = (fuenteNombre) => {
+      const key = normalizeChoiceKey(fuenteNombre);
+      if (key.startsWith("remanente") || key.startsWith("rea:") || key.startsWith("seguimiento")) {
+        return "Remanentes";
+      }
+      return "Del Ejercicio";
+    };
+
+    const normalizeOrigenFuenteChoice = (value, fuenteNombre = "") => {
+      if (value === true) {
+        return "Remanentes";
+      }
+      if (value === false) {
+        return "Del Ejercicio";
+      }
+      const key = normalizeChoiceKey(value);
+      if (["remanente", "remanentes", "si", "s", "1", "true", "verdadero"].includes(key)) {
+        return "Remanentes";
+      }
+      if (["del ejercicio", "ejercicio", "del_ejercicio", "no", "n", "0", "false", "falso"].includes(key)) {
+        return "Del Ejercicio";
+      }
+      return inferOrigenFuenteChoice(fuenteNombre);
+    };
+
+    const normalizeSourceFlags = (row) => {
+      const source = normalizeInlineText(row && row.fuente_nombre);
+      const remanenteValue = row && Object.prototype.hasOwnProperty.call(row, "es_remanente")
+        ? row.es_remanente
+        : (row && Object.prototype.hasOwnProperty.call(row, "remanente") ? row.remanente : "");
+      const origenRaw = row && Object.prototype.hasOwnProperty.call(row, "origen_fuente")
+        ? row.origen_fuente
+        : remanenteValue;
+      return {
+        ...(row || {}),
+        ramo_33: normalizeChoiceSiNo(row && row.ramo_33),
+        ramo_28: normalizeChoiceSiNo(row && row.ramo_28),
+        origen_fuente: normalizeOrigenFuenteChoice(origenRaw, source),
+      };
+    };
+
+    const buildFuenteDuplicateKey = (row) => {
+      const safeRow = normalizeSourceFlags(row || {});
+      const parts = [
+        safeRow.tipo_auditoria,
+        safeRow.fuente_nombre,
+        safeRow.periodo,
+        safeRow.modalidad || "Fuente",
+        safeRow.convenio_nombre || "",
+        safeRow.convenio_ente_id || "",
+        safeRow.convenio_ente_nombre || "",
+      ].map((value) => normalizeInlineText(value).toLowerCase());
+      return parts.join("||");
+    };
+
+    const getFuenteDuplicateLabels = (rows) => {
+      const seen = new Map();
+      const duplicates = [];
+      (Array.isArray(rows) ? rows : []).forEach((row) => {
+        const fuente = normalizeInlineText(row && row.fuente_nombre);
+        const periodo = normalizeInlineText(row && row.periodo);
+        if (!fuente || !periodo) {
+          return;
+        }
+        const key = buildFuenteDuplicateKey(row);
+        if (seen.has(key)) {
+          const label = [
+            row.tipo_auditoria,
+            row.fuente_nombre,
+            row.periodo,
+            row.convenio_nombre,
+          ].filter(Boolean).join(" · ");
+          duplicates.push(label || "Fuente repetida");
+          return;
+        }
+        seen.set(key, true);
+      });
+      return duplicates;
+    };
+
     const resumenPeriodoMonthLabels = {
       ene: "Enero",
       enero: "Enero",
@@ -4304,6 +4524,12 @@
           convenio_ente_nombre: modalidad === "Convenio" ? normalizeInlineText(row.convenio_ente_nombre) : "",
           convenio_ente_id: modalidad === "Convenio" ? normalizeInlineText(row.convenio_ente_id) : "",
           periodo: normalizeResumenPeriodoForStore(row.periodo),
+          ramo_33: normalizeChoiceSiNo(row.ramo_33 ?? row.ramo33 ?? row.tiene_ramo_33),
+          ramo_28: normalizeChoiceSiNo(row.ramo_28 ?? row.ramo28 ?? row.tiene_ramo_28),
+          origen_fuente: normalizeOrigenFuenteChoice(
+            row.origen_fuente ?? row.origenFuente ?? row.remanente ?? row.es_remanente,
+            row.fuente_nombre,
+          ),
           cantidad_sa: Math.max(0, Number.parseInt(String(row.cantidad_sa || 0), 10) || 0),
           cantidad_pdp: Math.max(0, Number.parseInt(String(row.cantidad_pdp || 0), 10) || 0),
           cantidad_pras: Math.max(0, Number.parseInt(String(row.cantidad_pras || 0), 10) || 0),
@@ -4341,6 +4567,9 @@
             convenio_ente_nombre: row.convenio_ente_nombre || row.convenioEnteNombre || "",
             convenio_ente_id: row.convenio_ente_id || row.convenioEnteId || "",
             periodo: row.periodo || "",
+            ramo_33: row.ramo_33 ?? row.ramo33 ?? row.tiene_ramo_33,
+            ramo_28: row.ramo_28 ?? row.ramo28 ?? row.tiene_ramo_28,
+            origen_fuente: row.origen_fuente ?? row.origenFuente ?? row.remanente ?? row.es_remanente,
             cantidad_sa: row.cantidad_sa ?? row.cantidadSa ?? row.SA ?? 0,
             cantidad_pdp: row.cantidad_pdp ?? row.cantidadPdp ?? row.PDP ?? 0,
             cantidad_pras: row.cantidad_pras ?? row.cantidadPras ?? row.PRAS ?? 0,
@@ -4432,6 +4661,9 @@
               convenio_ente_nombre: fuenteItem.convenio_ente_nombre || fuenteItem.convenioEnteNombre || registroItem.convenio_ente_nombre || "",
               convenio_ente_id: fuenteItem.convenio_ente_id || fuenteItem.convenioEnteId || registroItem.convenio_ente_id || "",
               periodo,
+              ramo_33: registroItem.ramo_33 ?? registroItem.ramo33 ?? fuenteItem.ramo_33 ?? fuenteItem.ramo33 ?? registroItem.tiene_ramo_33 ?? fuenteItem.tiene_ramo_33,
+              ramo_28: registroItem.ramo_28 ?? registroItem.ramo28 ?? fuenteItem.ramo_28 ?? fuenteItem.ramo28 ?? registroItem.tiene_ramo_28 ?? fuenteItem.tiene_ramo_28,
+              origen_fuente: registroItem.origen_fuente ?? registroItem.origenFuente ?? fuenteItem.origen_fuente ?? fuenteItem.origenFuente ?? registroItem.remanente ?? fuenteItem.remanente ?? registroItem.es_remanente ?? fuenteItem.es_remanente,
               cantidad_sa: cantidadSa,
               cantidad_pdp: cantidadPdp,
               cantidad_pras: cantidadPras,
@@ -4508,7 +4740,9 @@
         }
       }
 
-      fuentesDetalleState = Array.isArray(importResult.rows) ? importResult.rows : [];
+      fuentesDetalleState = Array.isArray(importResult.rows)
+        ? importResult.rows.map((row) => normalizeSourceFlags(row))
+        : [];
       editingFuenteIndex = null;
 
       if (importResult.tipoAuditoria && principalTipoAuditoria) {
@@ -4695,248 +4929,6 @@
       const concepto = String(item && item.concepto || "").trim();
       const monto = parseMoneyInput(item && item.monto || "");
       return !!concepto && monto !== null;
-    };
-
-    const setPdpBulkFeedback = (message, level = "info") => {
-      if (!manualPdpBulkFeedback) {
-        return;
-      }
-      manualPdpBulkFeedback.textContent = message || "";
-      manualPdpBulkFeedback.dataset.level = level;
-    };
-
-    const parsePdpBulkMonto = (rawValue) => (
-      parseMoneyInput(String(rawValue || "").replace(/\bmxn\b/gi, "").trim())
-    );
-
-    const splitPdpBulkParts = (rawValue, pattern) => (
-      String(rawValue || "")
-        .split(pattern)
-        .map((part) => normalizeInlineText(part))
-        .filter(Boolean)
-    );
-
-    const splitPdpBulkDashParts = (rawValue) => (
-      splitPdpBulkParts(rawValue, /\s+[—–-]\s+/)
-    );
-
-    const parsePdpBulkLine = (rawLine, lineNumber) => {
-      let line = String(rawLine || "").trim();
-      if (!line) {
-        return null;
-      }
-
-      let targetIndex = null;
-      const tabPartsWithIndex = splitPdpBulkParts(line, /\t+/);
-      if (tabPartsWithIndex.length >= 3 && /^\d+$/.test(tabPartsWithIndex[0] || "")) {
-        targetIndex = Number.parseInt(tabPartsWithIndex[0], 10) - 1;
-        line = tabPartsWithIndex.slice(1).join("\t");
-      } else {
-        const pipePartsWithIndex = splitPdpBulkParts(line, /\s*[|;]\s*/);
-        if (pipePartsWithIndex.length >= 3 && /^\d+$/.test(pipePartsWithIndex[0] || "")) {
-          targetIndex = Number.parseInt(pipePartsWithIndex[0], 10) - 1;
-          line = pipePartsWithIndex.slice(1).join(" | ");
-        } else {
-          const dashPartsWithIndex = splitPdpBulkDashParts(line);
-          if (dashPartsWithIndex.length >= 3 && /^\d+$/.test(dashPartsWithIndex[0] || "")) {
-            targetIndex = Number.parseInt(dashPartsWithIndex[0], 10) - 1;
-            line = dashPartsWithIndex.slice(1).join(" — ");
-          } else {
-            const numberedMatch = line.match(/^(\d{1,4})\s*[\.\)\-:]+\s*(.+)$/);
-            if (numberedMatch) {
-              targetIndex = Number.parseInt(numberedMatch[1], 10) - 1;
-              line = String(numberedMatch[2] || "").trim();
-            }
-          }
-        }
-      }
-
-      let concepto = "";
-      let montoRaw = "";
-      const tabParts = splitPdpBulkParts(line, /\t+/);
-      if (tabParts.length >= 2) {
-        montoRaw = tabParts.pop() || "";
-        concepto = tabParts.join(" ");
-      } else {
-        const delimitedParts = splitPdpBulkParts(line, /\s*[|;]\s*/);
-        if (delimitedParts.length >= 2) {
-          montoRaw = delimitedParts.pop() || "";
-          concepto = delimitedParts.join(" ");
-        } else {
-          const dashParts = splitPdpBulkDashParts(line);
-          if (dashParts.length >= 2) {
-            montoRaw = dashParts.pop() || "";
-            concepto = dashParts.join(" — ");
-          } else {
-            const trailingAmountMatch = line.match(
-              /^(.*?)(?:\s+)(\$?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?(?:\s*MXN)?)$/i
-            );
-            if (trailingAmountMatch) {
-              concepto = normalizeInlineText(trailingAmountMatch[1]);
-              montoRaw = String(trailingAmountMatch[2] || "").trim();
-            }
-          }
-        }
-      }
-
-      if (!concepto || !montoRaw) {
-        throw new Error(
-          `Línea ${lineNumber}: usa "1 — Concepto — $123.45", "1. Concepto 123.45" o "Concepto | 123.45".`
-        );
-      }
-
-      const monto = parsePdpBulkMonto(montoRaw);
-      if (monto === null) {
-        throw new Error(`Línea ${lineNumber}: el monto PDP no es válido.`);
-      }
-
-      return {
-        targetIndex,
-        targetNumber: targetIndex === null ? null : targetIndex + 1,
-        concepto: normalizeInlineText(concepto),
-        subconcepto: "",
-        monto: monto.toFixed(2),
-      };
-    };
-
-    const applyPdpBulkText = ({ overwrite = false } = {}) => {
-      const totalPdp = getTotalPdpTargetCount();
-      if (totalPdp <= 0) {
-        const message = "Primero define observaciones PDP en las fuentes de financiamiento.";
-        setPdpBulkFeedback(message, "error");
-        showWizardToast(message, "error");
-        return;
-      }
-
-      const rawText = String(manualPdpBulkText ? manualPdpBulkText.value : "").trim();
-      if (!rawText) {
-        const message = "Pega al menos una línea con concepto y monto PDP.";
-        setPdpBulkFeedback(message, "error");
-        showWizardToast(message, "error");
-        return;
-      }
-
-      const lines = rawText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-      let entries = [];
-      try {
-        entries = lines.map((line, idx) => parsePdpBulkLine(line, idx + 1)).filter(Boolean);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "No se pudo interpretar el texto masivo PDP.";
-        setPdpBulkFeedback(message, "error");
-        showWizardToast(message, "error");
-        return;
-      }
-
-      if (!entries.length) {
-        const message = "No se encontraron líneas válidas para cargar.";
-        setPdpBulkFeedback(message, "error");
-        showWizardToast(message, "error");
-        return;
-      }
-
-      const currentSourceScope = getCurrentPdpSourceScope();
-      const explicitEntries = entries.filter((entry) => entry.targetIndex !== null);
-      const canMapExplicitEntriesToActiveSource = !!(
-        currentSourceScope
-        && currentSourceScope.count > 0
-        && explicitEntries.length
-        && explicitEntries.every((entry) => {
-          const targetNumber = Number(entry.targetNumber);
-          return Number.isFinite(targetNumber) && targetNumber >= 1 && targetNumber <= currentSourceScope.count;
-        })
-        && Math.min(...explicitEntries.map((entry) => Number(entry.targetNumber))) === 1
-      );
-      if (canMapExplicitEntriesToActiveSource) {
-        explicitEntries.forEach((entry) => {
-          entry.targetIndex = currentSourceScope.startIndex + (Number(entry.targetNumber) - 1);
-        });
-      }
-
-      const nextState = normalizePdpDetalleState(
-        totalPdp,
-        (
-          overwrite
-          && (!canMapExplicitEntriesToActiveSource || !currentSourceScope)
-        )
-          ? []
-          : (pdpDetalleState.length ? pdpDetalleState : parsePdpDetalleState()),
-      );
-      if (overwrite && canMapExplicitEntriesToActiveSource && currentSourceScope) {
-        for (let idx = currentSourceScope.startIndex; idx <= currentSourceScope.endIndex; idx += 1) {
-          nextState[idx] = { concepto: "", subconcepto: "", monto: "" };
-        }
-      }
-      const touchedIndices = new Set();
-      const implicitEntries = [];
-
-      for (const entry of entries) {
-        if (entry.targetIndex === null) {
-          implicitEntries.push(entry);
-          continue;
-        }
-        if (entry.targetIndex < 0 || entry.targetIndex >= totalPdp) {
-          const message = `La observación PDP ${entry.targetIndex + 1} no existe en este oficio.`;
-          setPdpBulkFeedback(message, "error");
-          showWizardToast(message, "error");
-          return;
-        }
-        if (touchedIndices.has(entry.targetIndex)) {
-          const message = `La observación PDP ${entry.targetIndex + 1} está repetida en el texto masivo.`;
-          setPdpBulkFeedback(message, "error");
-          showWizardToast(message, "error");
-          return;
-        }
-        touchedIndices.add(entry.targetIndex);
-        nextState[entry.targetIndex] = {
-          concepto: entry.concepto,
-          subconcepto: "",
-          monto: entry.monto,
-        };
-      }
-
-      const availableIndices = nextState
-        .map((item, idx) => ({ item, idx }))
-        .filter(({ item, idx }) => !touchedIndices.has(idx) && (overwrite || !isPdpDetalleItemComplete(item)))
-        .map(({ idx }) => idx);
-
-      if (implicitEntries.length > availableIndices.length) {
-        const message = overwrite
-          ? "El texto contiene más líneas que observaciones PDP disponibles."
-          : "El texto contiene más líneas que observaciones PDP pendientes.";
-        setPdpBulkFeedback(message, "error");
-        showWizardToast(message, "error");
-        return;
-      }
-
-      implicitEntries.forEach((entry, idx) => {
-        const targetIndex = availableIndices[idx];
-        touchedIndices.add(targetIndex);
-        nextState[targetIndex] = {
-          concepto: entry.concepto,
-          subconcepto: "",
-          monto: entry.monto,
-        };
-      });
-
-      pdpDetalleState = nextState;
-      if (touchedIndices.size) {
-        pdpDetalleIndex = Math.min(...Array.from(touchedIndices));
-      }
-      syncPdpDetalleJson();
-      renderPdpDetalleMenu();
-      renderPreviewTable();
-      updateManualSaveState();
-      updateWizardModeAvailability();
-
-      const pendientes = pdpDetalleState.filter((item) => !isPdpDetalleItemComplete(item)).length;
-      const activeSourceRangeMessage = canMapExplicitEntriesToActiveSource && currentSourceScope
-        ? ` Rango activo: ${currentSourceScope.startLabel}-${currentSourceScope.endLabel}.`
-        : "";
-      const message = overwrite
-        ? `Se reemplazaron ${touchedIndices.size} observación(es) PDP. Pendientes: ${pendientes}.${activeSourceRangeMessage}`
-        : `Se aplicaron ${touchedIndices.size} línea(s) al detalle PDP. Pendientes: ${pendientes}.${activeSourceRangeMessage}`;
-      setPdpBulkFeedback(message, "success");
-      showWizardToast(message, "success");
     };
 
     const syncPdpDetalleJson = () => {
@@ -6300,6 +6292,16 @@
         return;
       }
       const mode = getManualMode();
+      const ejercicioActual = (
+        (principalEjercicio ? principalEjercicio.value : "")
+        || (manualEjercicio ? manualEjercicio.value : "")
+      ).trim();
+      if (isReadOnlyEjercicio(ejercicioActual)) {
+        manualSaveBtn.disabled = true;
+        manualSaveBtn.title = `El ejercicio ${ejercicioActual} está concluido y solo puede consultarse.`;
+        return;
+      }
+      const checklist = getManualChecklistState();
       if (mode === "solventacion") {
         if (isObservacionesLoading) {
           manualSaveBtn.disabled = true;
@@ -6318,14 +6320,24 @@
         manualSaveBtn.title = "";
         return;
       }
-      if (!fuentesDetalleState.length) {
+      if (!checklist.contextoOk) {
         manualSaveBtn.disabled = true;
-        manualSaveBtn.title = "Agrega al menos una fuente de financiamiento.";
+        manualSaveBtn.title = "Completa ejercicio, ente, alcance, oficio y fecha.";
         return;
       }
-      if (!isPdpDetalleCompleto()) {
+      if (!checklist.fuentesOk) {
+        manualSaveBtn.disabled = true;
+        manualSaveBtn.title = "Agrega al menos una fuente con observaciones.";
+        return;
+      }
+      if (!checklist.pdpSummary.ok) {
         manualSaveBtn.disabled = true;
         manualSaveBtn.title = "Completa concepto y monto en todas las observaciones PDP.";
+        return;
+      }
+      if (!checklist.duplicadosOk) {
+        manualSaveBtn.disabled = true;
+        manualSaveBtn.title = "Hay fuentes duplicadas en el oficio.";
         return;
       }
       manualSaveBtn.disabled = false;
@@ -6516,8 +6528,9 @@
     const updateWizardModeAvailability = () => {
       refreshWizardStageProgress();
       const hasScope = hasPrincipalScope();
+      const captureOpen = document.body.classList.contains("gabo-oficio-capture-open");
       if (principalScopeInfo) {
-        principalScopeInfo.hidden = hasScope;
+        principalScopeInfo.hidden = hasScope || !captureOpen;
       }
       if (!hasScope) {
         if (manualStep2Chip) {
@@ -6526,7 +6539,7 @@
         }
         loaderModeButtons.forEach((button) => {
           button.disabled = true;
-          button.title = "Primero selecciona ejercicio, ente y alcance del oficio.";
+          button.title = "Completa los datos del oficio para continuar.";
         });
         loaderModePanels.forEach((panel) => {
           panel.hidden = true;
@@ -6555,6 +6568,10 @@
       loaderModePanels.forEach((panel) => {
         const panelMode = panel.dataset.loaderModePanel || "";
         const isActive = panelMode === currentMode || (panelMode === "manual" && currentMode === "solventacion");
+        if (panel.dataset.deferOficioCapture === "true" && !document.body.classList.contains("gabo-oficio-capture-open")) {
+          panel.hidden = true;
+          return;
+        }
         panel.hidden = !isActive;
       });
       updateManualStepAccess();
@@ -6586,7 +6603,6 @@
       if (targetMode === "manual" || targetMode === "solventacion") {
         setManualStep(1);
       }
-      updateObsAdminOpenLink();
       updateManualStageActions();
       updateWizardModeAvailability();
       saveWizardDraft({ announce: false });
@@ -6785,7 +6801,7 @@
           return;
         }
         const rowIndex = String(target.dataset.inlinePdpBulkText || "").trim();
-        if (!rowIndex) {
+        if (rowIndex === "") {
           return;
         }
         setInlinePdpBulkFeedback(
@@ -6858,6 +6874,11 @@
           return;
         }
         deleteGaboOficioResumen(row, deleteButton);
+      });
+    }
+    if (gaboNuevoOficioBtn) {
+      gaboNuevoOficioBtn.addEventListener("click", () => {
+        startNewOficioCapture();
       });
     }
     if (manualAddNewFuenteBtnInline && manualFuente) {
@@ -7071,6 +7092,12 @@
 
     if (titularCaptureForm) {
       titularCaptureForm.addEventListener("submit", (event) => {
+        const ejercicioTitular = (titularEjercicio ? titularEjercicio.value : "").trim();
+        if (isReadOnlyEjercicio(ejercicioTitular)) {
+          event.preventDefault();
+          showWizardToast(`El ejercicio ${ejercicioTitular} está concluido y solo puede consultarse.`, "error");
+          return;
+        }
         if (!validateStage3({ showFeedback: true })) {
           event.preventDefault();
           return;
@@ -7271,19 +7298,6 @@
           nextInput.focus();
           nextInput.select();
         }
-      });
-    }
-    if (manualPdpBulkText) {
-      manualPdpBulkText.addEventListener("input", () => {
-        setPdpBulkFeedback(
-          "Puedes usar número con —, tabulador, | o solo dejar el monto al final de cada línea. La numeración puede ser local de la fuente activa.",
-          "info",
-        );
-      });
-    }
-    if (manualPdpBulkOverwriteBtn) {
-      manualPdpBulkOverwriteBtn.addEventListener("click", () => {
-        applyPdpBulkText({ overwrite: true });
       });
     }
     if (manualCantidadPdp) {
@@ -7499,14 +7513,24 @@
         principalEjercicio.addEventListener("change", () => {
           syncPrincipalOficioField();
           clearManualEditState();
+          setOficioCaptureVisible(false);
+          updateGaboNewOficioAction();
           loadPrincipalEntes("");
         });
         principalEnte.addEventListener("change", () => {
           clearManualEditState();
+          setOficioCaptureVisible(false);
           principalEnte.dataset.selected = String(principalEnte.value || "").trim();
           syncPrincipalFiltersToForms({ syncTitular: true });
           fetchPrincipalPeriodoOptions();
+          updateGaboNewOficioAction();
           updateWizardModeAvailability();
+        });
+      }
+      if (gaboOficiosAlcanceFilter) {
+        gaboOficiosAlcanceFilter.addEventListener("change", () => {
+          setOficioCaptureVisible(false);
+          scheduleGaboOficiosResumenLoad();
         });
       }
 
@@ -8029,7 +8053,6 @@
       scheduleGaboOficiosResumenLoad();
       toggleObservacionesCargadas();
       renderPreviewTable();
-      updateObsAdminOpenLink();
     }
   </script>
 </body>

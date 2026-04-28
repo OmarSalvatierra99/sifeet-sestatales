@@ -23,7 +23,6 @@
           <strong>{{ user_display_names.get(user.username, user.username) }}</strong>
         </div>
         <div class="user-actions">
-          <span class="user-role">Carga</span>
           <form class="logout-form" method="post" action="{{ url_for('logout') }}">
             <button type="submit" class="btn-secondary btn-compact">Cerrar sesión</button>
           </form>
