@@ -730,6 +730,11 @@
         if (!selected.length) {
           return placeholder;
         }
+        const selectableCount = Array.from(selectEl?.options || []).filter((option) => option.value).length;
+        const allSelectedLabel = selectEl?.dataset.multiAllSelectedLabel || "";
+        if (allSelectedLabel && selectableCount > 0 && selected.length === selectableCount) {
+          return allSelectedLabel;
+        }
         const labels = selected.map((value) => getOptionLabelByValue(selectEl, value));
         if (labels.length <= 2) {
           return labels.join(", ");
@@ -760,6 +765,35 @@
           state.panel.innerHTML = `<div class="multi-select-empty">${escapeHtml(placeholder)}</div>`;
           state.value.textContent = placeholder;
           return;
+        }
+        if (selectEl.dataset.multiSelectAllLabel) {
+          const actions = document.createElement("div");
+          actions.className = "multi-select-actions";
+          const selectAllButton = document.createElement("button");
+          selectAllButton.type = "button";
+          selectAllButton.textContent = selectEl.dataset.multiSelectAllLabel;
+          selectAllButton.addEventListener("click", () => {
+            options.forEach((option) => {
+              option.selected = true;
+            });
+            state.value.textContent = summarizeMultiSelection(selectEl, placeholder);
+            renderMultiSelectOptions(selectEl, placeholder);
+            selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+          });
+          const clearButton = document.createElement("button");
+          clearButton.type = "button";
+          clearButton.textContent = selectEl.dataset.multiClearLabel || "Limpiar";
+          clearButton.addEventListener("click", () => {
+            options.forEach((option) => {
+              option.selected = false;
+            });
+            state.value.textContent = summarizeMultiSelection(selectEl, placeholder);
+            renderMultiSelectOptions(selectEl, placeholder);
+            selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+          });
+          actions.appendChild(selectAllButton);
+          actions.appendChild(clearButton);
+          state.panel.appendChild(actions);
         }
         options.forEach((option) => {
           const row = document.createElement("label");
@@ -1986,6 +2020,9 @@
         );
 
         const enteMulti = shouldEnableMultiFilter(entes);
+        obsEnteInput.dataset.multiSelectAllLabel = "Seleccionar todos los entes";
+        obsEnteInput.dataset.multiClearLabel = "Limpiar";
+        obsEnteInput.dataset.multiAllSelectedLabel = "Todos los entes";
         obsEnteInput.multiple = enteMulti;
         obsEnteInput.size = 1;
         resetSelect(obsEnteInput, "Todos los entes", enteMulti);

@@ -1033,11 +1033,63 @@
       }
       gaboOficiosResumenRows = list;
       const toInt = (value) => Number.parseInt(String(value ?? "0"), 10) || 0;
-      const bodyRows = list.map((row, rowIndex) => {
-        const ente = [
+      const emptyGaboOficiosTotals = () => ({
+        sa: 0,
+        pdp: 0,
+        pras: 0,
+        r: 0,
+        pefcf: 0,
+        total: 0,
+        monto_emitido: 0,
+        monto_solventado: 0,
+        monto_pendiente: 0,
+      });
+      const addGaboOficiosTotals = (target, row) => {
+        ["sa", "pdp", "pras", "r", "pefcf", "total"].forEach((key) => {
+          target[key] += toInt(row && row[key]);
+        });
+        ["monto_emitido", "monto_solventado", "monto_pendiente"].forEach((key) => {
+          target[key] += Number((row && row[key]) || 0);
+        });
+      };
+      const resolveGaboOficioEnteLabel = (row) => (
+        [
           String(row.ente_numero || "").trim(),
           String(row.ente_nombre || "").trim(),
-        ].filter(Boolean).join(" - ") || "-";
+        ].filter(Boolean).join(" - ") || "-"
+      );
+      const renderGaboOficiosTotalCells = (target) => (
+        `<th>${toInt(target.sa)}</th>` +
+        `<th>${toInt(target.pdp)}</th>` +
+        `<th>${toInt(target.pras)}</th>` +
+        `<th>${toInt(target.r)}</th>` +
+        `<th>${toInt(target.pefcf)}</th>` +
+        `<th>${toInt(target.total)}</th>` +
+        `<th>${escapeHtml(formatMoney(target.monto_emitido))}</th>` +
+        `<th>${escapeHtml(formatMoney(target.monto_solventado))}</th>` +
+        `<th>${escapeHtml(formatMoney(target.monto_pendiente))}</th>` +
+        `<th></th>`
+      );
+      const groups = [];
+      const groupsByEnte = new Map();
+      list.forEach((row, rowIndex) => {
+        const enteLabel = resolveGaboOficioEnteLabel(row);
+        const enteKey = String(row.ente_id || "").trim() || enteLabel.toLowerCase();
+        if (!groupsByEnte.has(enteKey)) {
+          const group = {
+            ente: enteLabel,
+            rows: [],
+            totals: emptyGaboOficiosTotals(),
+          };
+          groupsByEnte.set(enteKey, group);
+          groups.push(group);
+        }
+        const group = groupsByEnte.get(enteKey);
+        group.rows.push({ row, rowIndex });
+        addGaboOficiosTotals(group.totals, row);
+      });
+      const renderOficioRow = (row, rowIndex) => {
+        const ente = resolveGaboOficioEnteLabel(row);
         const editHref = buildGaboOficioEditHref(row);
         return (
           `<tr>` +
@@ -1065,20 +1117,21 @@
           `</td>` +
           `</tr>`
         );
-      }).join("");
+      };
+      const renderEnteTotalRow = (group) => (
+        `<tr class="gabo-oficios-ente-total">` +
+        `<th colspan="4">Total del ente: ${escapeHtml(group.ente)}</th>` +
+        renderGaboOficiosTotalCells(group.totals) +
+        `</tr>`
+      );
+      const bodyRows = groups.map((group) => (
+        group.rows.map((item) => renderOficioRow(item.row, item.rowIndex)).join("")
+        + renderEnteTotalRow(group)
+      )).join("");
       const totalRow = (
         `<tr class="gabo-oficios-total">` +
         `<th colspan="4">Total</th>` +
-        `<th>${toInt(totals.sa)}</th>` +
-        `<th>${toInt(totals.pdp)}</th>` +
-        `<th>${toInt(totals.pras)}</th>` +
-        `<th>${toInt(totals.r)}</th>` +
-        `<th>${toInt(totals.pefcf)}</th>` +
-        `<th>${toInt(totals.total)}</th>` +
-        `<th>${escapeHtml(formatMoney(totals.monto_emitido))}</th>` +
-        `<th>${escapeHtml(formatMoney(totals.monto_solventado))}</th>` +
-        `<th>${escapeHtml(formatMoney(totals.monto_pendiente))}</th>` +
-        `<th></th>` +
+        renderGaboOficiosTotalCells(totals) +
         `</tr>`
       );
       gaboOficiosResumenBody.innerHTML = bodyRows + totalRow;

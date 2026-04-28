@@ -768,6 +768,35 @@ select.is-multi-hidden {
   display: block;
 }
 
+.multi-select-actions {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.2rem 0.2rem 0.35rem;
+  border-bottom: 1px solid #e1ebe5;
+  background: #ffffff;
+}
+
+.multi-select-actions button {
+  flex: 1 1 0;
+  min-height: 30px;
+  border: 1px solid #cfe0d5;
+  border-radius: 8px;
+  background: #f6faf8;
+  color: var(--color-accent);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.multi-select-actions button:hover {
+  border-color: var(--color-accent);
+  background: #eef6f1;
+}
+
 .multi-select-option {
   display: flex;
   align-items: flex-start;
@@ -1578,6 +1607,17 @@ table {
   color: #1e5139;
   font-weight: 800;
   border-top: 2px solid #bad2c3;
+}
+
+.gabo-oficios-ente-total th {
+  background: #f5faf7;
+  color: #244f3a;
+  font-weight: 800;
+  border-top: 1px solid #cfe0d5;
+}
+
+.gabo-oficios-ente-total th:first-child {
+  text-align: left;
 }
 
 .gabo-oficios-actions-cell {
