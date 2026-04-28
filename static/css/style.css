@@ -1961,6 +1961,89 @@ table {
   border-radius: 9px;
 }
 
+.titulares-filter-shell {
+  margin-bottom: 1rem;
+}
+
+.loader-principal-form .titulares-filter-grid {
+  grid-template-columns: minmax(9rem, 11rem) minmax(20rem, 1fr) minmax(13rem, 16rem);
+  align-items: end;
+}
+
+.titulares-summary-panel {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.titulares-summary-panel .panel-header {
+  text-align: center;
+}
+
+.titulares-general-table {
+  min-width: 1240px;
+}
+
+.titulares-general-table th,
+.titulares-general-table td {
+  vertical-align: middle;
+}
+
+.titulares-general-table .titulares-merged-cell {
+  background: #f8fbf9;
+  color: #203d2e;
+  font-weight: 700;
+}
+
+.titulares-general-table tbody tr.titulares-ente-start > td {
+  border-top: 3px solid #9db9aa;
+}
+
+.titulares-general-table tbody tr.titulares-ente-start:first-child > td {
+  border-top-width: 1px;
+}
+
+.titulares-general-table .titulares-cell-ente {
+  background: #eef7f2;
+  box-shadow: inset 5px 0 0 #174c3a;
+  color: #173d2d;
+  font-weight: 800;
+}
+
+.titulares-general-table .titulares-cell-ente,
+.titulares-general-table .titulares-cell-titular,
+.titulares-general-table .titulares-cell-admin {
+  max-width: 26rem;
+  text-align: left;
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.titulares-general-table .titulares-cell-periodo,
+.titulares-general-table .titulares-cell-admin-periodo,
+.titulares-general-table .titulares-cell-cedula {
+  max-width: 18rem;
+  text-align: left;
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.titulares-general-table .titulares-cell-alcance {
+  white-space: nowrap;
+}
+
+.titulares-general-table .titulares-cell-cedula {
+  background: #ffffff;
+  color: #33443a;
+}
+
+.titular-capture-workspace {
+  margin-top: 1rem;
+}
+
+.titular-capture-workspace[hidden] {
+  display: none !important;
+}
+
 .loader-manual-workspace[hidden] {
   display: none !important;
 }
@@ -2023,7 +2106,8 @@ table {
 }
 
 @media (max-width: 860px) {
-  .loader-principal-form .gabo-oficios-filter-grid {
+  .loader-principal-form .gabo-oficios-filter-grid,
+  .loader-principal-form .titulares-filter-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }

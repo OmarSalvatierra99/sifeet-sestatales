@@ -12,9 +12,7 @@
 {% set _fuentes_q = namespace(value='') %}
 {% if _nav_ejercicio %}{% set _fuentes_q.value = '?ejercicio=' ~ (_nav_ejercicio|urlencode) %}{% endif %}
 {% set _titulares_q = namespace(value='') %}
-{% if _nav_ejercicio %}{% set _titulares_q.value = _titulares_q.value ~ ('&' if _titulares_q.value else '?') ~ 'ejercicio=' ~ (_nav_ejercicio|urlencode) %}{% endif %}
-{% if _nav_ente_id %}{% set _titulares_q.value = _titulares_q.value ~ ('&' if _titulares_q.value else '?') ~ 'ente_id=' ~ (_nav_ente_id|urlencode) %}{% endif %}
-{% if _nav_tipo %}{% set _titulares_q.value = _titulares_q.value ~ ('&' if _titulares_q.value else '?') ~ 'tipo_auditoria=' ~ (_nav_tipo|urlencode) %}{% endif %}
+{% if _nav_ejercicio %}{% set _titulares_q.value = '?ejercicio=' ~ (_nav_ejercicio|urlencode) %}{% endif %}
 <nav class="mode-switch gabo-module-nav" aria-label="Navegación del módulo de carga">
   <a
     class="mode-switch-link{% if gabo_module_active == 'carga' %} is-active{% endif %}"

@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Registro Observaciones · Carga de Titulares</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260428-oficio-pdf') }}">
+  <title>Registro Observaciones · Titulares</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260428-titulares-tabla') }}">
   <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
 </head>
 <body class="loader-page titulares-standalone-page">
@@ -15,7 +15,7 @@
       <div class="header-text">
         <p class="eyebrow">Órgano de Fiscalización Superior del Estado de Tlaxcala</p>
         <h1>Registro Observaciones</h1>
-        <p class="subtitle">Flujo de titulares</p>
+        <p class="subtitle">Titulares</p>
       </div>
       <div class="header-badge user-badge">
         <div class="user-meta">
@@ -34,10 +34,115 @@
   <main class="page-content loader-content">
     {% set gabo_module_active = 'titulares' %}
     {% include "_gabo_module_nav.html" %}
-    <section class="panel loader-card titular-workspace-card">
-      <div class="panel-header">
-        <h2>Titulares</h2>
-        <p>Selecciona el contexto una vez y usa el mismo flujo para registrar o corregir.</p>
+    <div class="loader-expediente-shell titulares-filter-shell">
+      <div class="record-form filters-form loader-principal-form">
+        <div class="loader-expediente-collection">
+          <section class="loader-expediente-group">
+            <div class="loader-expediente-group-head">
+              <span>FILTROS</span>
+            </div>
+            <div class="form-grid loader-expediente-grid loader-base-grid titulares-filter-grid">
+              <div class="field">
+                <label for="titular_ejercicio">Ejercicio</label>
+                <select
+                  id="titular_ejercicio"
+                  name="titular_ejercicio"
+                  form="titularCreateForm"
+                  required
+                >
+                  {% for ejercicio in ejercicios %}
+                    <option value="{{ ejercicio }}" {% if form_data.titular_ejercicio == ejercicio %}selected{% endif %}>
+                      {{ ejercicio }}{% if ejercicio in read_only_ejercicios %} · solo consulta{% endif %}
+                    </option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="field ente-search-field">
+                <label for="titular_ente_id">Ente</label>
+                <select
+                  id="titular_ente_id"
+                  name="titular_ente_id"
+                  form="titularCreateForm"
+                  data-selected="{{ form_data.titular_ente_id }}"
+                  class="ente-search-hidden-select"
+                >
+                  <option value="">Todos los entes</option>
+                  {% for ente in entes %}
+                    <option value="{{ ente.ente_id }}" {% if form_data.titular_ente_id == ente.ente_id %}selected{% endif %}>
+                      {{ ente.ente_numero }} - {{ ente.ente_nombre }}
+                    </option>
+                  {% endfor %}
+                </select>
+                <div class="ente-search-wrapper">
+                  <input type="text" id="titular_ente_search_input" class="ente-search-input" placeholder="Buscar ente..." autocomplete="off">
+                  <button type="button" class="ente-search-clear" id="titular_ente_search_clear" title="Limpiar">&times;</button>
+                  <div class="ente-search-dropdown" id="titular_ente_search_dropdown"></div>
+                </div>
+              </div>
+              <div class="field">
+                <label for="titular_tipo_auditoria">Alcance</label>
+                <select
+                  id="titular_tipo_auditoria"
+                  name="titular_tipo_auditoria"
+                  form="titularCreateForm"
+                >
+                  <option value="" {% if not form_data.titular_tipo_auditoria %}selected{% endif %}>Todas las Auditorías</option>
+                  <option value="Financiera" {% if form_data.titular_tipo_auditoria == "Financiera" %}selected{% endif %}>Financiera</option>
+                  <option value="Obra Pública" {% if form_data.titular_tipo_auditoria == "Obra Pública" %}selected{% endif %}>Obra Pública</option>
+                </select>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <section class="panel loader-oficios-summary-panel titulares-summary-panel" aria-labelledby="titularesTitle">
+      <div class="panel-header panel-header-compact">
+        <h2 id="titularesTitle">Titulares</h2>
+      </div>
+
+      <div id="titularHistoryStatus" class="status status-info" hidden></div>
+
+      <div class="table-meta titular-history-meta">
+        <span id="titularHistoryCount">Cargando titulares...</span>
+      </div>
+
+      <div class="table-wrap gabo-oficios-table-wrap titulares-table-wrap">
+        <table class="table-compact gabo-oficios-table titulares-general-table">
+          <thead>
+            <tr>
+              <th>Ente</th>
+              <th>Alcance</th>
+              <th>Periodos Informe</th>
+              <th>Titular</th>
+              <th>Administrativo</th>
+              <th>Director Administrativo a cargo</th>
+              <th>Cédulas de resultados</th>
+            </tr>
+          </thead>
+          <tbody id="titularHistoryTableBody">
+            <tr>
+              <td colspan="7" class="muted">Cargando titulares...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="gabo-oficios-table-actions titulares-table-actions">
+        <a class="btn-secondary btn-compact" id="titularExportExcelBtn" href="{{ url_for('carga_titulares_exportar') }}">Exportar Excel</a>
+        <button class="btn-primary btn-compact" type="button" id="titularNuevoBtn" hidden>Agregar Titular</button>
+      </div>
+    </section>
+
+    <section
+      class="panel loader-card titular-workspace-card titular-capture-workspace"
+      id="titularCaptureWorkspace"
+      data-has-result="{% if titular_result %}1{% else %}0{% endif %}"
+      hidden
+    >
+      <div class="panel-header panel-header-compact">
+        <h2>Agregar Titular</h2>
       </div>
 
       {% if titular_result %}
@@ -46,67 +151,11 @@
         </div>
       {% endif %}
 
-      <div class="titular-context-shell">
-        <div class="form-grid titular-context-grid">
-          <div class="field">
-            <label for="titular_ejercicio">Ejercicio</label>
-            <select
-              id="titular_ejercicio"
-              name="titular_ejercicio"
-              form="titularCreateForm"
-              required
-            >
-              {% for ejercicio in ejercicios %}
-                <option value="{{ ejercicio }}" {% if form_data.titular_ejercicio == ejercicio %}selected{% endif %}>
-                  {{ ejercicio }}{% if ejercicio in read_only_ejercicios %} · solo consulta{% endif %}
-                </option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="field ente-search-field">
-            <label for="titular_ente_id">Ente</label>
-            <select
-              id="titular_ente_id"
-              name="titular_ente_id"
-              form="titularCreateForm"
-              data-selected="{{ form_data.titular_ente_id }}"
-              class="ente-search-hidden-select"
-              required
-            >
-              <option value="">Selecciona un ente</option>
-              {% for ente in entes %}
-                <option value="{{ ente.ente_id }}" {% if form_data.titular_ente_id == ente.ente_id %}selected{% endif %}>
-                  {{ ente.ente_numero }} - {{ ente.ente_nombre }}
-                </option>
-              {% endfor %}
-            </select>
-            <div class="ente-search-wrapper">
-              <input type="text" id="titular_ente_search_input" class="ente-search-input" placeholder="Buscar ente..." autocomplete="off">
-              <button type="button" class="ente-search-clear" id="titular_ente_search_clear" title="Limpiar">&times;</button>
-              <div class="ente-search-dropdown" id="titular_ente_search_dropdown"></div>
-            </div>
-          </div>
-          <div class="field">
-            <label for="titular_tipo_auditoria">Tipo de auditoría</label>
-            <select
-              id="titular_tipo_auditoria"
-              name="titular_tipo_auditoria"
-              form="titularCreateForm"
-              required
-            >
-              <option value="Financiera" {% if form_data.titular_tipo_auditoria == "Financiera" %}selected{% endif %}>Financiera</option>
-              <option value="Obra Pública" {% if form_data.titular_tipo_auditoria == "Obra Pública" %}selected{% endif %}>Obra Pública</option>
-            </select>
-            <p class="helper">El historial se carga con este mismo contexto.</p>
-          </div>
-        </div>
-      </div>
-
       <section class="titular-import-card" aria-label="Carga de titulares desde Excel">
         <div class="titular-import-head">
           <div>
             <h3>Cargar archivo XLSX</h3>
-            <p id="titularExcelContextLabel">Selecciona ejercicio, ente y tipo de auditoría.</p>
+            <p id="titularExcelContextLabel">Selecciona ejercicio, ente y alcance.</p>
           </div>
           <span class="titular-import-format">XLSX</span>
         </div>
@@ -163,7 +212,7 @@
         </section>
       </section>
 
-      <details class="titular-manual-details">
+      <details class="titular-manual-details" open>
         <summary>
           <span>Captura manual</span>
           <small>Agregar un registro sin Excel</small>
@@ -236,39 +285,11 @@
       </details>
 
     </section>
-
-    <section class="panel loader-card titular-history-card">
-      <div class="panel-header">
-        <h2>Titulares cargados</h2>
-        <p>Registros guardados para el ejercicio, ente y tipo de auditoría seleccionados.</p>
-      </div>
-
-      <div id="titularHistoryStatus" class="status status-info" hidden></div>
-
-      <div class="table-meta titular-history-meta">
-        <span id="titularHistoryCount">Selecciona ejercicio, ente y tipo para consultar.</span>
-      </div>
-
-      <div id="titularHistoryGroups" class="titular-history-groups">
-        <div class="titular-history-empty">
-          <p class="muted">Selecciona un contexto completo para consultar titulares.</p>
-        </div>
-      </div>
-    </section>
   </main>
 
   <footer class="site-footer">
     © Órgano de Fiscalización Superior del Estado de Tlaxcala · Registro Observaciones
   </footer>
-  <a class="floating-clear-btn obs-admin-fab-back" href="{{ url_for('carga') }}" aria-label="Regresar a carga">
-    <span class="floating-clear-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none">
-        <path d="M14.5 5L7.5 12L14.5 19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M8 12H20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-      </svg>
-    </span>
-    <span>Regresar a carga</span>
-  </a>
 
   <script>
     const ejercicioInput = document.getElementById("titular_ejercicio");
@@ -288,9 +309,13 @@
     const adminFechaFinField = document.getElementById("titularAdminFechaFinField");
     const adminFechaInicioInput = document.getElementById("titular_admin_fecha_inicio");
     const adminFechaFinInput = document.getElementById("titular_admin_fecha_fin");
+    const titularNuevoBtn = document.getElementById("titularNuevoBtn");
+    const titularExportExcelBtn = document.getElementById("titularExportExcelBtn");
+    const titularCaptureWorkspace = document.getElementById("titularCaptureWorkspace");
+    const titularManualDetails = document.querySelector(".titular-manual-details");
     const historyStatus = document.getElementById("titularHistoryStatus");
     const historyCount = document.getElementById("titularHistoryCount");
-    const historyGroups = document.getElementById("titularHistoryGroups");
+    const historyTableBody = document.getElementById("titularHistoryTableBody");
     const titularExcelUploadForm = document.getElementById("titularExcelUploadForm");
     const titularExcelContextLabel = document.getElementById("titularExcelContextLabel");
     const titularExcelFileInput = document.getElementById("titular_excel_file");
@@ -457,7 +482,7 @@
 
     const analyzeTitularExcelFile = async () => {
       if (!contextIsComplete()) {
-        setStatus(titularExcelStatus, "Selecciona ejercicio, ente y tipo de auditoría antes de cargar.", "error");
+        setStatus(titularExcelStatus, "Selecciona ejercicio, ente y alcance antes de cargar.", "error");
         return;
       }
       const ejercicio = ejercicioInput ? String(ejercicioInput.value || "").trim() : "";
@@ -567,6 +592,11 @@
       return !!(ejercicio && enteId && tipo);
     };
 
+    const historyScopeIsAvailable = () => {
+      const ejercicio = ejercicioInput ? String(ejercicioInput.value || "").trim() : "";
+      return !!ejercicio;
+    };
+
     const contextLabel = () => {
       const ejercicio = ejercicioInput ? String(ejercicioInput.value || "").trim() : "";
       const tipo = tipoInput ? String(tipoInput.value || "").trim() : "";
@@ -587,7 +617,7 @@
         ? (isReadOnlyEjercicio(ejercicio)
           ? `${contextLabel()} · solo consulta`
           : contextLabel())
-        : "Selecciona ejercicio, ente y tipo de auditoría.";
+        : "Selecciona ejercicio, ente y alcance.";
     };
 
     const formatTipoRegistro = (tipoRegistro) => (
@@ -633,15 +663,15 @@
         .replace(/\b(de\s+)?diciembre\b/gi, "de Diciembre");
     };
 
-    const formatEnteNameForLoadedTable = (value) => {
-      const clean = String(value || "").replace(/\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
-      return clean ? clean.toUpperCase() : "—";
-    };
-
     const mergeKey = (value, index) => {
       const clean = String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
       return clean || `__empty_${index}`;
     };
+
+    const titularesTableCollator = new Intl.Collator("es", {
+      numeric: true,
+      sensitivity: "base",
+    });
 
     const splitCedulaResultRows = (rows) => (
       rows.flatMap((row) => {
@@ -660,79 +690,84 @@
       })
     );
 
-    const buildLoadedTableRows = (rows) => {
-      const prepared = splitCedulaResultRows(rows).map((row, index) => ({
-        row,
-        periodKey: mergeKey(row.periodo_informe, index),
-        titularKey: mergeKey(row.titular, index),
-        adminPeriodKey: mergeKey(row.periodo_administrativo, index),
-        adminNameKey: mergeKey(row.administrativo, index),
-      }));
-
-      return prepared.map((item, index) => {
-        const previous = prepared[index - 1];
-        const startsPeriod = !previous || previous.periodKey !== item.periodKey;
-        const startsTitular = startsPeriod || previous.titularKey !== item.titularKey;
-        const startsAdminPeriod = startsTitular || previous.adminPeriodKey !== item.adminPeriodKey;
-        const startsAdminName = startsAdminPeriod || previous.adminNameKey !== item.adminNameKey;
-        let periodRowspan = 0;
-        let titularRowspan = 0;
-        let adminPeriodRowspan = 0;
-        let adminNameRowspan = 0;
-
-        if (startsPeriod) {
-          periodRowspan = 1;
-          for (let next = index + 1; next < prepared.length; next += 1) {
-            if (prepared[next].periodKey !== item.periodKey) break;
-            periodRowspan += 1;
-          }
+    const compareTitularCaptureRows = (left, right) => {
+      const leftValues = [
+        buildEnteLabel(left),
+        left.tipo_auditoria,
+        left.periodo_informe,
+        left.titular,
+        left.periodo_administrativo,
+        left.administrativo,
+        left.cedula_resultados,
+      ];
+      const rightValues = [
+        buildEnteLabel(right),
+        right.tipo_auditoria,
+        right.periodo_informe,
+        right.titular,
+        right.periodo_administrativo,
+        right.administrativo,
+        right.cedula_resultados,
+      ];
+      for (let index = 0; index < leftValues.length; index += 1) {
+        const comparison = titularesTableCollator.compare(
+          String(leftValues[index] || ""),
+          String(rightValues[index] || ""),
+        );
+        if (comparison !== 0) {
+          return comparison;
         }
+      }
+      return Number(left.cedula_orden || 0) - Number(right.cedula_orden || 0);
+    };
 
-        if (startsTitular) {
-          titularRowspan = 1;
-          for (let next = index + 1; next < prepared.length; next += 1) {
-            if (prepared[next].periodKey !== item.periodKey || prepared[next].titularKey !== item.titularKey) break;
-            titularRowspan += 1;
-          }
-        }
-
-        if (startsAdminPeriod) {
-          adminPeriodRowspan = 1;
-          for (let next = index + 1; next < prepared.length; next += 1) {
-            if (
-              prepared[next].periodKey !== item.periodKey ||
-              prepared[next].titularKey !== item.titularKey ||
-              prepared[next].adminPeriodKey !== item.adminPeriodKey
-            ) {
-              break;
-            }
-            adminPeriodRowspan += 1;
-          }
-        }
-
-        if (startsAdminName) {
-          adminNameRowspan = 1;
-          for (let next = index + 1; next < prepared.length; next += 1) {
-            if (
-              prepared[next].periodKey !== item.periodKey ||
-              prepared[next].titularKey !== item.titularKey ||
-              prepared[next].adminPeriodKey !== item.adminPeriodKey ||
-              prepared[next].adminNameKey !== item.adminNameKey
-            ) {
-              break;
-            }
-            adminNameRowspan += 1;
-          }
-        }
-
+    const buildMergedTitularesTableRows = (rows) => {
+      const sortedRows = splitCedulaResultRows(rows).slice().sort(compareTitularCaptureRows);
+      const prepared = sortedRows.map((row, index) => {
+        const enteKey = mergeKey(buildEnteLabel(row), index);
+        const alcanceKey = `${enteKey}|${mergeKey(row.tipo_auditoria, index)}`;
+        const periodKey = `${alcanceKey}|${mergeKey(row.periodo_informe, index)}`;
+        const titularKey = `${periodKey}|${mergeKey(row.titular, index)}`;
+        const adminPeriodKey = `${titularKey}|${mergeKey(row.periodo_administrativo, index)}`;
+        const adminNameKey = `${adminPeriodKey}|${mergeKey(row.administrativo, index)}`;
+        const cedulaKey = `${adminNameKey}|${mergeKey(row.cedula_resultados, index)}`;
         return {
-          ...item.row,
-          periodRowspan,
-          titularRowspan,
-          adminPeriodRowspan,
-          adminNameRowspan,
+          row,
+          enteKey,
+          alcanceKey,
+          periodKey,
+          titularKey,
+          adminPeriodKey,
+          adminNameKey,
+          cedulaKey,
         };
       });
+
+      const rowspanFor = (keyName, index) => {
+        if (index > 0 && prepared[index - 1][keyName] === prepared[index][keyName]) {
+          return 0;
+        }
+        let rowspan = 1;
+        for (let next = index + 1; next < prepared.length; next += 1) {
+          if (prepared[next][keyName] !== prepared[index][keyName]) {
+            break;
+          }
+          rowspan += 1;
+        }
+        return rowspan;
+      };
+
+      return prepared.map((item, index) => ({
+        ...item.row,
+        ente_label: buildEnteLabel(item.row),
+        enteRowspan: rowspanFor("enteKey", index),
+        alcanceRowspan: rowspanFor("alcanceKey", index),
+        periodRowspan: rowspanFor("periodKey", index),
+        titularRowspan: rowspanFor("titularKey", index),
+        adminPeriodRowspan: rowspanFor("adminPeriodKey", index),
+        adminNameRowspan: rowspanFor("adminNameKey", index),
+        cedulaRowspan: rowspanFor("cedulaKey", index),
+      }));
     };
 
     const fillEnteSelect = (selectElement, rows, { selectedValue = "", emptyLabel = "Selecciona un ente", allowBlank = true } = {}) => {
@@ -826,80 +861,114 @@
       syncAdminPeriodFields({ copyDates: false });
     };
 
+    const setTitularCaptureVisible = (visible, { scroll = false } = {}) => {
+      if (!titularCaptureWorkspace) {
+        return;
+      }
+      titularCaptureWorkspace.hidden = !visible;
+      if (visible) {
+        showCreateMode();
+        if (titularManualDetails) {
+          titularManualDetails.open = true;
+        }
+        if (scroll) {
+          titularCaptureWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }
+    };
+
+    const updateTitularNewButton = () => {
+      if (!titularNuevoBtn) {
+        return;
+      }
+      const ejercicio = ejercicioInput ? String(ejercicioInput.value || "").trim() : "";
+      const canCreate = contextIsComplete() && !isReadOnlyEjercicio(ejercicio);
+      titularNuevoBtn.hidden = !canCreate;
+      titularNuevoBtn.disabled = !canCreate;
+    };
+
+    const updateTitularExportHref = () => {
+      if (!titularExportExcelBtn) {
+        return;
+      }
+      const params = new URLSearchParams();
+      const ejercicio = ejercicioInput ? String(ejercicioInput.value || "").trim() : "";
+      const enteId = enteInput ? String(enteInput.value || "").trim() : "";
+      const tipo = tipoInput ? String(tipoInput.value || "").trim() : "";
+      if (ejercicio) {
+        params.set("ejercicio", ejercicio);
+      }
+      if (enteId) {
+        params.set("ente_id", enteId);
+      }
+      if (tipo) {
+        params.set("tipo_auditoria", tipo);
+      }
+      titularExportExcelBtn.href = params.toString()
+        ? `{{ url_for('carga_titulares_exportar') }}?${params.toString()}`
+        : "{{ url_for('carga_titulares_exportar') }}";
+      titularExportExcelBtn.classList.toggle("is-disabled", !ejercicio);
+      titularExportExcelBtn.setAttribute("aria-disabled", ejercicio ? "false" : "true");
+    };
+
+    const buildEnteLabel = (row) => {
+      const numero = String(row.ente_numero || "").trim();
+      const nombre = String(row.ente_nombre || "").trim();
+      if (numero && nombre) {
+        return `${numero} - ${nombre}`;
+      }
+      return nombre || numero || "—";
+    };
+
     const renderHistory = () => {
-      if (!historyGroups) {
+      if (!historyTableBody) {
         return;
       }
-      if (!contextIsComplete()) {
-        historyGroups.innerHTML = `
-          <div class="titular-history-empty">
-            <p class="muted">Selecciona ejercicio, ente y tipo para consultar titulares.</p>
-          </div>
+      if (!historyScopeIsAvailable()) {
+        historyTableBody.innerHTML = `
+          <tr>
+            <td colspan="7" class="muted">Selecciona un ejercicio para consultar titulares.</td>
+          </tr>
         `;
         if (historyCount) {
-          historyCount.textContent = "Selecciona ejercicio, ente y tipo para consultar.";
+          historyCount.textContent = "Sin ejercicio seleccionado.";
         }
         return;
       }
 
-      const rows = Array.isArray(titularCaptureRows) ? titularCaptureRows : [];
-      if (!rows.length) {
-        historyGroups.innerHTML = `
-          <div class="titular-history-empty">
-            <p class="muted">No hay titulares cargados para este contexto.</p>
-          </div>
+      const sourceRows = Array.isArray(titularCaptureRows) ? titularCaptureRows : [];
+      if (!sourceRows.length) {
+        historyTableBody.innerHTML = `
+          <tr>
+            <td colspan="7" class="muted">No hay titulares cargados para los filtros seleccionados.</td>
+          </tr>
         `;
         if (historyCount) {
-          historyCount.textContent = "Sin registros cargados en el contexto actual.";
+          historyCount.textContent = "0 titulares";
         }
         return;
       }
 
-      const firstRow = rows[0] || {};
-      const ejercicio = String(firstRow.ejercicio || (ejercicioInput ? ejercicioInput.value || "" : "")).trim();
-      const enteNombre = formatEnteNameForLoadedTable(firstRow.ente_nombre || "");
-      const tableRows = buildLoadedTableRows(rows);
-
-      historyGroups.innerHTML = `
-        <section class="titular-loaded-table-card">
-          <div class="titular-loaded-document-head">
-            <h3>EJERCICIO ${escapeHtml(ejercicio || "—")}</h3>
-            <p><strong>Nombre del ente:</strong> ${escapeHtml(enteNombre)}</p>
-          </div>
-          <div class="titular-loaded-table-wrap">
-            <table class="titular-loaded-table">
-              <thead>
-                <tr>
-                  <th>Periodos Informe</th>
-                  <th>Titular</th>
-                  <th>Administrativo</th>
-                  <th>Director Administrativo a cargo</th>
-                  <th>Cédulas de resultados</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${tableRows.map((row) => `
-                  <tr>
-                    ${row.periodRowspan ? `<td class="titular-loaded-merged-cell" rowspan="${row.periodRowspan}">${escapeHtml(formatPeriodDisplay(row.periodo_informe))}</td>` : ""}
-                    ${row.titularRowspan ? `<td class="titular-loaded-merged-cell" rowspan="${row.titularRowspan}">${escapeHtml(row.titular || "—")}</td>` : ""}
-                    ${row.adminPeriodRowspan ? `<td class="titular-loaded-merged-cell" rowspan="${row.adminPeriodRowspan}">${escapeHtml(formatPeriodDisplay(row.periodo_administrativo))}</td>` : ""}
-                    ${row.adminNameRowspan ? `<td class="titular-loaded-merged-cell" rowspan="${row.adminNameRowspan}">${escapeHtml(row.administrativo || "—")}</td>` : ""}
-                    <td>${escapeHtml(formatPeriodDisplay(row.cedula_resultados))}</td>
-                  </tr>
-                `).join("")}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      `;
+      const rows = buildMergedTitularesTableRows(sourceRows);
+      historyTableBody.innerHTML = rows.map((row) => `
+        <tr class="${row.enteRowspan ? "titulares-ente-start" : ""}">
+          ${row.enteRowspan ? `<td class="titulares-merged-cell titulares-cell-ente" rowspan="${row.enteRowspan}">${escapeHtml(row.ente_label)}</td>` : ""}
+          ${row.alcanceRowspan ? `<td class="titulares-merged-cell titulares-cell-alcance" rowspan="${row.alcanceRowspan}">${escapeHtml(row.tipo_auditoria || "—")}</td>` : ""}
+          ${row.periodRowspan ? `<td class="titulares-merged-cell titulares-cell-periodo" rowspan="${row.periodRowspan}">${escapeHtml(formatPeriodDisplay(row.periodo_informe))}</td>` : ""}
+          ${row.titularRowspan ? `<td class="titulares-merged-cell titulares-cell-titular" rowspan="${row.titularRowspan}">${escapeHtml(row.titular || "—")}</td>` : ""}
+          ${row.adminPeriodRowspan ? `<td class="titulares-merged-cell titulares-cell-admin-periodo" rowspan="${row.adminPeriodRowspan}">${escapeHtml(formatPeriodDisplay(row.periodo_administrativo))}</td>` : ""}
+          ${row.adminNameRowspan ? `<td class="titulares-merged-cell titulares-cell-admin" rowspan="${row.adminNameRowspan}">${escapeHtml(row.administrativo || "—")}</td>` : ""}
+          ${row.cedulaRowspan ? `<td class="titulares-cell-cedula" rowspan="${row.cedulaRowspan}">${escapeHtml(formatPeriodDisplay(row.cedula_resultados))}</td>` : ""}
+        </tr>
+      `).join("");
 
       if (historyCount) {
-        historyCount.textContent = `${rows.length} registro(s) cargado(s) en el contexto actual.`;
+        historyCount.textContent = `${sourceRows.length} registro(s) de captura agrupado(s)`;
       }
     };
 
     const loadHistory = async () => {
-      if (!contextIsComplete()) {
+      if (!historyScopeIsAvailable()) {
         historyRows = [];
         titularCaptureRows = [];
         renderHistory();
@@ -909,8 +978,14 @@
       setStatus(historyStatus, "Consultando historial...", "info");
       const params = new URLSearchParams();
       params.set("ejercicio", ejercicioInput ? ejercicioInput.value || "" : "");
-      params.set("ente_id", enteInput ? enteInput.value || "" : "");
-      params.set("tipo_auditoria", tipoInput ? tipoInput.value || "" : "");
+      const enteId = enteInput ? String(enteInput.value || "").trim() : "";
+      const tipo = tipoInput ? String(tipoInput.value || "").trim() : "";
+      if (enteId) {
+        params.set("ente_id", enteId);
+      }
+      if (tipo) {
+        params.set("tipo_auditoria", tipo);
+      }
       try {
         const response = await fetch(`/carga/titulares/historial?${params.toString()}`, {
           credentials: "same-origin",
@@ -1159,36 +1234,58 @@
           setStatus(historyStatus, `El ejercicio ${ejercicio} está concluido y solo puede consultarse.`, "error");
           return;
         }
+        if (!contextIsComplete()) {
+          event.preventDefault();
+          setStatus(historyStatus, "Selecciona ente y alcance antes de guardar titulares.", "error");
+          return;
+        }
         syncAdminPeriodFields({ copyDates: true });
+      });
+    }
+
+    if (titularNuevoBtn) {
+      titularNuevoBtn.addEventListener("click", () => {
+        if (!contextIsComplete()) {
+          return;
+        }
+        resetTitularExcelPreview();
+        updateTitularExcelContextLabel();
+        setTitularCaptureVisible(true, { scroll: true });
       });
     }
 
     if (ejercicioInput) {
       ejercicioInput.addEventListener("change", async () => {
-        showCreateMode();
+        setTitularCaptureVisible(false);
         resetTitularExcelPreview();
         await loadEntesForSelect(enteInput, ejercicioInput.value, {
           selectedValue: "",
-          emptyLabel: "Selecciona un ente",
+          emptyLabel: "Todos los entes",
           allowBlank: true,
         });
         updateTitularExcelContextLabel();
+        updateTitularNewButton();
+        updateTitularExportHref();
         await loadHistory();
       });
     }
     if (enteInput) {
       enteInput.addEventListener("change", async () => {
-        showCreateMode();
+        setTitularCaptureVisible(false);
         resetTitularExcelPreview();
         updateTitularExcelContextLabel();
+        updateTitularNewButton();
+        updateTitularExportHref();
         await loadHistory();
       });
     }
     if (tipoInput) {
       tipoInput.addEventListener("change", async () => {
-        showCreateMode();
+        setTitularCaptureVisible(false);
         resetTitularExcelPreview();
         updateTitularExcelContextLabel();
+        updateTitularNewButton();
+        updateTitularExportHref();
         await loadHistory();
       });
     }
@@ -1198,6 +1295,11 @@
     initTitularEnteSearch();
     resetTitularExcelPreview();
     updateTitularExcelContextLabel();
+    updateTitularNewButton();
+    updateTitularExportHref();
+    if (titularCaptureWorkspace && titularCaptureWorkspace.dataset.hasResult === "1") {
+      setTitularCaptureVisible(true);
+    }
     renderHistory();
     loadHistory();
   </script>

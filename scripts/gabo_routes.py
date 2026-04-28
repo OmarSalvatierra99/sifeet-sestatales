@@ -302,16 +302,17 @@ def register_gabo_routes(app, deps):
                 or ""
             ).split()
         )
+        tipo_auditoria_source = (
+            source.get("titular_tipo_auditoria")
+            or source.get("tipo_auditoria")
+            or ""
+        )
         form_data = {
             "titular_ejercicio": ejercicio,
             "titular_ente_id": normalize_ente_id(
                 source.get("titular_ente_id") or source.get("ente_id") or ""
             ),
-            "titular_tipo_auditoria": normalize_tipo_auditoria(
-                source.get("titular_tipo_auditoria")
-                or source.get("tipo_auditoria")
-                or "Financiera"
-            ) or "Financiera",
+            "titular_tipo_auditoria": normalize_tipo_auditoria(tipo_auditoria_source),
             "titular_periodo_informe": " ".join(
                 (source.get("titular_periodo_informe") or "").split()
             ),
@@ -4469,6 +4470,171 @@ def register_gabo_routes(app, deps):
             tipo_auditoria=tipo_auditoria,
         )
         return jsonify({"ok": True, "rows": rows, "capture_rows": capture_rows})
+
+    @app.get("/carga/titulares/exportar")
+    @gabo_required
+    def carga_titulares_exportar():
+        ejercicio = " ".join((request.args.get("ejercicio") or "").split())
+        ente_id = normalize_ente_id(request.args.get("ente_id", ""))
+        tipo_auditoria = normalize_tipo_auditoria(request.args.get("tipo_auditoria", ""))
+        if not ejercicio:
+            return jsonify({"ok": False, "error": "Selecciona un ejercicio para exportar."}), 400
+
+        db = get_db()
+        rows = _list_cargas_titulares_rows(
+            db,
+            ejercicio=ejercicio,
+            ente_id_norm=ente_id,
+            tipo_auditoria=tipo_auditoria,
+        )
+
+        def ente_label(row: dict) -> str:
+            numero = " ".join((row.get("ente_numero") or "").split())
+            nombre = " ".join((row.get("ente_nombre") or "").split())
+            if numero and nombre:
+                return f"{numero} - {nombre}"
+            return nombre or numero or "Sin ente"
+
+        def sort_key(row: dict) -> tuple:
+            row_ejercicio = row.get("ejercicio") or ejercicio
+            informe_inicio, _ = parse_periodo_cedula(row_ejercicio, row.get("periodo_informe") or "")
+            admin_inicio, _ = parse_periodo_cedula(row_ejercicio, row.get("periodo_administrativo") or "")
+            cedula_inicio, _ = parse_periodo_cedula(row_ejercicio, row.get("cedula_resultados") or "")
+            return (
+                normalize_text_key(ente_label(row)),
+                normalize_text_key(row.get("tipo_auditoria") or ""),
+                informe_inicio or normalize_text_key(row.get("periodo_informe") or ""),
+                normalize_text_key(row.get("titular") or ""),
+                admin_inicio or normalize_text_key(row.get("periodo_administrativo") or ""),
+                normalize_text_key(row.get("administrativo") or ""),
+                cedula_inicio or normalize_text_key(row.get("cedula_resultados") or ""),
+                int(row.get("cedula_orden") or 0),
+            )
+
+        sorted_rows = sorted(rows, key=sort_key)
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = "Titulares"
+        headers = [
+            "Ente",
+            "Alcance",
+            "Periodos Informe",
+            "Titular",
+            "Administrativo",
+            "Director Administrativo a cargo",
+            "Cédulas de resultados",
+        ]
+        worksheet.append(headers)
+
+        header_fill = PatternFill("solid", fgColor="174C3A")
+        header_font = Font(color="FFFFFF", bold=True)
+        thin_side = Side(style="thin", color="D9E5DD")
+        border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+        merged_fill = PatternFill("solid", fgColor="F7FBF8")
+
+        for cell in worksheet[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.border = border
+
+        data_start_row = 2
+        prepared = []
+        for row in sorted_rows:
+            ente = ente_label(row)
+            alcance = " ".join((row.get("tipo_auditoria") or "").split()) or "-"
+            periodo = " ".join((row.get("periodo_informe") or "").split()) or "-"
+            titular = " ".join((row.get("titular") or "").split()) or "-"
+            admin_periodo = " ".join((row.get("periodo_administrativo") or "").split()) or "-"
+            administrativo = " ".join((row.get("administrativo") or "").split()) or "-"
+            cedula = " ".join((row.get("cedula_resultados") or "").split()) or "-"
+            worksheet.append([ente, alcance, periodo, titular, admin_periodo, administrativo, cedula])
+            ente_key = normalize_text_key(ente)
+            alcance_key = (ente_key, normalize_text_key(alcance))
+            period_key = (*alcance_key, normalize_text_key(periodo))
+            titular_key = (*period_key, normalize_text_key(titular))
+            admin_period_key = (*titular_key, normalize_text_key(admin_periodo))
+            admin_name_key = (*admin_period_key, normalize_text_key(administrativo))
+            cedula_key = (*admin_name_key, normalize_text_key(cedula))
+            prepared.append(
+                {
+                    "keys": [
+                        ente_key,
+                        alcance_key,
+                        period_key,
+                        titular_key,
+                        admin_period_key,
+                        admin_name_key,
+                        cedula_key,
+                    ]
+                }
+            )
+
+        def merge_column_by_key(column_index: int, key_index: int) -> None:
+            if not prepared:
+                return
+            group_start = data_start_row
+            current_key = prepared[0]["keys"][key_index]
+            for offset, item in enumerate(prepared[1:], start=1):
+                row_number = data_start_row + offset
+                if item["keys"][key_index] == current_key:
+                    continue
+                if row_number - group_start > 1:
+                    worksheet.merge_cells(
+                        start_row=group_start,
+                        start_column=column_index,
+                        end_row=row_number - 1,
+                        end_column=column_index,
+                    )
+                group_start = row_number
+                current_key = item["keys"][key_index]
+            last_row = data_start_row + len(prepared) - 1
+            if last_row - group_start >= 1:
+                worksheet.merge_cells(
+                    start_row=group_start,
+                    start_column=column_index,
+                    end_row=last_row,
+                    end_column=column_index,
+                )
+
+        widths = [34, 16, 24, 28, 24, 30, 24]
+        for column_index, width in enumerate(widths, start=1):
+            worksheet.column_dimensions[get_column_letter(column_index)].width = width
+
+        if prepared:
+            for row in worksheet.iter_rows(
+                min_row=data_start_row,
+                max_row=worksheet.max_row,
+                min_col=1,
+                max_col=len(headers),
+            ):
+                for cell in row:
+                    cell.border = border
+                    cell.alignment = Alignment(vertical="center", wrap_text=True)
+                    if cell.column < len(headers):
+                        cell.fill = merged_fill
+
+        for index in range(7):
+            merge_column_by_key(index + 1, index)
+
+        worksheet.freeze_panes = "A2"
+        worksheet.auto_filter.ref = worksheet.dimensions
+
+        stream = BytesIO()
+        workbook.save(stream)
+        stream.seek(0)
+        scope_bits = [ejercicio]
+        if ente_id:
+            scope_bits.append(ente_id.replace(".", "_"))
+        if tipo_auditoria:
+            scope_bits.append(normalize_text_key(tipo_auditoria).replace(" ", "_") or "alcance")
+        filename = f"titulares_{'_'.join(scope_bits)}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        return send_file(
+            stream,
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 
     @app.post("/carga/titulares/historial/<int:historial_id>/actualizar")
     @gabo_required

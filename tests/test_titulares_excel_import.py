@@ -2,7 +2,7 @@ from io import BytesIO
 import sqlite3
 
 import pytest
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
 
 @pytest.fixture
@@ -177,6 +177,21 @@ def test_titulares_excel_preview_and_apply(isolated_client):
         "01 de julio al 31 de diciembre",
     ]
 
+    export_response = client.get(
+        "/carga/titulares/exportar?ejercicio=2025&ente_id=1.16&tipo_auditoria=Financiera"
+    )
+    assert export_response.status_code == 200
+    assert export_response.headers["Content-Type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    export_workbook = load_workbook(BytesIO(export_response.data))
+    worksheet = export_workbook.active
+    merged_ranges = {str(merged_range) for merged_range in worksheet.merged_cells.ranges}
+    assert "A2:A4" in merged_ranges
+    assert "B2:B4" in merged_ranges
+    assert "C3:C4" in merged_ranges
+    assert "D3:D4" in merged_ranges
+
 
 def test_titulares_manual_save_is_visible_in_consulta(isolated_client):
     client, db_path = isolated_client
@@ -214,3 +229,24 @@ def test_titulares_manual_save_is_visible_in_consulta(isolated_client):
     assert len(history_payload["capture_rows"]) == 1
     assert history_payload["capture_rows"][0]["titular"] == "Titular Manual"
     assert history_payload["capture_rows"][0]["administrativo"] == "Administrativo Manual"
+
+    general_history_response = client.get("/carga/titulares/historial?ejercicio=2025")
+    assert general_history_response.status_code == 200
+    general_history_payload = general_history_response.get_json()
+    assert len(general_history_payload["rows"]) == 2
+    assert len(general_history_payload["capture_rows"]) == 1
+
+
+def test_titulares_page_uses_general_table_and_hidden_capture(isolated_client):
+    client, _db_path = isolated_client
+
+    response = client.get("/carga/titulares")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'id="titularHistoryTableBody"' in html
+    assert "Agregar Titular" in html
+    assert "Exportar Excel" in html
+    assert 'id="titularCaptureWorkspace"' in html
+    assert "Todas las Auditorías" in html
+    assert "rowspan" in html
