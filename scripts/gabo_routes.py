@@ -4063,7 +4063,12 @@ def register_gabo_routes(app, deps):
             ORDER BY CAST(ejercicio AS INTEGER) DESC, ejercicio DESC
             """
         ).fetchall()
-        ejercicios = [row["ejercicio"] for row in ejercicios_rows if (row["ejercicio"] or "").strip()]
+        ejercicios = [
+            row["ejercicio"]
+            for row in ejercicios_rows
+            if (row["ejercicio"] or "").strip()
+            and row["ejercicio"] not in GABO_READONLY_EJERCICIOS
+        ]
         if not ejercicios:
             ejercicios = [TITULAR_EJERCICIO_FIJO]
         requested_ejercicio = " ".join((request.args.get("ejercicio") or "").split())

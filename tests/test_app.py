@@ -70,8 +70,8 @@ def test_fuentes_export_requires_and_uses_ejercicio(client):
     assert "fuentes_financiamiento_2025_" in response.headers["Content-Disposition"]
 
 
-def test_gabo_tools_page_exposes_quick_exports(client):
-    """La página de herramientas de Gabo debe mostrar las exportaciones rápidas."""
+def test_gabo_tools_page_only_shows_fuentes(client):
+    """La página de herramientas de Gabo debe mostrar solo fuentes de financiamiento."""
     with client.session_transaction() as session_data:
         session_data["user"] = "gabo"
         session_data["role"] = "loader"
@@ -79,9 +79,10 @@ def test_gabo_tools_page_exposes_quick_exports(client):
     response = client.get("/carga/herramientas?ejercicio=2025")
 
     assert response.status_code == 200
-    assert b"Exportar fuentes" in response.data
-    assert b"Exportar con Ramo 33" in response.data
-    assert b"Exportar sin Ramo 33" in response.data
+    assert b"Fuentes de Financiamiento" in response.data
+    assert b"Exportar fuentes" not in response.data
+    assert b"Exportaciones" not in response.data
+    assert b"Accesos r\xc3\xa1pidos" not in response.data
 
 
 def test_gabo_can_export_observaciones_with_ramo_filter(client):
