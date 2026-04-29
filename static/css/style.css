@@ -533,7 +533,7 @@ body[data-luis-view="titulares"] #responsablesPeriodoExportWrap {
 }
 
 .luis-breakdown-table {
-  min-width: 2500px;
+  min-width: 2350px;
 }
 
 .panel {
@@ -1938,6 +1938,84 @@ body[data-luis-view="graficas"] #pdpMontoChartWrap {
   font-weight: 700;
 }
 
+.obs-cell-text {
+  display: block;
+  min-width: 0;
+}
+
+.obs-cell-text--tight {
+  line-height: 1.2;
+}
+
+.obs-cell-text--clamp {
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+#obsResponsables .obs-responsables-table {
+  min-width: 2870px;
+}
+
+#obsResponsables .report-col-no {
+  width: 3.2rem;
+}
+
+#obsResponsables .report-col-ente {
+  width: 13rem;
+}
+
+#obsResponsables .report-col-person {
+  width: 12rem;
+}
+
+#obsResponsables .report-col-period {
+  width: 8.75rem;
+}
+
+#obsResponsables .obs-responsables-table th,
+#obsResponsables .obs-responsables-table td {
+  padding: 0.48rem 0.55rem;
+}
+
+#obsResponsables .obs-responsables-table thead th {
+  line-height: 1.15;
+}
+
+#obsResponsables .obs-responsables-cell--no {
+  min-width: 3.2rem;
+}
+
+#obsResponsables .obs-responsables-cell--ente {
+  min-width: 13rem;
+  max-width: 13rem;
+  vertical-align: top;
+}
+
+#obsResponsables .obs-responsables-cell--periodo,
+#obsResponsables .obs-responsables-cell--cedula {
+  min-width: 8.75rem;
+  max-width: 8.75rem;
+  vertical-align: top;
+}
+
+#obsResponsables .obs-responsables-cell--nombre {
+  min-width: 12rem;
+  max-width: 12rem;
+  vertical-align: top;
+}
+
+#obsResponsables tbody td.obs-responsables-cell--ente,
+#obsResponsables tbody td.obs-responsables-cell--nombre,
+#obsResponsables tbody td.obs-responsables-cell--periodo,
+#obsResponsables tbody td.obs-responsables-cell--cedula {
+  white-space: normal;
+}
+
 .obs-responsables-subtotal-row td {
   background: #edf4ef !important;
   border-top: 2px solid #c6d3c8;
@@ -1957,6 +2035,90 @@ body[data-luis-view="graficas"] #pdpMontoChartWrap {
   letter-spacing: 0.03em;
 }
 
+.luis-breakdown-text {
+  display: block;
+  min-width: 0;
+}
+
+.luis-breakdown-text--tight {
+  line-height: 1.2;
+}
+
+.luis-breakdown-text--clamp {
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+body[data-luis-view="fuente_financiamiento"] #luisBreakdownPanel .luis-breakdown-table {
+  min-width: 2190px;
+}
+
+body[data-luis-view="fuente_financiamiento"] #luisBreakdownPanel .report-col-no {
+  width: 3.2rem;
+}
+
+body[data-luis-view="fuente_financiamiento"] #luisBreakdownPanel .report-col-ente {
+  width: 12.75rem;
+}
+
+body[data-luis-view="fuente_financiamiento"] #luisBreakdownPanel .report-col-detail {
+  width: 9.5rem;
+}
+
+body[data-luis-view="fuente_financiamiento"] #luisBreakdownPanel .report-col-source {
+  width: 13.5rem;
+}
+
+body[data-luis-view="fuente_financiamiento"] #luisBreakdownPanel .report-col-period {
+  width: 8.4rem;
+}
+
+body[data-luis-view="fuente_financiamiento"] #luisBreakdownPanel .obs-responsables-table th,
+body[data-luis-view="fuente_financiamiento"] #luisBreakdownPanel .obs-responsables-table td {
+  padding: 0.48rem 0.55rem;
+}
+
+body[data-luis-view="fuente_financiamiento"] #luisBreakdownPanel .obs-responsables-table thead th {
+  line-height: 1.15;
+}
+
+body[data-luis-view="fuente_financiamiento"] #luisBreakdownPanel .obs-responsables-cell--no {
+  min-width: 3.2rem;
+}
+
+body[data-luis-view="fuente_financiamiento"] #luisBreakdownPanel .obs-responsables-cell--ente {
+  min-width: 12.75rem;
+  max-width: 12.75rem;
+  vertical-align: top;
+}
+
+body[data-luis-view="fuente_financiamiento"] #luisBreakdownPanel .obs-responsables-cell--periodo {
+  min-width: 8.4rem;
+  max-width: 9.5rem;
+  vertical-align: top;
+}
+
+body[data-luis-view="fuente_financiamiento"] #luisBreakdownPanel .obs-responsables-cell--fuente {
+  min-width: 13.5rem;
+  max-width: 13.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+body[data-luis-view="fuente_financiamiento"] #luisBreakdownPanel tbody td.obs-responsables-cell--ente,
+body[data-luis-view="fuente_financiamiento"] #luisBreakdownPanel tbody td.obs-responsables-cell--fuente {
+  text-align: left;
+}
+
+body[data-luis-view="fuente_financiamiento"] #luisBreakdownPanel tbody td.obs-responsables-cell--periodo {
+  white-space: normal;
+}
+
 .pendientes-panel {
   background: #f6fafb;
   border: 1px solid var(--color-border);
@@ -1966,33 +2128,37 @@ body[data-luis-view="graficas"] #pdpMontoChartWrap {
 
 .pendientes-panel .table-wrap {
   margin-top: 1rem;
+  width: 100%;
+  max-width: none;
   border-radius: 14px;
   max-height: 70vh;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: auto;
 }
 
 .pendientes-periodo-table {
+  width: 100%;
   min-width: 1280px;
   table-layout: fixed;
-  margin: 0 auto;
+  margin: 0;
 }
 
 .pendientes-periodo-table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 2;
+  position: static;
   text-align: center;
   vertical-align: middle;
 }
 
 .pendientes-periodo-table thead tr:first-child th {
   background: linear-gradient(90deg, var(--color-accent-strong), var(--color-accent-mid));
-  min-height: 3.1rem;
+  padding-top: 0.42rem;
+  padding-bottom: 0.22rem;
 }
 
 .pendientes-periodo-table thead tr:nth-child(2) th {
-  top: 3.1rem;
   background: var(--color-accent-mid);
+  padding-top: 0.22rem;
+  padding-bottom: 0.42rem;
 }
 
 .pendientes-periodo-table th,
@@ -2007,6 +2173,14 @@ body[data-luis-view="graficas"] #pdpMontoChartWrap {
   border: 1px solid #dfe8e2;
 }
 
+.pendientes-periodo-table thead tr:first-child th {
+  border-bottom-width: 0;
+}
+
+.pendientes-periodo-table thead tr:nth-child(2) th {
+  border-top-width: 0;
+}
+
 .pendientes-periodo-id,
 .pendientes-periodo-ente,
 .pendientes-periodo-tipo,
@@ -2019,6 +2193,25 @@ body[data-luis-view="graficas"] #pdpMontoChartWrap {
 .pendientes-periodo-ente,
 .pendientes-periodo-text {
   font-weight: 600;
+}
+
+.pendientes-cell-text {
+  display: block;
+  min-width: 0;
+}
+
+.pendientes-cell-text--tight {
+  line-height: 1.2;
+}
+
+.pendientes-cell-text--clamp {
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .pendientes-periodo-monto {
@@ -2051,7 +2244,7 @@ body[data-luis-view="graficas"] #pdpMontoChartWrap {
 }
 
 .pendientes-col-numero {
-  width: 4rem;
+  width: 3.2rem;
 }
 
 .pendientes-col-ente {
@@ -2059,11 +2252,11 @@ body[data-luis-view="graficas"] #pdpMontoChartWrap {
 }
 
 .pendientes-col-tipo {
-  width: 6.5rem;
+  width: 8.75rem;
 }
 
 .pendientes-col-periodo {
-  width: 9.5rem;
+  width: 8.75rem;
 }
 
 .pendientes-col-count,
@@ -2074,6 +2267,56 @@ body[data-luis-view="graficas"] #pdpMontoChartWrap {
 
 .pendientes-col-monto {
   width: 6rem;
+}
+
+#pendientesPeriodoWrap .pendientes-periodo-table {
+  width: 100%;
+  min-width: 1710px;
+}
+
+#pendientesPeriodoPanel,
+#pendientesPeriodoWrap {
+  width: 100%;
+  max-width: none;
+}
+
+#pendientesPeriodoWrap .pendientes-periodo-table th,
+#pendientesPeriodoWrap .pendientes-periodo-table td {
+  padding: 0.48rem 0.52rem;
+}
+
+#pendientesPeriodoWrap .pendientes-periodo-table thead th {
+  line-height: 1.15;
+}
+
+#pendientesPeriodoWrap .pendientes-periodo-id {
+  min-width: 3.2rem;
+  vertical-align: top;
+}
+
+#pendientesPeriodoWrap .pendientes-periodo-ente {
+  min-width: 13rem;
+  max-width: 13rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+#pendientesPeriodoWrap .pendientes-periodo-tipo {
+  min-width: 8.75rem;
+  max-width: 8.75rem;
+  vertical-align: top;
+}
+
+#pendientesPeriodoWrap .pendientes-periodo-text {
+  min-width: 8.75rem;
+  max-width: 8.75rem;
+  vertical-align: top;
+}
+
+#pendientesPeriodoWrap tbody td.pendientes-periodo-ente,
+#pendientesPeriodoWrap tbody td.pendientes-periodo-tipo,
+#pendientesPeriodoWrap tbody td.pendientes-periodo-text {
+  white-space: normal;
 }
 
 .table-wrap {

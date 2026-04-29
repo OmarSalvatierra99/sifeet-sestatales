@@ -1352,12 +1352,20 @@
           }
           return cells;
         };
+        const renderResponsableText = (value, className = "") => {
+          const text = escapeHtml(value || "—");
+          const extraClass = className ? ` ${className}` : "";
+          return `<span class="obs-cell-text${extraClass}">${text}</span>`;
+        };
         const renderCollapsedCell = (cell, className) => {
           if (!cell) {
             return "";
           }
           const isEmpty = cell.value === "—";
-          return `<td${buildRowspanAttr(cell.rowspan)} class="${className} ${isEmpty ? "obs-responsables-cell--empty" : ""}">${escapeHtml(cell.value)}</td>`;
+          const textClass = className.includes("obs-responsables-cell--nombre") || className.includes("obs-responsables-cell--ente")
+            ? "obs-cell-text--clamp"
+            : "obs-cell-text--tight";
+          return `<td${buildRowspanAttr(cell.rowspan)} class="${className} ${isEmpty ? "obs-responsables-cell--empty" : ""}">${renderResponsableText(cell.value, textClass)}</td>`;
         };
         const renderMetricCells = (metrics, rowspan, emphasize = false) => {
           const spanAttr = buildRowspanAttr(rowspan);
@@ -1412,7 +1420,7 @@
           return acc;
         }, new Map());
         const formatEnteCell = (group) => {
-          const enteNombre = escapeHtml(group?.ente_nombre || "—");
+          const enteNombre = renderResponsableText(group?.ente_nombre || "—", "obs-cell-text--clamp");
           const key = [
             String(group?.ente_id || "").trim(),
             String(group?.ente_nombre || "").trim(),
@@ -1423,7 +1431,7 @@
           }
           return `
             ${enteNombre}
-            <span class="obs-responsables-subnote">${escapeHtml(group.tipo_auditoria)}</span>
+            <span class="obs-responsables-subnote">${renderResponsableText(group.tipo_auditoria, "obs-cell-text--tight")}</span>
           `;
         };
         if (!selectedEnte.length) {
@@ -1553,6 +1561,8 @@
               <col class="report-col-period">
               <col class="report-col-period">
               ${metricColgroupHtml()}
+              ${metricColgroupHtml()}
+              ${metricColgroupHtml()}
             `;
           } else {
             const detailCol = currentBreakdownConfig?.groupBy === "tipo_auditoria"
@@ -1579,6 +1589,8 @@
               <th rowspan="2">Periodo Cédula</th>
               <th rowspan="2">Periodo Titular</th>
               <th colspan="7">EMITIDAS</th>
+              <th colspan="7">SOLVENTADAS</th>
+              <th colspan="7">PENDIENTES</th>
             </tr>
             <tr>
               <th class="col-anexo">R</th>
@@ -1586,7 +1598,21 @@
               <th class="col-anexo">PDP</th>
               <th class="col-anexo">PRAS</th>
               <th class="col-anexo">PECFF</th>
-              <th>Total</th>
+              <th>Emitidas</th>
+              <th>Monto Daño ($)</th>
+              <th class="col-anexo">R</th>
+              <th class="col-anexo">SA</th>
+              <th class="col-anexo">PDP</th>
+              <th class="col-anexo">PRAS</th>
+              <th class="col-anexo">PECFF</th>
+              <th>Solventadas</th>
+              <th>Monto Daño ($)</th>
+              <th class="col-anexo">R</th>
+              <th class="col-anexo">SA</th>
+              <th class="col-anexo">PDP</th>
+              <th class="col-anexo">PRAS</th>
+              <th class="col-anexo">PECFF</th>
+              <th>Pendientes</th>
               <th>Monto Daño ($)</th>
             </tr>
           `;
@@ -1642,6 +1668,12 @@
         `;
       };
 
+      const renderLuisBreakdownText = (value, className = "") => {
+        const text = escapeHtml(value || "—");
+        const extraClass = className ? ` ${className}` : "";
+        return `<span class="luis-breakdown-text${extraClass}">${text}</span>`;
+      };
+
       const renderLuisBreakdown = (payload) => {
         if (!currentBreakdownConfig || !luisBreakdownBody) {
           return;
@@ -1657,7 +1689,7 @@
         const rows = Array.isArray(payload?.rows) ? payload.rows : [];
         const emptyColspan = currentBreakdownConfig.groupBy === "tipo_auditoria"
           ? 24
-          : (currentBreakdownConfig.groupBy === "fuente_financiamiento" ? 13 : 23);
+          : (currentBreakdownConfig.groupBy === "fuente_financiamiento" ? 27 : 23);
         if (!mainEjercicio.value) {
           luisBreakdownBody.innerHTML = `<tr><td colspan="${emptyColspan}" class="muted">Selecciona un ejercicio para ver resultados.</td></tr>`;
           return;
@@ -1677,13 +1709,15 @@
               <tr class="${isSubtotal ? "obs-responsables-subtotal-row" : ""}">
                 ${isSubtotal ? `<td colspan="6" class="obs-responsables-cell obs-responsables-cell--subtotal-label"><strong>SUBTOTAL</strong></td>` : `
                   ${row?.show_entity ? `<td${breakdownRowspanAttr(row?.entity_rowspan)} class="obs-responsables-cell obs-responsables-cell--no">${escapeHtml(row?.no || "")}</td>` : ""}
-                  ${row?.show_entity ? `<td${breakdownRowspanAttr(row?.entity_rowspan)} class="obs-responsables-cell obs-responsables-cell--ente">${escapeHtml(row?.label || "")}</td>` : ""}
-                  ${row?.show_tipo_auditoria ? `<td${breakdownRowspanAttr(row?.tipo_auditoria_rowspan)} class="obs-responsables-cell obs-responsables-cell--periodo">${escapeHtml(row?.tipo_auditoria || "—")}</td>` : ""}
-                  ${row?.show_fuente_financiamiento ? `<td${breakdownRowspanAttr(row?.fuente_financiamiento_rowspan)} class="obs-responsables-cell obs-responsables-cell--fuente">${escapeHtml(row?.fuente_financiamiento || "—")}</td>` : ""}
-                  <td class="obs-responsables-cell obs-responsables-cell--periodo">${escapeHtml(row?.periodo_cedula || "—")}</td>
-                  <td class="obs-responsables-cell obs-responsables-cell--periodo">${escapeHtml(row?.periodo_titular || "—")}</td>
+                  ${row?.show_entity ? `<td${breakdownRowspanAttr(row?.entity_rowspan)} class="obs-responsables-cell obs-responsables-cell--ente">${renderLuisBreakdownText(row?.label, "luis-breakdown-text--clamp")}</td>` : ""}
+                  ${row?.show_tipo_auditoria ? `<td${breakdownRowspanAttr(row?.tipo_auditoria_rowspan)} class="obs-responsables-cell obs-responsables-cell--periodo">${renderLuisBreakdownText(row?.tipo_auditoria, "luis-breakdown-text--tight")}</td>` : ""}
+                  ${row?.show_fuente_financiamiento ? `<td${breakdownRowspanAttr(row?.fuente_financiamiento_rowspan)} class="obs-responsables-cell obs-responsables-cell--fuente">${renderLuisBreakdownText(row?.fuente_financiamiento, "luis-breakdown-text--clamp")}</td>` : ""}
+                  <td class="obs-responsables-cell obs-responsables-cell--periodo">${renderLuisBreakdownText(row?.periodo_cedula, "luis-breakdown-text--tight")}</td>
+                  <td class="obs-responsables-cell obs-responsables-cell--periodo">${renderLuisBreakdownText(row?.periodo_titular, "luis-breakdown-text--tight")}</td>
                 `}
                 ${renderLuisBreakdownMetricCells(row?.totals?.emitidas, isSubtotal)}
+                ${renderLuisBreakdownMetricCells(row?.totals?.solventadas, isSubtotal)}
+                ${renderLuisBreakdownMetricCells(row?.totals?.pendientes, isSubtotal)}
               </tr>
             `;
           }
@@ -1692,8 +1726,8 @@
               <tr class="${isSubtotal ? "obs-responsables-subtotal-row" : ""}">
                 ${isSubtotal ? `<td colspan="3" class="obs-responsables-cell obs-responsables-cell--subtotal-label"><strong>SUBTOTAL</strong></td>` : `
                   ${row?.show_entity ? `<td${breakdownRowspanAttr(row?.entity_rowspan)} class="obs-responsables-cell obs-responsables-cell--no">${escapeHtml(row?.no || "")}</td>` : ""}
-                  ${row?.show_entity ? `<td${breakdownRowspanAttr(row?.entity_rowspan)} class="obs-responsables-cell obs-responsables-cell--ente">${escapeHtml(row?.label || "")}</td>` : ""}
-                  <td class="obs-responsables-cell obs-responsables-cell--periodo">${escapeHtml(row?.detail || "—")}</td>
+                  ${row?.show_entity ? `<td${breakdownRowspanAttr(row?.entity_rowspan)} class="obs-responsables-cell obs-responsables-cell--ente">${renderLuisBreakdownText(row?.label, "luis-breakdown-text--clamp")}</td>` : ""}
+                  <td class="obs-responsables-cell obs-responsables-cell--periodo">${renderLuisBreakdownText(row?.detail, "luis-breakdown-text--tight")}</td>
                 `}
                 ${renderLuisBreakdownMetricCells(row?.totals?.emitidas, isSubtotal)}
                 ${renderLuisBreakdownMetricCells(row?.totals?.solventadas, isSubtotal)}
@@ -1704,7 +1738,7 @@
           return `
             <tr>
               <td class="obs-responsables-cell obs-responsables-cell--no">${escapeHtml(row?.no || String(index + 1))}</td>
-              <td class="obs-responsables-cell obs-responsables-cell--ente">${escapeHtml(row?.label || "—")}</td>
+              <td class="obs-responsables-cell obs-responsables-cell--ente">${renderLuisBreakdownText(row?.label, "luis-breakdown-text--clamp")}</td>
               ${renderLuisBreakdownMetricCells(row?.totals?.emitidas)}
               ${renderLuisBreakdownMetricCells(row?.totals?.solventadas)}
               ${renderLuisBreakdownMetricCells(row?.totals?.pendientes)}
@@ -1718,6 +1752,8 @@
             <tr class="obs-responsables-grand-total-row">
               <td colspan="6" class="obs-responsables-cell obs-responsables-cell--subtotal-label"><strong>TOTAL GENERAL</strong></td>
               ${renderLuisBreakdownMetricCells(totals.emitidas, true)}
+              ${renderLuisBreakdownMetricCells(totals.solventadas, true)}
+              ${renderLuisBreakdownMetricCells(totals.pendientes, true)}
             </tr>
           `;
           return;
@@ -1786,7 +1822,7 @@
           console.error(error);
           const errorColspan = currentBreakdownConfig.groupBy === "tipo_auditoria"
             ? 24
-            : (currentBreakdownConfig.groupBy === "fuente_financiamiento" ? 13 : 23);
+            : (currentBreakdownConfig.groupBy === "fuente_financiamiento" ? 27 : 23);
           luisBreakdownBody.innerHTML = `<tr><td colspan="${errorColspan}" class="muted">No se pudo cargar el resumen.</td></tr>`;
         }
       };
@@ -2568,6 +2604,11 @@
           return;
         }
         try {
+          const renderPendientesText = (value, className = "") => {
+            const text = escapeHtml(value || "—");
+            const extraClass = className ? ` ${className}` : "";
+            return `<span class="pendientes-cell-text${extraClass}">${text}</span>`;
+          };
           const selectedEnte = getSelectedValues(obsEnteInput);
           const resumen = dashboardSummary.pendientes_por_periodo || { requires_ente: true, groups: [] };
           const groups = Array.isArray(resumen.groups) ? resumen.groups : [];
@@ -2594,8 +2635,8 @@
               return `
                 <tr>
                   <td>${escapeHtml(group.ente_numero || group.ente_id || "—")}</td>
-                  <td>${escapeHtml(group.ente_nombre || "—")}</td>
-                  <td>${escapeHtml(group.tipo_auditoria || "—")}</td>
+                  <td>${renderPendientesText(group.ente_nombre || "—", "pendientes-cell-text--clamp")}</td>
+                  <td>${renderPendientesText(group.tipo_auditoria || "—", "pendientes-cell-text--tight")}</td>
                   <td colspan="14" class="muted">Sin periodos disponibles para este ente.</td>
                 </tr>
               `;
@@ -2608,10 +2649,10 @@
               return `
                 <tr>
                   ${index === 0 ? `<td class="pendientes-periodo-id" rowspan="${periodos.length}">${escapeHtml(group.ente_numero || group.ente_id || "—")}</td>` : ""}
-                  ${index === 0 ? `<td class="pendientes-periodo-ente" rowspan="${periodos.length}">${escapeHtml(group.ente_nombre || "—")}</td>` : ""}
-                  ${index === 0 ? `<td class="pendientes-periodo-tipo" rowspan="${periodos.length}">${escapeHtml(group.tipo_auditoria || "—")}</td>` : ""}
-                  <td class="pendientes-periodo-text">${escapeHtml(periodo.periodo_cedula || "—")}</td>
-                  <td class="pendientes-periodo-text">${escapeHtml(periodo.periodo_titular || "—")}</td>
+                  ${index === 0 ? `<td class="pendientes-periodo-ente" rowspan="${periodos.length}">${renderPendientesText(group.ente_nombre || "—", "pendientes-cell-text--clamp")}</td>` : ""}
+                  ${index === 0 ? `<td class="pendientes-periodo-tipo" rowspan="${periodos.length}">${renderPendientesText(group.tipo_auditoria || "—", "pendientes-cell-text--tight")}</td>` : ""}
+                  <td class="pendientes-periodo-text">${renderPendientesText(periodo.periodo_cedula || "—", "pendientes-cell-text--tight")}</td>
+                  <td class="pendientes-periodo-text">${renderPendientesText(periodo.periodo_titular || "—", "pendientes-cell-text--tight")}</td>
                   <td class="pendientes-periodo-number col-anexo">${Number(pendientes.R || 0)}</td>
                   <td class="pendientes-periodo-number col-anexo">${Number(pendientes.SA || 0)}</td>
                   <td class="pendientes-periodo-number col-anexo">${Number(pendientes.PDP || 0)}</td>
