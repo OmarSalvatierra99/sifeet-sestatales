@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Registro Observaciones · Comparativo Anual</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260428-col-anexo-center-fix') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260430-multiselect-clean') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/comparativo_anual.css') }}">
   <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
 </head>
@@ -236,6 +236,7 @@
   </button>
 
   <script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/comparativo_anual.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/multi_select_filter.js', v='20260430-multiselect-clean') }}"></script>
+  <script src="{{ url_for('static', filename='js/comparativo_anual.js', v='20260430-multiselect-clean') }}"></script>
 </body>
 </html>

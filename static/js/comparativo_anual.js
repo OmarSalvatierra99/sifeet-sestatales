@@ -68,7 +68,7 @@
 
   const createDefaultFilters = () => ({
     universo: "all",
-    ente_uid: "",
+    ente_uid: [],
     tipo_auditoria: "",
     tipo_anexo: "",
     estado: "",
@@ -155,7 +155,7 @@
 
   const cloneFilters = (filters) => ({
     universo: filters.universo || "all",
-    ente_uid: filters.ente_uid || "",
+    ente_uid: Array.isArray(filters.ente_uid) ? filters.ente_uid.filter(Boolean) : [],
     tipo_auditoria: filters.tipo_auditoria || "",
     tipo_anexo: filters.tipo_anexo || "",
     estado: filters.estado || "",
@@ -204,9 +204,9 @@
     if (draft.filters.universo) {
       params.set("universo", draft.filters.universo);
     }
-    if (draft.filters.ente_uid) {
-      params.append("ente_uid", draft.filters.ente_uid);
-    }
+    (Array.isArray(draft.filters.ente_uid) ? draft.filters.ente_uid : [])
+      .filter(Boolean)
+      .forEach((value) => params.append("ente_uid", value));
     if (draft.filters.tipo_auditoria) {
       params.append("tipo_auditoria", draft.filters.tipo_auditoria);
     }
@@ -232,7 +232,10 @@
     if (!selectEl) {
       return;
     }
-    const currentValue = selectedValue || "";
+    const currentValues = Array.isArray(selectedValue)
+      ? selectedValue.filter(Boolean)
+      : (selectedValue ? [selectedValue] : []);
+    const currentValueSet = new Set(currentValues);
     const optionList = Array.isArray(items) ? items : [];
     const defaultOption = selectEl.querySelector("option[value='']");
     selectEl.innerHTML = "";
@@ -244,12 +247,62 @@
       const normalized = itemToOption ? itemToOption(item) : { value: item, label: item };
       option.value = normalized.value;
       option.textContent = normalized.label;
+      if (selectEl.multiple) {
+        option.selected = currentValueSet.has(option.value);
+      }
       selectEl.appendChild(option);
     });
-    if (currentValue && Array.from(selectEl.options).some((option) => option.value === currentValue)) {
-      selectEl.value = currentValue;
-    } else {
-      selectEl.value = "";
+    if (!selectEl.multiple) {
+      const currentValue = currentValues[0] || "";
+      if (currentValue && Array.from(selectEl.options).some((option) => option.value === currentValue)) {
+        selectEl.value = currentValue;
+      } else {
+        selectEl.value = "";
+      }
+    }
+  };
+
+  const getSelectedValues = (selectEl) => (
+    window.MultiSelectFilter
+      ? window.MultiSelectFilter.getSelectedValues(selectEl)
+      : []
+  );
+
+  const setSelectedValues = (selectEl, values) => {
+    if (window.MultiSelectFilter) {
+      window.MultiSelectFilter.setSelectedValues(selectEl, values);
+    }
+  };
+
+  const syncComparisonEnteSelect = (items, selectedValues) => {
+    if (!enteSelect) {
+      return;
+    }
+    enteSelect.multiple = true;
+    enteSelect.size = 1;
+    syncSelectOptions(
+      enteSelect,
+      items,
+      selectedValues,
+      (item) => {
+        const suffix = item.has_historical_names ? " · nombre historico" : "";
+        return { value: item.ente_uid, label: `${item.label}${suffix}` };
+      },
+    );
+    setSelectedValues(enteSelect, selectedValues);
+    if (window.MultiSelectFilter) {
+      window.MultiSelectFilter.sync(enteSelect, {
+        label: "Ente",
+        placeholder: "Todos los entes",
+        multiple: true,
+        searchable: true,
+        searchPlaceholder: "Buscar ente por número o nombre",
+        selectAllLabel: "Seleccionar todos",
+        clearLabel: "Limpiar",
+        allSelectedLabel: "Todos los entes",
+        selectedCountLabel: (count) => `${count} ${count === 1 ? "ente seleccionado" : "entes seleccionados"}`,
+        optionCountLabel: "entes",
+      });
     }
   };
 
@@ -425,15 +478,7 @@
     if (universeSelect) {
       universeSelect.value = draft.filters.universo || "all";
     }
-    syncSelectOptions(
-      enteSelect,
-      options.entes || [],
-      draft.filters.ente_uid,
-      (item) => {
-        const suffix = item.has_historical_names ? " · nombre historico" : "";
-        return { value: item.ente_uid, label: `${item.label}${suffix}` };
-      },
-    );
+    syncComparisonEnteSelect(options.entes || [], draft.filters.ente_uid);
     syncSelectOptions(tipoAuditoriaSelect, options.tipo_auditoria || [], draft.filters.tipo_auditoria);
     syncSelectOptions(tipoAnexoSelect, options.tipo_anexo || [], draft.filters.tipo_anexo);
     syncSelectOptions(estadoSelect, options.estado || [], draft.filters.estado);
@@ -957,7 +1002,7 @@
       const selectedFilters = data.selected_filters || {};
       state.filters = {
         universo: selectedFilters.universo || "all",
-        ente_uid: Array.isArray(selectedFilters.ente_uid) ? (selectedFilters.ente_uid[0] || "") : "",
+        ente_uid: Array.isArray(selectedFilters.ente_uid) ? selectedFilters.ente_uid.filter(Boolean) : [],
         tipo_auditoria: Array.isArray(selectedFilters.tipo_auditoria) ? (selectedFilters.tipo_auditoria[0] || "") : "",
         tipo_anexo: Array.isArray(selectedFilters.tipo_anexo) ? (selectedFilters.tipo_anexo[0] || "") : "",
         estado: Array.isArray(selectedFilters.estado) ? (selectedFilters.estado[0] || "") : "",
@@ -1035,7 +1080,7 @@
       return;
     }
     element.addEventListener("change", () => {
-      draft.filters[key] = element.value || "";
+      draft.filters[key] = element.multiple ? getSelectedValues(element) : (element.value || "");
       renderSelectionPreview();
       loadStats();
     });

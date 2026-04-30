@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Registro Observaciones · Registro de Ejercicios Fiscales</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260428-col-anexo-center-fix') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260430-multiselect-clean') }}">
   <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
 </head>
 <body class="{% if user and user.username == 'luis' %}luis-wide-layout{% endif %}" data-luis-view="{{ luis_view|default('consulta') }}">
@@ -636,6 +636,7 @@
   </button>
 
   <script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/multi_select_filter.js', v='20260430-multiselect-clean') }}"></script>
   <script>
     const mainEjercicio = document.getElementById("main_ejercicio");
     const obsEnteInput = document.getElementById("obs_ente_id");
@@ -821,208 +822,27 @@
       };
 
       const getSelectedValues = (selectEl) => {
-        if (!selectEl) {
-          return [];
-        }
-        if (selectEl.multiple) {
-          return Array.from(selectEl.selectedOptions)
-            .map((option) => option.value)
-            .filter(Boolean);
-        }
-        return selectEl.value ? [selectEl.value] : [];
+        return window.MultiSelectFilter
+          ? window.MultiSelectFilter.getSelectedValues(selectEl)
+          : [];
       };
 
       const setSelectedValues = (selectEl, values) => {
-        if (!selectEl) {
-          return;
+        if (window.MultiSelectFilter) {
+          window.MultiSelectFilter.setSelectedValues(selectEl, values);
         }
-        const safeValues = Array.isArray(values) ? values.filter(Boolean) : [];
-        const valueSet = new Set(safeValues);
-        if (selectEl.multiple) {
-          Array.from(selectEl.options).forEach((option) => {
-            option.selected = valueSet.has(option.value);
-          });
-          return;
-        }
-        const selectedValue = safeValues.find((value) => Array.from(selectEl.options).some((option) => option.value === value));
-        selectEl.value = selectedValue || "";
       };
 
       const clearSelectSelection = (selectEl) => {
-        if (!selectEl) {
-          return;
+        if (window.MultiSelectFilter) {
+          window.MultiSelectFilter.clear(selectEl);
         }
-        if (selectEl.multiple) {
-          Array.from(selectEl.options).forEach((option) => {
-            option.selected = false;
-          });
-        } else {
-          selectEl.value = "";
-        }
-        const state = multiSelectUIs.get(selectEl);
-        if (state) {
-          const placeholder = selectEl.dataset.multiPlaceholder || "Todos";
-          renderMultiSelectOptions(selectEl, placeholder);
-        }
-      };
-
-      const multiSelectUIs = new Map();
-
-      const closeAllMultiSelectPanels = (exceptSelect = null) => {
-        multiSelectUIs.forEach((state, selectEl) => {
-          if (exceptSelect && selectEl === exceptSelect) {
-            return;
-          }
-          state.container.classList.remove("is-open");
-        });
-      };
-
-      document.addEventListener("click", (event) => {
-        let clickedInside = false;
-        multiSelectUIs.forEach((state) => {
-          if (state.container.contains(event.target)) {
-            clickedInside = true;
-          }
-        });
-        if (!clickedInside) {
-          closeAllMultiSelectPanels();
-        }
-      });
-
-      const getOptionLabelByValue = (selectEl, value) => {
-        const option = Array.from(selectEl?.options || []).find((item) => item.value === value);
-        return option ? (option.textContent || value).trim() : value;
-      };
-
-      const summarizeMultiSelection = (selectEl, placeholder) => {
-        const selected = getSelectedValues(selectEl);
-        if (!selected.length) {
-          return placeholder;
-        }
-        const selectableCount = Array.from(selectEl?.options || []).filter((option) => option.value).length;
-        const allSelectedLabel = selectEl?.dataset.multiAllSelectedLabel || "";
-        if (allSelectedLabel && selectableCount > 0 && selected.length === selectableCount) {
-          return allSelectedLabel;
-        }
-        const labels = selected.map((value) => getOptionLabelByValue(selectEl, value));
-        if (labels.length <= 2) {
-          return labels.join(", ");
-        }
-        return `${labels[0]} +${labels.length - 1}`;
       };
 
       const syncMultiSelectDisabledState = (selectEl) => {
-        const state = multiSelectUIs.get(selectEl);
-        if (!state) {
-          return;
+        if (window.MultiSelectFilter) {
+          window.MultiSelectFilter.syncDisabled(selectEl);
         }
-        state.toggle.disabled = Boolean(selectEl.disabled);
-        state.container.classList.toggle("is-disabled", Boolean(selectEl.disabled));
-        if (selectEl.disabled) {
-          state.container.classList.remove("is-open");
-        }
-      };
-
-      const renderMultiSelectOptions = (selectEl, placeholder) => {
-        const state = multiSelectUIs.get(selectEl);
-        if (!state) {
-          return;
-        }
-        const options = Array.from(selectEl.options).filter((option) => option.value);
-        state.panel.innerHTML = "";
-        if (!options.length) {
-          state.panel.innerHTML = `<div class="multi-select-empty">${escapeHtml(placeholder)}</div>`;
-          state.value.textContent = placeholder;
-          return;
-        }
-        if (selectEl.dataset.multiSelectAllLabel) {
-          const actions = document.createElement("div");
-          actions.className = "multi-select-actions";
-          const selectAllButton = document.createElement("button");
-          selectAllButton.type = "button";
-          selectAllButton.textContent = selectEl.dataset.multiSelectAllLabel;
-          selectAllButton.addEventListener("click", () => {
-            options.forEach((option) => {
-              option.selected = true;
-            });
-            state.value.textContent = summarizeMultiSelection(selectEl, placeholder);
-            renderMultiSelectOptions(selectEl, placeholder);
-            selectEl.dispatchEvent(new Event("change", { bubbles: true }));
-          });
-          const clearButton = document.createElement("button");
-          clearButton.type = "button";
-          clearButton.textContent = selectEl.dataset.multiClearLabel || "Limpiar";
-          clearButton.addEventListener("click", () => {
-            options.forEach((option) => {
-              option.selected = false;
-            });
-            state.value.textContent = summarizeMultiSelection(selectEl, placeholder);
-            renderMultiSelectOptions(selectEl, placeholder);
-            selectEl.dispatchEvent(new Event("change", { bubbles: true }));
-          });
-          actions.appendChild(selectAllButton);
-          actions.appendChild(clearButton);
-          state.panel.appendChild(actions);
-        }
-        options.forEach((option) => {
-          const row = document.createElement("label");
-          row.className = "multi-select-option";
-          const checkbox = document.createElement("input");
-          checkbox.type = "checkbox";
-          checkbox.checked = option.selected;
-          checkbox.addEventListener("change", () => {
-            option.selected = checkbox.checked;
-            state.value.textContent = summarizeMultiSelection(selectEl, placeholder);
-            selectEl.dispatchEvent(new Event("change", { bubbles: true }));
-          });
-          const text = document.createElement("span");
-          text.textContent = option.textContent || option.value;
-          row.appendChild(checkbox);
-          row.appendChild(text);
-          state.panel.appendChild(row);
-        });
-        state.value.textContent = summarizeMultiSelection(selectEl, placeholder);
-      };
-
-      const ensureMultiSelectUI = (selectEl, placeholder) => {
-        let state = multiSelectUIs.get(selectEl);
-        if (!state) {
-          const container = document.createElement("div");
-          container.className = "multi-select-dropdown";
-          const toggle = document.createElement("button");
-          toggle.type = "button";
-          toggle.className = "multi-select-toggle";
-          const valueNode = document.createElement("span");
-          valueNode.className = "multi-select-value";
-          const arrowNode = document.createElement("span");
-          arrowNode.className = "multi-select-arrow";
-          arrowNode.setAttribute("aria-hidden", "true");
-          arrowNode.textContent = "▾";
-          toggle.appendChild(valueNode);
-          toggle.appendChild(arrowNode);
-          const panel = document.createElement("div");
-          panel.className = "multi-select-panel";
-          container.appendChild(toggle);
-          container.appendChild(panel);
-          selectEl.insertAdjacentElement("afterend", container);
-          toggle.addEventListener("click", (event) => {
-            event.preventDefault();
-            if (toggle.disabled) {
-              return;
-            }
-            const willOpen = !container.classList.contains("is-open");
-            closeAllMultiSelectPanels(selectEl);
-            container.classList.toggle("is-open", willOpen);
-          });
-          panel.addEventListener("click", (event) => {
-            event.stopPropagation();
-          });
-          state = { container, toggle, panel, value: valueNode };
-          multiSelectUIs.set(selectEl, state);
-        }
-        state.container.style.display = "";
-        renderMultiSelectOptions(selectEl, placeholder);
-        syncMultiSelectDisabledState(selectEl);
       };
 
       const syncSelectMode = (selectEl, allowMulti, placeholder) => {
@@ -1030,17 +850,29 @@
           return;
         }
         if (allowMulti) {
-          selectEl.dataset.multiPlaceholder = placeholder;
-          selectEl.classList.add("is-multi-hidden");
-          ensureMultiSelectUI(selectEl, placeholder);
+          const isEnteFilter = selectEl === obsEnteInput;
+          const optionCountLabel = isEnteFilter ? "entes" : "opciones";
+          const selectedCountLabel = isEnteFilter
+            ? ((count) => `${count} ${count === 1 ? "ente seleccionado" : "entes seleccionados"}`)
+            : ((count) => `${count} ${count === 1 ? "selección" : "selecciones"}`);
+          if (window.MultiSelectFilter) {
+            window.MultiSelectFilter.sync(selectEl, {
+              label: selectEl.labels && selectEl.labels[0] ? String(selectEl.labels[0].textContent || "").trim() : "",
+              placeholder,
+              multiple: true,
+              searchable: isEnteFilter,
+              searchPlaceholder: isEnteFilter ? "Buscar ente por número o nombre" : "",
+              selectAllLabel: selectEl.dataset.multiSelectAllLabel || "Seleccionar todos",
+              clearLabel: selectEl.dataset.multiClearLabel || "Limpiar",
+              allSelectedLabel: selectEl.dataset.multiAllSelectedLabel || placeholder,
+              selectedCountLabel,
+              optionCountLabel,
+            });
+          }
           return;
         }
-        delete selectEl.dataset.multiPlaceholder;
-        selectEl.classList.remove("is-multi-hidden");
-        const state = multiSelectUIs.get(selectEl);
-        if (state) {
-          state.container.classList.remove("is-open");
-          state.container.style.display = "none";
+        if (window.MultiSelectFilter) {
+          window.MultiSelectFilter.destroy(selectEl);
         }
       };
 
@@ -2551,6 +2383,7 @@
         obsEnteInput.dataset.multiSelectAllLabel = "Seleccionar todos los entes";
         obsEnteInput.dataset.multiClearLabel = "Limpiar";
         obsEnteInput.dataset.multiAllSelectedLabel = "Todos los entes";
+        obsEnteInput.dataset.multiSearchPlaceholder = "Buscar ente por numero o nombre";
         obsEnteInput.multiple = enteMulti;
         obsEnteInput.size = 1;
         resetSelect(obsEnteInput, "Todos los entes", enteMulti);
@@ -3341,7 +3174,9 @@
       setTab(currentLuisView === "catalogo" ? "catalogo" : "observaciones");
 
       const handleEjercicioChange = async () => {
-        closeAllMultiSelectPanels();
+        if (window.MultiSelectFilter) {
+          window.MultiSelectFilter.closeAll();
+        }
         setObsEnabled(Boolean(mainEjercicio.value));
         setCatalogoEnabled(Boolean(mainEjercicio.value));
         clearSelectSelection(obsEnteInput);
@@ -3409,7 +3244,9 @@
       });
 
       const clearObservacionesFilters = async () => {
-        closeAllMultiSelectPanels();
+        if (window.MultiSelectFilter) {
+          window.MultiSelectFilter.closeAll();
+        }
         clearSelectSelection(obsEnteInput);
         clearSelectSelection(mainTipoAuditoria);
         setTipoAnexoValue([]);
