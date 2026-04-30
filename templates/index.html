@@ -134,7 +134,44 @@
       <div class="results-overview-row">
         <section class="panel" id="summarySection">
           <div class="panel-header">
-            <h2>Resumen</h2>
+            <div class="charts-header-copy">
+              <span class="chart-section-kicker">Panel ejecutivo</span>
+              <h2>Resumen gráfico de fiscalización</h2>
+              <p>Lectura consolidada para seguimiento de observaciones, avance de solventación y focos de riesgo por ente, tipo de anexo y monto observado.</p>
+            </div>
+          </div>
+          <div class="charts-executive-shell" id="chartsExecutiveShell">
+            <div class="charts-kpi-grid">
+              <article class="charts-kpi-card">
+                <span class="charts-kpi-label">Emitidas</span>
+                <strong id="chartsKpiEmitidas">0</strong>
+                <small id="chartsKpiEmitidasMeta">Observaciones registradas</small>
+              </article>
+              <article class="charts-kpi-card">
+                <span class="charts-kpi-label">Solventadas</span>
+                <strong id="chartsKpiSolventadas">0</strong>
+                <small id="chartsKpiSolventadasMeta">Avance de atención</small>
+              </article>
+              <article class="charts-kpi-card charts-kpi-card--alert">
+                <span class="charts-kpi-label">Pendientes</span>
+                <strong id="chartsKpiPendientes">0</strong>
+                <small id="chartsKpiPendientesMeta">Carga vigente</small>
+              </article>
+              <article class="charts-kpi-card">
+                <span class="charts-kpi-label">Solventación</span>
+                <strong id="chartsKpiAvance">0%</strong>
+                <small id="chartsKpiAvanceMeta">Porcentaje de avance</small>
+              </article>
+            </div>
+            <article class="charts-insight-card">
+              <div class="charts-insight-head">
+                <span class="chart-section-kicker">Lectura rápida</span>
+                <h3>Hallazgos prioritarios</h3>
+              </div>
+              <ul id="chartsExecutiveInsights" class="charts-insight-list">
+                <li>Selecciona un ejercicio para generar indicadores.</li>
+              </ul>
+            </article>
           </div>
           <div class="table-wrap table-summary">
             <table>
@@ -171,40 +208,88 @@
             </table>
           </div>
           <div class="chart-card summary-static-chart" id="summaryStaticChartWrap">
-            <h3>Distribución por anexo</h3>
-            <canvas id="summaryStaticStackedBar" height="250"></canvas>
+            <div class="chart-card-head">
+              <span class="chart-card-kicker">Composición</span>
+              <h3>Distribución y avance por tipo de anexo</h3>
+              <p>Compara el peso relativo de solventadas y pendientes sobre el total emitido por categoría.</p>
+            </div>
+            <div class="chart-plot-shell chart-plot-shell--summary">
+              <canvas id="summaryStaticStackedBar" height="250"></canvas>
+            </div>
             <p class="chart-footnote">Etiqueta E: total emitidas.</p>
           </div>
         </section>
 
         <section class="panel chart-panel" id="pdpChartSection">
           <div class="panel-header">
-            <h2>Gráficas de estado</h2>
-            <p>Lectura visual de observaciones por estado según los filtros seleccionados.</p>
+            <div class="charts-header-copy">
+              <span class="chart-section-kicker">Análisis visual</span>
+              <h2>Tablero analítico de observaciones</h2>
+              <p>Organizado para supervisión ejecutiva, comparación operativa y detección temprana de concentración de riesgo.</p>
+            </div>
           </div>
-          <div class="chart-card summary-chart">
-            <h3>Solventadas y pendientes</h3>
-            <canvas id="pdpCountDonut" height="240"></canvas>
+          <div class="chart-section-label">Seguimiento ejecutivo</div>
+          <div class="chart-card summary-chart chart-card--compact">
+            <div class="chart-card-head">
+              <span class="chart-card-kicker">Estado general</span>
+              <h3>Solventadas vs pendientes</h3>
+              <p>Resume el balance actual de atención para lectura gerencial inmediata.</p>
+            </div>
+            <div class="chart-plot-shell chart-plot-shell--compact">
+              <canvas id="pdpCountDonut" height="240"></canvas>
+            </div>
           </div>
-          <div class="chart-card summary-chart">
-            <h3>Comparativo por tipo de anexo</h3>
-            <canvas id="pdpStatusBar" height="240"></canvas>
+          <div class="chart-card summary-chart chart-card--compact" id="pdpMontoChartWrap" style="display: none;">
+            <div class="chart-card-head">
+              <span class="chart-card-kicker">Impacto monetario</span>
+              <h3>Montos PDP en seguimiento</h3>
+              <p>Visualiza el peso del monto solventado frente al monto pendiente cuando aplica auditoría PDP.</p>
+            </div>
+            <div class="chart-plot-shell chart-plot-shell--compact">
+              <canvas id="pdpMontoDonut" height="240"></canvas>
+            </div>
           </div>
-          <div class="chart-card summary-chart chart-card-wide">
-            <h3>Top 5 entes con más pendientes</h3>
-            <canvas id="topPendientesBar" height="240"></canvas>
+          <div class="chart-section-label">Concentración y focos de riesgo</div>
+          <div class="chart-card summary-chart chart-card-wide chart-card--primary">
+            <div class="chart-card-head">
+              <span class="chart-card-kicker">Ranking crítico</span>
+              <h3>Entes con mayor concentración de pendientes</h3>
+              <p>Prioriza la revisión de los entes con mayor carga pendiente para seguimiento y escalamiento.</p>
+            </div>
+            <div class="chart-plot-shell chart-plot-shell--wide">
+              <canvas id="topPendientesBar" height="240"></canvas>
+            </div>
           </div>
-          <div class="chart-card summary-chart chart-card-wide" id="multiFiltroCompareWrap" style="display: none;">
-            <h3 id="multiFiltroCompareTitle">Comparativo de multifiltro</h3>
-            <canvas id="multiFiltroCompareBar" height="240"></canvas>
+          <div class="chart-section-label">Comparativos y detalle</div>
+          <div class="chart-card summary-chart chart-card--secondary">
+            <div class="chart-card-head">
+              <span class="chart-card-kicker">Comparativo</span>
+              <h3>Volumen por tipo de anexo</h3>
+              <p>Contrasta emitidas, solventadas y pendientes para detectar categorías con mayor rezago relativo.</p>
+            </div>
+            <div class="chart-plot-shell chart-plot-shell--regular">
+              <canvas id="pdpStatusBar" height="240"></canvas>
+            </div>
           </div>
-          <div class="chart-card summary-chart chart-card-wide" id="multiFiltroComparePctWrap" style="display: none;">
-            <h3 id="multiFiltroComparePctTitle">Comparativo de multifiltro (% pendientes)</h3>
-            <canvas id="multiFiltroComparePctBar" height="240"></canvas>
+          <div class="chart-card summary-chart chart-card-wide chart-card--detail" id="multiFiltroCompareWrap" style="display: none;">
+            <div class="chart-card-head">
+              <span class="chart-card-kicker">Comparativo técnico</span>
+              <h3 id="multiFiltroCompareTitle">Comparativo de multifiltro</h3>
+              <p>Contrasta volumen emitido, solventado y pendiente según el filtro analítico activo.</p>
+            </div>
+            <div class="chart-plot-shell chart-plot-shell--wide">
+              <canvas id="multiFiltroCompareBar" height="240"></canvas>
+            </div>
           </div>
-          <div class="chart-card summary-chart" id="pdpMontoChartWrap" style="display: none;">
-            <h3>Montos PDP</h3>
-            <canvas id="pdpMontoDonut" height="240"></canvas>
+          <div class="chart-card summary-chart chart-card-wide chart-card--detail" id="multiFiltroComparePctWrap" style="display: none;">
+            <div class="chart-card-head">
+              <span class="chart-card-kicker">Índice de riesgo</span>
+              <h3 id="multiFiltroComparePctTitle">Comparativo de multifiltro (% pendientes)</h3>
+              <p>Mide la proporción relativa de pendientes para ubicar rezagos con mayor severidad.</p>
+            </div>
+            <div class="chart-plot-shell chart-plot-shell--wide">
+              <canvas id="multiFiltroComparePctBar" height="240"></canvas>
+            </div>
           </div>
         </section>
       </div>
@@ -600,6 +685,15 @@
     const topPendientesBarCanvas = document.getElementById("topPendientesBar");
     const summaryStaticStackedBarCanvas = document.getElementById("summaryStaticStackedBar");
     const pdpMontoDonutCanvas = document.getElementById("pdpMontoDonut");
+    const chartsKpiEmitidas = document.getElementById("chartsKpiEmitidas");
+    const chartsKpiEmitidasMeta = document.getElementById("chartsKpiEmitidasMeta");
+    const chartsKpiSolventadas = document.getElementById("chartsKpiSolventadas");
+    const chartsKpiSolventadasMeta = document.getElementById("chartsKpiSolventadasMeta");
+    const chartsKpiPendientes = document.getElementById("chartsKpiPendientes");
+    const chartsKpiPendientesMeta = document.getElementById("chartsKpiPendientesMeta");
+    const chartsKpiAvance = document.getElementById("chartsKpiAvance");
+    const chartsKpiAvanceMeta = document.getElementById("chartsKpiAvanceMeta");
+    const chartsExecutiveInsights = document.getElementById("chartsExecutiveInsights");
     const catalogoBody = document.getElementById("catalogoBody");
     const catalogoCount = document.getElementById("catalogoCount");
     const catalogoSearch = document.getElementById("catalogo_search");
@@ -660,6 +754,11 @@
         primaryStrong: "#003946",
         warning: "#B18934",
       };
+      if (window.Chart?.defaults) {
+        window.Chart.defaults.devicePixelRatio = Math.max(window.devicePixelRatio || 1, 1.75);
+        window.Chart.defaults.font.family = "'Source Sans 3', 'Segoe UI', sans-serif";
+        window.Chart.defaults.color = "#43584d";
+      }
       const resumenTiposOrden = ["SA", "PDP", "PRAS", "PEFCF", "R"];
       const getResumenTipoRank = (tipo) => {
         const index = resumenTiposOrden.indexOf(tipo);
@@ -704,6 +803,8 @@
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#39;");
+
+      const formatPercent = (value) => `${Number(value || 0).toFixed(1)}%`;
 
       const setLoadingState = (loading) => {
         [summarySection, chartSection, pendientesPeriodoPanel, obsTableBody.closest(".table-wrap")].forEach((node) => {
@@ -2103,10 +2204,14 @@
         }
         const labels = filas.map(([tipo]) => tipo);
         const emitidas = filas.map(([, data]) => data.emitidas);
+        const solventadas = filas.map(([, data]) => data.solventadas);
+        const pendientes = filas.map(([, data]) => data.pendientes);
 
         if (pdpStatusBarChart) {
           pdpStatusBarChart.data.labels = labels;
           pdpStatusBarChart.data.datasets[0].data = emitidas;
+          pdpStatusBarChart.data.datasets[1].data = solventadas;
+          pdpStatusBarChart.data.datasets[2].data = pendientes;
           pdpStatusBarChart.update();
           return;
         }
@@ -2122,6 +2227,18 @@
                 backgroundColor: reportPalette.primaryStrong,
                 borderRadius: 6,
               },
+              {
+                label: "Solventadas",
+                data: solventadas,
+                backgroundColor: reportPalette.primary,
+                borderRadius: 6,
+              },
+              {
+                label: "Pendientes",
+                data: pendientes,
+                backgroundColor: reportPalette.warning,
+                borderRadius: 6,
+              },
             ],
           },
           options: {
@@ -2132,6 +2249,15 @@
               legend: { position: "bottom" },
             },
             scales: {
+              x: {
+                ticks: {
+                  maxRotation: 0,
+                  minRotation: 0,
+                  callback(value) {
+                    return truncateLabel(this.getLabelForValue(value), 22);
+                  },
+                },
+              },
               y: {
                 beginAtZero: true,
                 ticks: { precision: 0 },
@@ -2435,6 +2561,7 @@
           obsEnteInput.appendChild(option);
         });
         setSelectedValues(obsEnteInput, currentEnte);
+        const appliedPendingFilters = applyPendingUrlFilters();
         syncSelectMode(obsEnteInput, enteMulti, "Todos los entes");
         syncMultiSelectDisabledState(obsEnteInput);
 
@@ -2461,7 +2588,6 @@
           }
         }
 
-        const appliedPendingFilters = applyPendingUrlFilters();
         syncConceptoIrregularidadVisibility();
         return appliedPendingFilters;
       };
@@ -2478,6 +2604,7 @@
           const multiCompare = dashboardSummary.multi_compare || { active: false, items: [] };
           const selectedTipo = getActiveSummaryTipo();
           const isPdpSelected = selectedTipo === "PDP";
+          renderChartsExecutiveSummary();
           syncPdpWidgetsVisibility();
           if (!safeRows.length) {
             pdpSummaryBody.innerHTML = "<tr><td colspan=\"4\" class=\"muted\">Sin resultados.</td></tr>";
@@ -2586,6 +2713,7 @@
           updateMultiFiltroCompareCharts(multiCompare);
         } catch (error) {
           console.error("Error al renderizar resumen general:", error);
+          renderChartsExecutiveSummary();
           pdpSummaryBody.innerHTML = "<tr><td colspan=\"4\" class=\"muted\">Sin resultados.</td></tr>";
           if (pdpMontoSummaryBody) {
             pdpMontoSummaryBody.innerHTML = "<tr><td colspan=\"3\" class=\"muted\">Sin resultados.</td></tr>";
@@ -2596,6 +2724,80 @@
           updateTopPendientesBar([]);
           updateSummaryStaticStacked([]);
           updateMultiFiltroCompareCharts(null);
+        }
+      };
+
+      const renderChartsExecutiveSummary = () => {
+        const totals = dashboardSummary?.totals || {};
+        const emitidas = Number(totals.emitidas || 0);
+        const solventadas = Number(totals.solventadas || 0);
+        const pendientes = Number(totals.pendientes || 0);
+        const avance = emitidas > 0 ? (solventadas * 100) / emitidas : 0;
+        const rezago = emitidas > 0 ? (pendientes * 100) / emitidas : 0;
+        const topPendiente = Array.isArray(dashboardSummary?.top_pendientes) && dashboardSummary.top_pendientes.length
+          ? dashboardSummary.top_pendientes[0]
+          : null;
+        const topPendienteNombre = topPendiente?.ente_nombre || "Sin concentración identificada";
+        const topPendienteValor = Number(topPendiente?.pendientes || 0);
+        const concentracionTop = pendientes > 0 ? (topPendienteValor * 100) / pendientes : 0;
+        const tipos = Array.isArray(dashboardSummary?.tipos) ? dashboardSummary.tipos : [];
+        const tipoCritico = tipos.reduce((highest, item) => {
+          const currentPendientes = Number(item?.pendientes || 0);
+          const highestPendientes = Number(highest?.pendientes || -1);
+          return currentPendientes > highestPendientes ? item : highest;
+        }, null);
+        const pdpMontos = dashboardSummary?.pdp_montos || {};
+        const montoPendiente = Number(pdpMontos.pendiente || 0);
+
+        if (chartsKpiEmitidas) {
+          chartsKpiEmitidas.textContent = emitidas.toLocaleString("es-MX");
+        }
+        if (chartsKpiEmitidasMeta) {
+          chartsKpiEmitidasMeta.textContent = emitidas > 0
+            ? `${solventadas.toLocaleString("es-MX")} solventadas y ${pendientes.toLocaleString("es-MX")} pendientes`
+            : "Sin observaciones registradas";
+        }
+        if (chartsKpiSolventadas) {
+          chartsKpiSolventadas.textContent = solventadas.toLocaleString("es-MX");
+        }
+        if (chartsKpiSolventadasMeta) {
+          chartsKpiSolventadasMeta.textContent = emitidas > 0
+            ? `${formatPercent(avance)} del total emitido`
+            : "Sin avance calculable";
+        }
+        if (chartsKpiPendientes) {
+          chartsKpiPendientes.textContent = pendientes.toLocaleString("es-MX");
+        }
+        if (chartsKpiPendientesMeta) {
+          chartsKpiPendientesMeta.textContent = emitidas > 0
+            ? `${formatPercent(rezago)} del universo observado`
+            : "Sin rezago registrado";
+        }
+        if (chartsKpiAvance) {
+          chartsKpiAvance.textContent = formatPercent(avance);
+        }
+        if (chartsKpiAvanceMeta) {
+          chartsKpiAvanceMeta.textContent = pendientes > 0
+            ? `${pendientes.toLocaleString("es-MX")} observaciones siguen en seguimiento`
+            : "Sin pendientes identificados";
+        }
+        if (chartsExecutiveInsights) {
+          const insights = [];
+          if (topPendiente && topPendienteValor > 0) {
+            insights.push(`El ente con mayor exposición es ${topPendienteNombre}, con ${topPendienteValor.toLocaleString("es-MX")} pendientes (${formatPercent(concentracionTop)} del total pendiente).`);
+          }
+          if (tipoCritico && Number(tipoCritico?.pendientes || 0) > 0) {
+            insights.push(`El tipo de anexo con mayor rezago es ${tipoCritico.tipo_anexo || "Sin tipo"}, con ${Number(tipoCritico.pendientes || 0).toLocaleString("es-MX")} observaciones pendientes.`);
+          }
+          if (montoPendiente > 0) {
+            insights.push(`El monto PDP pendiente asciende a ${formatPesos(montoPendiente)}, por lo que requiere seguimiento financiero prioritario.`);
+          }
+          if (!insights.length) {
+            insights.push("Selecciona filtros con resultados para generar focos de atención, concentración y avance de solventación.");
+          }
+          chartsExecutiveInsights.innerHTML = insights
+            .map((item) => `<li>${escapeHtml(item)}</li>`)
+            .join("");
         }
       };
 

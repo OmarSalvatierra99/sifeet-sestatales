@@ -70,23 +70,6 @@
     <span>Fuente de Financiamiento</span>
   </a>
   <a
-    class="mode-switch-link{% if luis_nav_active == 'pendientes' %} is-active{% endif %}"
-    href="{{ luis_nav_href('luis_pendientes_periodo') }}"
-    data-luis-nav-link
-    data-base-href="{{ url_for('luis_pendientes_periodo') }}"
-    {% if luis_nav_active == 'pendientes' %}aria-current="page"{% endif %}
-  >
-    <span class="gabo-module-nav-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none">
-        <path d="M7 4.5H17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-        <path d="M8 8H16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-        <path d="M9.5 12H14.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-        <path d="M6 20L12 16L18 20V5.5C18 4.7 17.3 4 16.5 4H7.5C6.7 4 6 4.7 6 5.5V20Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-      </svg>
-    </span>
-    <span>Pendientes por periodo</span>
-  </a>
-  <a
     class="mode-switch-link{% if luis_nav_active == 'titulares' %} is-active{% endif %}"
     href="{{ luis_nav_href('luis_titulares_administrativos') }}"
     data-luis-nav-link
@@ -103,6 +86,23 @@
       </svg>
     </span>
     <span>Titulares y administrativos</span>
+  </a>
+  <a
+    class="mode-switch-link{% if luis_nav_active == 'pendientes' %} is-active{% endif %}"
+    href="{{ luis_nav_href('luis_pendientes_periodo') }}"
+    data-luis-nav-link
+    data-base-href="{{ url_for('luis_pendientes_periodo') }}"
+    {% if luis_nav_active == 'pendientes' %}aria-current="page"{% endif %}
+  >
+    <span class="gabo-module-nav-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M7 4.5H17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M8 8H16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M9.5 12H14.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M6 20L12 16L18 20V5.5C18 4.7 17.3 4 16.5 4H7.5C6.7 4 6 4.7 6 5.5V20Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      </svg>
+    </span>
+    <span>Pendientes por periodo</span>
   </a>
   <a
     class="mode-switch-link{% if luis_nav_active == 'catalogo' %} is-active{% endif %}"

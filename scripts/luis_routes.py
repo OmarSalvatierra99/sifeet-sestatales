@@ -2785,7 +2785,7 @@ def register_luis_routes(app, deps):
                             "totals": item["totals"],
                         }
                     )
-                if len(source_rows) > 1:
+                if source_rows:
                     payload_rows.append(
                         {
                             "row_type": "subtotal",
@@ -2884,7 +2884,7 @@ def register_luis_routes(app, deps):
                             "totals": item["totals"],
                         }
                     )
-                if len(type_rows) > 1:
+                if type_rows:
                     payload_rows.append(
                         {
                             "row_type": "subtotal",
@@ -3514,9 +3514,32 @@ def register_luis_routes(app, deps):
                 "Periodo Titular",
             ]
             left_count = len(left_headers)
-            max_col = left_count + 7
-            amount_cols = (max_col,)
-            sheet.append([*left_headers, "EMITIDAS", "", "", "", "", "", ""])
+            max_col = left_count + 21
+            amount_cols = (left_count + 7, left_count + 14, left_count + 21)
+            sheet.append([
+                *left_headers,
+                "EMITIDAS",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "SOLVENTADAS",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "PENDIENTES",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+            ])
             sheet.append([
                 *([""] * left_count),
                 "R",
@@ -3524,12 +3547,28 @@ def register_luis_routes(app, deps):
                 "PDP",
                 "PRAS",
                 "PECFF",
-                "Total",
+                "Emitidas",
+                "Monto Daño ($)",
+                "R",
+                "SA",
+                "PDP",
+                "PRAS",
+                "PECFF",
+                "Solventadas",
+                "Monto Daño ($)",
+                "R",
+                "SA",
+                "PDP",
+                "PRAS",
+                "PECFF",
+                "Pendientes",
                 "Monto Daño ($)",
             ])
             for col_idx in range(1, left_count + 1):
                 sheet.merge_cells(start_row=1, start_column=col_idx, end_row=2, end_column=col_idx)
-            sheet.merge_cells(start_row=1, start_column=left_count + 1, end_row=1, end_column=max_col)
+            sheet.merge_cells(start_row=1, start_column=left_count + 1, end_row=1, end_column=left_count + 7)
+            sheet.merge_cells(start_row=1, start_column=left_count + 8, end_row=1, end_column=left_count + 14)
+            sheet.merge_cells(start_row=1, start_column=left_count + 15, end_row=1, end_column=left_count + 21)
             for row_idx in (1, 2):
                 for cell in sheet[row_idx]:
                     cell.font = white_bold_font
@@ -3560,6 +3599,8 @@ def register_luis_routes(app, deps):
                             "",
                             "",
                             *metric_export_values((row.get("totals") or {}).get("emitidas") or {}),
+                            *metric_export_values((row.get("totals") or {}).get("solventadas") or {}),
+                            *metric_export_values((row.get("totals") or {}).get("pendientes") or {}),
                         ])
                         row_idx = sheet.max_row
                         subtotal_rows.add(row_idx)
@@ -3582,6 +3623,8 @@ def register_luis_routes(app, deps):
                         row.get("periodo_cedula") or "—",
                         row.get("periodo_titular") or "—",
                         *metric_export_values((row.get("totals") or {}).get("emitidas") or {}),
+                        *metric_export_values((row.get("totals") or {}).get("solventadas") or {}),
+                        *metric_export_values((row.get("totals") or {}).get("pendientes") or {}),
                     ])
 
                 sheet.append([
@@ -3592,6 +3635,8 @@ def register_luis_routes(app, deps):
                     "",
                     "",
                     *metric_export_values((totals or {}).get("emitidas") or {}),
+                    *metric_export_values((totals or {}).get("solventadas") or {}),
+                    *metric_export_values((totals or {}).get("pendientes") or {}),
                 ])
                 total_row_idx = sheet.max_row
                 sheet.merge_cells(start_row=total_row_idx, start_column=1, end_row=total_row_idx, end_column=left_count)
@@ -3629,6 +3674,20 @@ def register_luis_routes(app, deps):
                 11: 10,
                 12: 12,
                 13: 16,
+                14: 8,
+                15: 8,
+                16: 9,
+                17: 9,
+                18: 10,
+                19: 13,
+                20: 16,
+                21: 8,
+                22: 8,
+                23: 9,
+                24: 9,
+                25: 10,
+                26: 12,
+                27: 16,
             }
             for col_idx in range(1, max_col + 1):
                 max_len = 0

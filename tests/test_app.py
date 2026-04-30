@@ -59,8 +59,8 @@ def test_luis_operational_pages_share_navigation(client):
         ("/tipo-auditoria", b'data-luis-view="tipo_auditoria"', b"Tipo de Auditor\xc3\xada"),
         ("/fuente-financiamiento", b'data-luis-view="fuente_financiamiento"', b"Fuente de Financiamiento"),
         ("/graficas", b'data-luis-view="graficas"', b"Gr\xc3\xa1ficas"),
-        ("/pendientes-periodo", b'data-luis-view="pendientes"', b"Pendientes por periodo"),
         ("/titulares-administrativos", b'data-luis-view="titulares"', b"Titulares y administrativos"),
+        ("/pendientes-periodo", b'data-luis-view="pendientes"', b"Pendientes por periodo"),
         ("/catalogo", b'data-luis-view="catalogo"', b"Cat\xc3\xa1logo de entes"),
     ]
     for path, view_marker, label in pages:
