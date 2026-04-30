@@ -147,6 +147,26 @@ def test_gabo_cannot_update_readonly_observation(readonly_client):
     }
 
 
+def test_gabo_solventacion_entry_locks_scope_from_direct_button(readonly_client):
+    client, _db_path = readonly_client
+
+    response = client.get(
+        "/carga/observaciones-admin"
+        "?return_vista=manual"
+        "&ejercicio=2024"
+        "&ente_id=1.1"
+        "&tipo_auditoria=Financiera"
+        "&oficio=OFS/2024/001"
+    )
+
+    assert response.status_code == 200
+    assert b"Consulta fija del oficio seleccionado desde la opci\xc3\xb3n de solventaci\xc3\xb3n." in response.data
+    assert b"Alcance bloqueado para evitar errores" in response.data
+    assert b'<label for="obs_admin_ejercicio">Ejercicio</label>' not in response.data
+    assert b'<label for="obs_admin_ente_id">Ente</label>' not in response.data
+    assert b'<label for="obs_admin_oficio">Oficio</label>' not in response.data
+
+
 def test_gabo_cannot_move_readonly_titular_to_editable_year(readonly_client):
     client, db_path = readonly_client
 

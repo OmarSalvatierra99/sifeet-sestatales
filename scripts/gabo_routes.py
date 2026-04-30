@@ -17,7 +17,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.utils.exceptions import InvalidFileException
 from backup_utils import prune_backup_dir
 from scripts import financiamiento as financiamiento_service
-from scripts.parsers import parse_cedula
+from scripts.parsers import parse_cedula, parse_solventacion
 
 
 def split_periodo_tokens(raw_value: str) -> list[str]:
@@ -1957,6 +1957,29 @@ def register_gabo_routes(app, deps):
                     if isinstance(solventacion_totales_by_anexo, dict)
                     else None
                 )
+                estado_row = estado
+                if isinstance(totales_tipo, dict):
+                    solventadas_idx = {
+                        int(item)
+                        for item in (totales_tipo.get("solventadas_indices") or [])
+                        if str(item).strip().isdigit()
+                    }
+                    pendientes_idx = {
+                        int(item)
+                        for item in (totales_tipo.get("pendientes_indices") or [])
+                        if str(item).strip().isdigit()
+                    }
+                    emitidas_total = int(totales_tipo.get("emitidas", 0) or 0)
+                    solventadas_total = int(totales_tipo.get("solventadas", 0) or 0)
+                    pendientes_total = int(totales_tipo.get("pendientes", 0) or 0)
+                    if numero_observacion in solventadas_idx:
+                        estado_row = "Solventado"
+                    elif numero_observacion in pendientes_idx:
+                        estado_row = "Pendiente"
+                    elif emitidas_total > 0 and solventadas_total == emitidas_total:
+                        estado_row = "Solventado"
+                    elif emitidas_total > 0 and pendientes_total == emitidas_total:
+                        estado_row = "Pendiente"
                 if tipo_anexo == "PDP":
                     detalle = pdp_details[pdp_index] if pdp_details and pdp_index < len(pdp_details) else {}
                     monto_emitido = detalle.get("monto")
@@ -2043,8 +2066,8 @@ def register_gabo_routes(app, deps):
                         fecha_notificacion,
                         tipo_anexo,
                         numero_observacion,
-                        estado,
-                        estado,
+                        estado_row,
+                        estado_row,
                         monto_emitido,
                         monto_emitido,
                         monto_solventado,
@@ -2107,6 +2130,7 @@ def register_gabo_routes(app, deps):
         ramo_33: str = "No",
         ramo_28: str = "No",
         origen_fuente: str = "",
+        solventacion_totales_by_anexo: dict[str, object] | None = None,
     ) -> dict[str, object]:
         modalidad = normalize_observacion_modalidad(modalidad)
         fuente_nombre = normalize_fuente_financiamiento(fuente_nombre)
@@ -2125,6 +2149,7 @@ def register_gabo_routes(app, deps):
             "cantidad_pras": int(cantidad_pras),
             "cantidad_pefcf": int(cantidad_pefcf),
             "cantidad_r": int(cantidad_r),
+            "solventacion_totales_by_anexo": solventacion_totales_by_anexo or {},
         }
 
     def count_observaciones_for_manual_scope(
@@ -2399,6 +2424,11 @@ def register_gabo_routes(app, deps):
                 raise ValueError(f"La fuente {index} no tiene periodo.")
             if (cantidad_sa + cantidad_pdp + cantidad_pras + cantidad_pefcf + cantidad_r) <= 0:
                 raise ValueError(f"La fuente {index} no tiene observaciones capturadas.")
+            solventacion_totales_by_anexo = item.get("solventacion_totales_by_anexo")
+            if solventacion_totales_by_anexo is None:
+                solventacion_totales_by_anexo = {}
+            if not isinstance(solventacion_totales_by_anexo, dict):
+                raise ValueError(f"La fuente {index} tiene totales de solventación inválidos.")
             rows.append(
                 {
                     "fuente_nombre": fuente_nombre,
@@ -2416,9 +2446,139 @@ def register_gabo_routes(app, deps):
                     "cantidad_pras": cantidad_pras,
                     "cantidad_pefcf": cantidad_pefcf,
                     "cantidad_r": cantidad_r,
+                    "solventacion_totales_by_anexo": solventacion_totales_by_anexo,
                 }
             )
         return rows
+
+    SOLVENTACION_ASUNTO = "Resultados de Solventación"
+    SOLVENTACION_SIGLA_PAREN_RE = re.compile(r"\(([A-Z0-9.\-]+)\)")
+    SOLVENTACION_FILENAME_RE = re.compile(
+        r"^(?P<ente_id>[\d.]+)\.-\s+(?P<sigla>.+?)_OFS_(?P<numero>\d{4})_(?P<anio>\d{4})(?:_(?P<suffix>.+?))?\.(?P<ext>pdf|docx)$",
+        re.IGNORECASE,
+    )
+
+    def _normalize_solventacion_sigla(value: str) -> str:
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        normalized = unicodedata.normalize("NFKD", raw)
+        normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+        normalized = re.sub(r"[^A-Za-z0-9]+", "", normalized)
+        return normalized.upper()
+
+    def _extract_solventacion_sigla(value: str) -> str:
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        match = SOLVENTACION_SIGLA_PAREN_RE.search(raw)
+        if match:
+            return _normalize_solventacion_sigla(match.group(1))
+        return ""
+
+    def _normalize_solventacion_suffix(raw_suffix: str) -> tuple[str, str]:
+        clean = " ".join(str(raw_suffix or "").replace("_", " ").split())
+        if not clean:
+            return "", ""
+        suffix_key = clean.lower()
+        if suffix_key.startswith("convenio "):
+            return "", clean
+        if " convenio " in suffix_key:
+            period_part, convenio_part = re.split(r"\s+convenio\s+", clean, maxsplit=1, flags=re.IGNORECASE)
+            return period_part.strip(), f"Convenio {convenio_part.strip()}"
+        return clean, ""
+
+    def _parse_solventacion_filename(filename: str) -> dict:
+        basename = Path(filename or "").name
+        match = SOLVENTACION_FILENAME_RE.match(basename)
+        if not match:
+            return {
+                "basename": basename,
+                "ente_id": "",
+                "sigla": "",
+                "oficio": "",
+                "periodo_hint": "",
+                "convenio_hint": "",
+                "extension": Path(basename).suffix.lower().lstrip("."),
+                "filename_valid": False,
+            }
+        period_hint, convenio_hint = _normalize_solventacion_suffix(match.group("suffix") or "")
+        return {
+            "basename": basename,
+            "ente_id": normalize_ente_id(match.group("ente_id") or ""),
+            "sigla": " ".join((match.group("sigla") or "").replace("_", " ").split()),
+            "oficio": f"OFS/{match.group('numero')}/{match.group('anio')}",
+            "periodo_hint": period_hint,
+            "convenio_hint": convenio_hint,
+            "extension": (match.group("ext") or "").lower(),
+            "filename_valid": True,
+        }
+
+    def _build_solventacion_import_payload(parsed: dict, *, entry_meta: dict | None = None) -> dict:
+        rows: list[dict] = []
+        totals = {"emitidas": 0, "solventadas": 0, "pendientes": 0}
+        tipos_importados: list[str] = []
+        for auditoria in parsed.get("auditorias") or []:
+            tipo = " ".join(str(auditoria.get("tipo") or "").split()) or "Financiera"
+            if tipo not in tipos_importados:
+                tipos_importados.append(tipo)
+            for fuente in auditoria.get("fuentes") or []:
+                modalidad = normalize_observacion_modalidad(fuente.get("modalidad") or "Fuente")
+                for registro in fuente.get("registros") or []:
+                    solventacion = registro.get("solventacion") if isinstance(registro.get("solventacion"), dict) else {}
+                    row = {
+                        "tipo_auditoria": tipo,
+                        "fuente_nombre": normalize_fuente_financiamiento(
+                            " ".join(str(fuente.get("nombre") or "").split())
+                        ),
+                        "modalidad": modalidad,
+                        "convenio_nombre": normalize_convenio_text(fuente.get("convenio_nombre") or ""),
+                        "convenio_ente_nombre": normalize_convenio_text(fuente.get("convenio_ente_nombre") or ""),
+                        "convenio_ente_id": normalize_ente_id(fuente.get("convenio_ente_id") or ""),
+                        "periodo": " ".join(str(registro.get("periodo") or "").split()),
+                        "cantidad_sa": len(registro.get("SA") or []),
+                        "cantidad_pdp": len(registro.get("PDP") or []),
+                        "cantidad_pras": len(registro.get("PRAS") or []),
+                        "cantidad_pefcf": len(registro.get("PEFCF") or []),
+                        "cantidad_r": len(registro.get("R") or []),
+                        "solventacion_totales_by_anexo": {},
+                    }
+                    for anexo in ("SA", "PDP", "PRAS", "PEFCF", "R"):
+                        item = (
+                            solventacion.get(anexo)
+                            if isinstance(solventacion, dict) and isinstance(solventacion.get(anexo), dict)
+                            else {}
+                        )
+                        row["solventacion_totales_by_anexo"][anexo] = {
+                            "emitidas": int(item.get("emitidas", len(registro.get(anexo) or [])) or 0),
+                            "solventadas": int(item.get("solventadas", 0) or 0),
+                            "pendientes": int(item.get("pendientes", 0) or 0),
+                            "emitido": float(item.get("emitidas", len(registro.get(anexo) or [])) or 0),
+                            "solventado": float(item.get("solventadas", 0) or 0),
+                            "pendiente": float(item.get("pendientes", 0) or 0),
+                            "solventadas_indices": item.get("solventadas_indices") or [],
+                            "pendientes_indices": item.get("pendientes_indices") or [],
+                        }
+                        totals["emitidas"] += int(item.get("emitidas", len(registro.get(anexo) or [])) or 0)
+                        totals["solventadas"] += int(item.get("solventadas", 0) or 0)
+                        totals["pendientes"] += int(item.get("pendientes", 0) or 0)
+                    rows.append(row)
+        tipo_auditoria = tipos_importados[0] if len(tipos_importados) == 1 else ""
+        return {
+            "ok": True,
+            "mode": "solventacion",
+            "asunto": SOLVENTACION_ASUNTO,
+            "oficio": parsed.get("oficio") or (entry_meta or {}).get("oficio") or "",
+            "fecha": parsed.get("fecha") or "",
+            "ejercicio": parsed.get("ejercicio") or "",
+            "periodo": parsed.get("periodo") or "",
+            "oficio_base": parsed.get("oficio_base") or "",
+            "destinatario": parsed.get("destinatario") or "",
+            "tipo_auditoria": tipo_auditoria,
+            "rows": rows,
+            "totals": totals,
+            "catalog_entry": entry_meta or {},
+        }
 
     def count_existing_observaciones_scope(
         db,
@@ -4032,6 +4192,65 @@ def register_gabo_routes(app, deps):
             initial_scope["tipo_anexo"] = ""
         if initial_scope["estado"] not in {"", *OBSERVACION_ESTADOS_VALIDOS}:
             initial_scope["estado"] = ""
+        locked_scope = None
+        if all(
+            [
+                return_vista == "manual",
+                initial_scope["ejercicio"],
+                initial_scope["ente_id"],
+                initial_scope["tipo_auditoria"],
+                initial_scope["oficio"],
+            ]
+        ):
+            ente_row = db.execute(
+                f"""
+                SELECT
+                    TRIM(COALESCE(ente_id, '')) AS ente_id,
+                    TRIM(COALESCE(ente_numero, '')) AS ente_numero,
+                    TRIM(COALESCE(ente_nombre, '')) AS ente_nombre
+                FROM entes_detalle
+                WHERE TRIM(COALESCE(ejercicio, '')) = ?
+                  AND {normalize_ente_id_sql('ente_id')} = ?
+                LIMIT 1
+                """,
+                (initial_scope["ejercicio"], initial_scope["ente_id"]),
+            ).fetchone()
+            oficio_rows = db.execute(
+                """
+                SELECT DISTINCT TRIM(COALESCE(periodo_cedula, '')) AS periodo
+                FROM observaciones
+                WHERE TRIM(COALESCE(ejercicio, '')) = ?
+                  AND LOWER(TRIM(COALESCE(oficio, ''))) = LOWER(TRIM(COALESCE(?, '')))
+                """,
+                (initial_scope["ejercicio"], initial_scope["oficio"]),
+            ).fetchall()
+            periodos = [
+                (row["periodo"] or "").strip()
+                for row in oficio_rows
+                if (row["periodo"] or "").strip()
+            ]
+            periodos_unicos = []
+            for periodo in periodos:
+                if periodo not in periodos_unicos:
+                    periodos_unicos.append(periodo)
+            oficio_label = initial_scope["oficio"]
+            if len(periodos_unicos) > 1:
+                oficio_label = f"{oficio_label} · varios periodos"
+            elif periodos_unicos:
+                oficio_label = f"{oficio_label} · {periodos_unicos[0]}"
+            locked_scope = {
+                "active": True,
+                "ejercicio": initial_scope["ejercicio"],
+                "ente_id": initial_scope["ente_id"],
+                "ente_label": (
+                    f"{(ente_row['ente_numero'] or '').strip()} - {(ente_row['ente_nombre'] or '').strip()}".strip(" -")
+                    if ente_row
+                    else initial_scope["ente_id"]
+                ),
+                "tipo_auditoria": initial_scope["tipo_auditoria"],
+                "oficio": initial_scope["oficio"],
+                "oficio_label": oficio_label,
+            }
         return render_template(
             "carga_observaciones_admin.html",
             user=user,
@@ -4039,6 +4258,7 @@ def register_gabo_routes(app, deps):
             ejercicio_default=initial_scope["ejercicio"] if initial_scope["ejercicio"] in ejercicios else ejercicios[0],
             return_vista=return_vista,
             initial_scope=initial_scope,
+            locked_scope=locked_scope,
             read_only_ejercicios=sorted(_readonly_ejercicios_for_user(user)),
         )
 
@@ -5181,13 +5401,128 @@ def register_gabo_routes(app, deps):
             os.unlink(tmp_path)
         return jsonify(result)
 
+    @app.post("/api/solventacion/procesar")
+    @gabo_required
+    def api_procesar_solventacion():
+        if "file" not in request.files:
+            return jsonify({"ok": False, "error": "No se recibió ningún archivo."}), 400
+        upload = request.files["file"]
+        if not upload.filename:
+            return jsonify({"ok": False, "error": "Nombre de archivo vacío."}), 400
+        if not upload.filename.lower().endswith(".pdf"):
+            return jsonify({"ok": False, "error": "Solo se aceptan archivos PDF."}), 400
+
+        ejercicio = " ".join((request.form.get("ejercicio") or "").split())
+        ente_id = normalize_ente_id(request.form.get("ente_id", ""))
+        if not ejercicio or not ente_id:
+            return jsonify({"ok": False, "error": "Selecciona ejercicio y ente antes de procesar el oficio."}), 400
+
+        file_meta = _parse_solventacion_filename(upload.filename or "")
+        if not file_meta.get("filename_valid"):
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": "El nombre del PDF no cumple el formato esperado 'ente.- SIGLA_OFS_0000_2026[_periodo].pdf'.",
+                }
+            ), 400
+        if normalize_ente_id(file_meta.get("ente_id") or "") != ente_id:
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": (
+                        f"El PDF corresponde al ente {file_meta.get('ente_id') or '-'} "
+                        f"y el contexto activo está en {ente_id}."
+                    ),
+                }
+            ), 400
+
+        db = get_db()
+        ente_row = db.execute(
+            """
+            SELECT
+                TRIM(COALESCE(ente_id, '')) AS ente_id,
+                TRIM(COALESCE(ente_numero, '')) AS ente_numero,
+                TRIM(COALESCE(ente_nombre, '')) AS ente_nombre
+            FROM entes_detalle
+            WHERE TRIM(COALESCE(ejercicio, '')) = ?
+              AND TRIM(COALESCE(ente_id, '')) = ?
+            LIMIT 1
+            """,
+            (ejercicio, ente_id),
+        ).fetchone()
+        if not ente_row:
+            return jsonify({"ok": False, "error": "El ente activo no existe para el ejercicio seleccionado."}), 400
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp_path = tmp.name
+            upload.save(tmp_path)
+        try:
+            parsed = parse_solventacion(tmp_path)
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"No se pudo procesar el oficio de solventación: {exc}"}), 500
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
+        payload = _build_solventacion_import_payload(
+            parsed,
+            entry_meta={
+                **file_meta,
+                "ente_numero": (ente_row["ente_numero"] or "").strip(),
+                "ente_nombre": (ente_row["ente_nombre"] or "").strip(),
+            },
+        )
+        ente_sigla = _extract_solventacion_sigla(ente_row["ente_nombre"] or "")
+        destinatario_sigla = _extract_solventacion_sigla(payload.get("destinatario") or "")
+        filename_sigla = _normalize_solventacion_sigla(file_meta.get("sigla") or "")
+        if ente_sigla and filename_sigla and ente_sigla != filename_sigla:
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": (
+                        f"El nombre del archivo identifica la sigla {file_meta.get('sigla') or '-'} "
+                        f"y el ente activo usa {ente_sigla}."
+                    ),
+                }
+            ), 400
+        if ente_sigla and destinatario_sigla and ente_sigla != destinatario_sigla:
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": (
+                        f"El PDF está dirigido a la sigla {destinatario_sigla} "
+                        f"y el ente activo usa {ente_sigla}."
+                    ),
+                }
+            ), 400
+        if not destinatario_sigla:
+            payload.setdefault("warnings", []).append(
+                "No se pudo corroborar la sigla del ente dentro del PDF; se validó con el nombre del archivo."
+            )
+        if payload.get("ejercicio") and payload["ejercicio"] != ejercicio:
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": (
+                        f"El PDF corresponde al ejercicio {payload['ejercicio']} "
+                        f"y el contexto activo está en {ejercicio}."
+                    ),
+                }
+            ), 400
+        return jsonify(payload)
+
     @app.route("/carga", methods=["GET", "POST"])
     @gabo_required
     def carga():
         user = get_current_user()
         db = get_db()
         requested_loader_view = (request.args.get("vista") or "").strip().lower()
-        initial_loader_mode = "titulares" if requested_loader_view == "titulares" else "manual"
+        if requested_loader_view == "titulares":
+            initial_loader_mode = "titulares"
+        elif requested_loader_view == "solventacion":
+            initial_loader_mode = "solventacion"
+        else:
+            initial_loader_mode = "manual"
         manual_ejercicios_rows = db.execute(
             """
             SELECT DISTINCT TRIM(COALESCE(ejercicio, '')) AS ejercicio
@@ -5356,10 +5691,7 @@ def register_gabo_routes(app, deps):
                     convenio_nombre = ""
                     convenio_ente_nombre = ""
                     convenio_ente_id = ""
-                    usa_fuentes_detalle = (
-                        asunto == "Notificación de Cédula de Resultados"
-                        and len(fuentes_detalle_rows) > 0
-                    )
+                    usa_fuentes_detalle = len(fuentes_detalle_rows) > 0
                     if usa_fuentes_detalle and not periodo:
                         periodo = " ".join((fuentes_detalle_rows[0].get("periodo") or "").split())
                         form_data["manual_periodo"] = periodo
@@ -5594,6 +5926,41 @@ def register_gabo_routes(app, deps):
                             has_detail_amount = any((item.get("monto") is not None) for item in pdp_details)
                             if has_detail_amount:
                                 pdp_amounts = [(item.get("monto") or 0.0) for item in pdp_details]
+                    elif asunto == SOLVENTACION_ASUNTO:
+                        if not usa_fuentes_detalle:
+                            raise ValueError("Debes procesar un PDF de resultados de solventación antes de guardar.")
+                        first_row = fuentes_detalle_rows[0]
+                        tipo_auditoria = str(first_row["tipo_auditoria"])
+                        modalidad = first_row.get("modalidad") or "Fuente"
+                        convenio_nombre = first_row.get("convenio_nombre") or ""
+                        convenio_ente_nombre = first_row.get("convenio_ente_nombre") or ""
+                        convenio_ente_id = first_row.get("convenio_ente_id") or ""
+                        if modalidad == "Convenio" and not convenio_ente_id:
+                            convenio_ente_id = resolve_convenio_ente_id(
+                                db,
+                                ejercicio,
+                                convenio_ente_nombre,
+                            )
+                        form_data["manual_tipo_auditoria"] = tipo_auditoria
+                        periodo_fuente = " ".join((first_row.get("periodo") or "").split())
+                        if not periodo_fuente:
+                            raise ValueError("Cada fuente del oficio de solventación debe incluir periodo.")
+                        periodo = periodo_fuente
+                        form_data["manual_periodo"] = periodo_fuente
+                        periodo_titular = periodo_fuente
+                        cantidad_sa = int(first_row["cantidad_sa"])
+                        cantidad_pdp = int(first_row["cantidad_pdp"])
+                        cantidad_pras = int(first_row["cantidad_pras"])
+                        cantidad_pefcf = int(first_row["cantidad_pefcf"])
+                        cantidad_r = int(first_row["cantidad_r"])
+                        monto_pdp_emitido = 0.0
+                        monto_pdp_solventado = 0.0
+                        monto_pdp_pendiente = 0.0
+                        pdp_details = []
+                        pdp_amounts = [0.0] * max(0, cantidad_pdp)
+                        pdp_details_by_fuente = []
+                        solventacion_totales_by_anexo = first_row.get("solventacion_totales_by_anexo") or {}
+                        estado = "Pendiente"
                     fuente_detalle_snapshot = build_fuente_detalle_snapshot(
                         tipo_auditoria=tipo_auditoria,
                         fuente_nombre=fuente_nombre,
@@ -5609,6 +5976,7 @@ def register_gabo_routes(app, deps):
                         ramo_33=ramo_33,
                         ramo_28=ramo_28,
                         origen_fuente=origen_fuente,
+                        solventacion_totales_by_anexo=solventacion_totales_by_anexo,
                     )
                     fuente_detalle_json = serialize_manual_snapshot(fuente_detalle_snapshot)
                     pdp_detalle_json = serialize_manual_snapshot(pdp_details if cantidad_pdp > 0 else [])
@@ -6057,7 +6425,7 @@ def register_gabo_routes(app, deps):
                                     }
                                 if (
                                     action == "manual_save"
-                                    and asunto == "Notificación de Cédula de Resultados"
+                                    and asunto in {"Notificación de Cédula de Resultados", SOLVENTACION_ASUNTO}
                                     and usa_fuentes_detalle
                                     and len(fuentes_detalle_rows) > 1
                                     and manual_result
@@ -6160,15 +6528,23 @@ def register_gabo_routes(app, deps):
                                             cantidad_pras_extra = int(extra_row["cantidad_pras"])
                                             cantidad_pefcf_extra = int(extra_row["cantidad_pefcf"])
                                             cantidad_r_extra = int(extra_row["cantidad_r"])
-                                            pdp_details_extra = (
-                                                pdp_details_by_fuente[extra_idx]
-                                                if extra_idx < len(pdp_details_by_fuente)
-                                                else []
-                                            )
-                                            pdp_amounts_extra = [
-                                                float(item.get("monto") or 0.0)
-                                                for item in pdp_details_extra
-                                            ]
+                                            if asunto == SOLVENTACION_ASUNTO:
+                                                pdp_details_extra = []
+                                                pdp_amounts_extra = [0.0] * max(0, cantidad_pdp_extra)
+                                                extra_solventacion_totales = extra_row.get("solventacion_totales_by_anexo") or {}
+                                                extra_estado = "Pendiente"
+                                            else:
+                                                pdp_details_extra = (
+                                                    pdp_details_by_fuente[extra_idx]
+                                                    if extra_idx < len(pdp_details_by_fuente)
+                                                    else []
+                                                )
+                                                pdp_amounts_extra = [
+                                                    float(item.get("monto") or 0.0)
+                                                    for item in pdp_details_extra
+                                                ]
+                                                extra_solventacion_totales = {}
+                                                extra_estado = estado
                                             extra_fuente_detalle_json = serialize_manual_snapshot(
                                                 build_fuente_detalle_snapshot(
                                                     tipo_auditoria=extra_tipo_item,
@@ -6185,6 +6561,7 @@ def register_gabo_routes(app, deps):
                                                     ramo_33=extra_ramo_33,
                                                     ramo_28=extra_ramo_28,
                                                     origen_fuente=extra_origen_fuente,
+                                                    solventacion_totales_by_anexo=extra_solventacion_totales,
                                                 )
                                             )
                                             extra_pdp_detalle_json = serialize_manual_snapshot(
@@ -6214,7 +6591,7 @@ def register_gabo_routes(app, deps):
                                                     ramo_33,
                                                     ramo_28,
                                                     origen_fuente,
-                                                    estado,
+                                                    extra_estado,
                                                     cantidad_sa,
                                                     cantidad_pdp,
                                                     cantidad_pras,
@@ -6279,7 +6656,7 @@ def register_gabo_routes(app, deps):
                                                 ramo_33=extra_ramo_33,
                                                 ramo_28=extra_ramo_28,
                                                 origen_fuente=extra_origen_fuente,
-                                                estado=estado,
+                                                estado=extra_estado,
                                                 periodo_cedula=extra_periodo,
                                                 periodo_titular=extra_periodo,
                                                 oficio=numero_oficio,
@@ -6297,7 +6674,7 @@ def register_gabo_routes(app, deps):
                                                 convenio_ente_nombre=extra_convenio_ente_nombre,
                                                 convenio_ente_id=extra_convenio_ente_id,
                                                 pdp_details=pdp_details_extra,
-                                                solventacion_totales_by_anexo={},
+                                                solventacion_totales_by_anexo=extra_solventacion_totales,
                                                 replace_scope=False,
                                             )
                                             extra_inserted += 1
@@ -6540,6 +6917,7 @@ def register_gabo_routes(app, deps):
             manual_entes=[dict(row) for row in manual_entes_rows],
             asuntos=[
                 "Notificación de Cédula de Resultados",
+                SOLVENTACION_ASUNTO,
             ],
             tipos_responsable=["Titular", "Administrativo", "Ambos"],
         )

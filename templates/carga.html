@@ -225,6 +225,7 @@
         <input id="manual_fecha_notificacion" name="manual_fecha_notificacion" type="hidden" value="{{ form_data.manual_fecha_notificacion }}">
         <input type="hidden" id="manual_fuentes_detalle_json" name="manual_fuentes_detalle_json" value="{{ form_data.manual_fuentes_detalle_json|e }}">
         <input type="hidden" id="manual_pdp_detalle_json" name="manual_pdp_detalle_json" value="{{ form_data.manual_pdp_detalle_json|e }}">
+        <input type="hidden" id="manual_solventacion_detalle_json" name="manual_solventacion_detalle_json" value="">
         <datalist id="manual_oficio_options"></datalist>
         <div class="loader-context-hidden" hidden aria-hidden="true">
           <div class="field" id="manual_oficio_base_field" style="display:none;">
@@ -336,6 +337,31 @@
               </details>
               <div id="manualResumenFuentesBody" class="manual-resumen-table">
                 <p class="helper">Agrega fuentes para generar el resumen.</p>
+              </div>
+            </section>
+
+            <section class="loader-manual-subsection loader-summary-card loader-summary-card-compact" id="manualSolventacionPdfSection" style="display:none;">
+              <div class="loader-source-editor-head loader-source-editor-head-compact">
+                <div>
+                  <h3>Cargar oficio PDF de solventación</h3>
+                </div>
+              </div>
+              <div class="manual-resumen-json-import" open>
+                <p class="helper">
+                  Sube el PDF individual de resultados de solventación. El procesador validará que el archivo corresponda al ente activo
+                  antes de construir la estructura para las observaciones.
+                </p>
+                <div class="oficio-upload-zone" id="solventacionUploadZone">
+                  <input type="file" id="solventacionPdfInput" accept=".pdf" hidden>
+                  <span class="oficio-upload-icon">📄</span>
+                  <p>Arrastra aquí el PDF individual de resultados de solventación</p>
+                  <p>o <button class="oficio-upload-link" type="button">selecciona un archivo</button></p>
+                  <p class="oficio-file-name" id="solventacionFileName" hidden></p>
+                </div>
+                <div class="manual-resumen-json-actions">
+                  <button type="button" class="btn-secondary btn-compact" id="solventacionClearBtn" style="display:none">Limpiar</button>
+                </div>
+                <p class="helper manual-resumen-json-feedback" id="manualSolventacionPdfFeedback"></p>
               </div>
             </section>
 
@@ -608,13 +634,52 @@
     {% endif %}
   </main>
 
+  <div class="obs-admin-modal-backdrop obs-admin-confirm-backdrop" id="gaboDeleteOficioModal" hidden>
+    <div class="obs-admin-modal-card obs-admin-confirm-card" role="dialog" aria-modal="true" aria-labelledby="gaboDeleteOficioModalTitle">
+      <div class="obs-admin-modal-head">
+        <h3 id="gaboDeleteOficioModalTitle">Confirmar eliminación del oficio</h3>
+        <p>Este segundo paso evita borrar observaciones por error. Revisa el alcance antes de continuar.</p>
+      </div>
+      <div class="obs-admin-confirm-highlights">
+        <div class="obs-admin-confirm-highlight">
+          <span>Oficio</span>
+          <strong id="gaboDeleteOficioValue">-</strong>
+        </div>
+        <div class="obs-admin-confirm-highlight">
+          <span>Ente</span>
+          <strong id="gaboDeleteEnteValue">-</strong>
+        </div>
+        <div class="obs-admin-confirm-highlight">
+          <span>Alcance</span>
+          <strong id="gaboDeleteTipoValue">-</strong>
+        </div>
+        <div class="obs-admin-confirm-highlight" data-tone="warning">
+          <span>Observaciones a borrar</span>
+          <strong id="gaboDeleteTotalValue">0</strong>
+        </div>
+      </div>
+      <section class="obs-admin-confirm-section">
+        <h4>Acción irreversible</h4>
+        <p class="helper">Se eliminarán todas las observaciones registradas para ese oficio dentro del ejercicio y ente seleccionados.</p>
+      </section>
+      <p class="obs-admin-modal-feedback" id="gaboDeleteOficioFeedback" data-level="info"></p>
+      <div class="obs-admin-modal-actions">
+        <button type="button" class="btn-secondary btn-compact" id="gaboDeleteOficioCancelBtn">Cancelar</button>
+        <button type="button" class="btn-danger btn-compact" id="gaboDeleteOficioConfirmBtn">Sí, eliminar oficio</button>
+      </div>
+    </div>
+  </div>
+
   <footer class="site-footer">
     © Órgano de Fiscalización Superior del Estado de Tlaxcala · Registro Observaciones
   </footer>
   <script>
     const loaderModeButtons = Array.from(document.querySelectorAll("[data-loader-mode-target]"));
     const loaderModePanels = Array.from(document.querySelectorAll("[data-loader-mode-panel]"));
-    const validLoaderModes = new Set(["manual", "titulares"]);
+    const validLoaderModes = new Set(["manual", "solventacion", "titulares"]);
+    const initialLoaderMode = validLoaderModes.has(document.body.dataset.loaderMode)
+      ? document.body.dataset.loaderMode
+      : "manual";
     const wizardToast = document.getElementById("wizardToast");
     const gaboWizardDraftKey = "sifeet_gabo_wizard_draft_v1";
     let wizardToastTimer = null;
@@ -652,25 +717,40 @@
       const manualStep2Help = document.getElementById("manualStep2Help");
       const manualStep2ChipEl = document.getElementById("manualStep2Chip");
       const asuntoCedulaMode = "Notificación de Cédula de Resultados";
+      const asuntoSolventacionMode = "Resultados de Solventación";
       if (manualAsuntoField && mode !== "titulares") {
-        if (manualAsuntoField.value !== asuntoCedulaMode) {
-          manualAsuntoField.value = asuntoCedulaMode;
+        const nextAsunto = mode === "solventacion" ? asuntoSolventacionMode : asuntoCedulaMode;
+        if (manualAsuntoField.value !== nextAsunto) {
+          manualAsuntoField.value = nextAsunto;
           manualAsuntoField.dispatchEvent(new Event("change", { bubbles: true }));
         }
       }
       if (manualPanelTitle && manualStep2Title && manualStep2Help && mode !== "titulares") {
-        manualPanelTitle.textContent = "Notificación de Cédula de Resultados";
+        const isSolventacionMode = mode === "solventacion";
+        manualPanelTitle.textContent = isSolventacionMode
+          ? "Resultados de Solventación"
+          : "Notificación de Cédula de Resultados";
         if (manualStep1ChipEl) {
           manualStep1ChipEl.textContent = "1. Contexto";
         }
         if (manualStep1TitleEl) {
           manualStep1TitleEl.textContent = "Datos detectados del oficio";
         }
-        manualStep2Title.textContent = "Resumen de Observaciones";
-        manualStep2Help.textContent = "";
+        manualStep2Title.textContent = isSolventacionMode
+          ? "Resultados de Solventación"
+          : "Resumen de Observaciones";
+        manualStep2Help.textContent = isSolventacionMode
+          ? "Procesa el PDF individual y confirma que corresponde al ente activo."
+          : "";
         if (manualStep2ChipEl) {
           manualStep2ChipEl.textContent = "2. Captura";
         }
+      }
+      if (manualResumenFuentesSection) {
+        manualResumenFuentesSection.style.display = mode === "solventacion" ? "none" : "";
+      }
+      if (manualSolventacionPdfSection) {
+        manualSolventacionPdfSection.style.display = mode === "solventacion" ? "" : "none";
       }
       loaderModeButtons.forEach((button) => {
         const isActive = (button.dataset.loaderModeTarget || "") === mode;
@@ -679,7 +759,7 @@
       });
       loaderModePanels.forEach((panel) => {
         const panelMode = panel.dataset.loaderModePanel || "";
-        const isActive = panelMode === mode;
+        const isActive = panelMode === mode || (panelMode === "manual" && mode === "solventacion");
         if (panel.dataset.deferOficioCapture === "true" && !document.body.classList.contains("gabo-oficio-capture-open")) {
           panel.hidden = true;
           return;
@@ -687,7 +767,6 @@
         panel.hidden = !isActive;
       });
     };
-    setLoaderMode(document.body.dataset.loaderMode || "manual");
 
     const titularEjercicio = document.getElementById("titular_ejercicio");
     const titularEnte = document.getElementById("titular_ente_id");
@@ -800,7 +879,7 @@
       ? Array.from(manualSolventacionDetalleBlock.querySelectorAll("input[data-solv-field]"))
       : [];
     const asuntoCedula = "Notificación de Cédula de Resultados";
-    const asuntoSolventacion = "__disabled_solventacion__";
+    const asuntoSolventacion = "Resultados de Solventación";
     const pdpFields = [manualPdpSelector, manualPdpConcepto, manualPdpMonto];
     const readOnlyEjercicios = new Set({{ read_only_ejercicios | default([]) | tojson }});
     const isReadOnlyEjercicio = (value) => readOnlyEjercicios.has(String(value || "").trim());
@@ -843,12 +922,31 @@
     const manualResumenJsonApplyBtn = document.getElementById("manualResumenJsonApplyBtn");
     const manualResumenJsonClearBtn = document.getElementById("manualResumenJsonClearBtn");
     const manualResumenJsonFeedback = document.getElementById("manualResumenJsonFeedback");
+    const manualResumenFuentesSection = document.getElementById("manualResumenFuentesSection");
+    const manualSolventacionPdfSection = document.getElementById("manualSolventacionPdfSection");
     const oficioUploadZone = document.getElementById("oficioUploadZone");
     const oficioPdfInput = document.getElementById("oficioPdfInput");
     const oficioFileName = document.getElementById("oficioFileName");
     const oficioClearBtn = document.getElementById("oficioClearBtn");
+    const solventacionUploadZone = document.getElementById("solventacionUploadZone");
+    const solventacionPdfInput = document.getElementById("solventacionPdfInput");
+    const solventacionFileName = document.getElementById("solventacionFileName");
+    const solventacionClearBtn = document.getElementById("solventacionClearBtn");
+    const manualSolventacionPdfFeedback = document.getElementById("manualSolventacionPdfFeedback");
+    const gaboDeleteOficioModal = document.getElementById("gaboDeleteOficioModal");
+    const gaboDeleteOficioValue = document.getElementById("gaboDeleteOficioValue");
+    const gaboDeleteEnteValue = document.getElementById("gaboDeleteEnteValue");
+    const gaboDeleteTipoValue = document.getElementById("gaboDeleteTipoValue");
+    const gaboDeleteTotalValue = document.getElementById("gaboDeleteTotalValue");
+    const gaboDeleteOficioFeedback = document.getElementById("gaboDeleteOficioFeedback");
+    const gaboDeleteOficioCancelBtn = document.getElementById("gaboDeleteOficioCancelBtn");
+    const gaboDeleteOficioConfirmBtn = document.getElementById("gaboDeleteOficioConfirmBtn");
     let oficioSelectedFile = null;
+    let solventacionSelectedFile = null;
     let isOficioPdfProcessing = false;
+    let isSolventacionPdfProcessing = false;
+    let pendingDeleteOficioRow = null;
+    let pendingDeleteOficioButton = null;
     const manualResumenContainer = document.getElementById("manualResumenFuentesBody");
     let isSyncingContextFields = false;
     const MIXED_TIPO_AUDITORIA = "Financiera y Obra Pública";
@@ -858,6 +956,8 @@
     let principalPeriodoFetchId = 0;
     let principalPeriodoFetchStatus = "idle";
     const preservePeriodoWhitespace = true;
+
+    setLoaderMode(initialLoaderMode);
 
     const escapeHtml = (value) => (
       String(value || "")
@@ -1107,6 +1207,60 @@
       gaboOficiosResumenBody.innerHTML = bodyRows + totalRow;
     };
 
+    const closeDeleteOficioModal = () => {
+      pendingDeleteOficioRow = null;
+      pendingDeleteOficioButton = null;
+      if (gaboDeleteOficioFeedback) {
+        gaboDeleteOficioFeedback.textContent = "";
+        gaboDeleteOficioFeedback.dataset.level = "info";
+      }
+      if (gaboDeleteOficioConfirmBtn) {
+        gaboDeleteOficioConfirmBtn.disabled = false;
+        gaboDeleteOficioConfirmBtn.textContent = "Sí, eliminar oficio";
+      }
+      if (gaboDeleteOficioCancelBtn) {
+        gaboDeleteOficioCancelBtn.disabled = false;
+      }
+      if (gaboDeleteOficioModal) {
+        gaboDeleteOficioModal.hidden = true;
+      }
+      document.body.classList.remove("is-modal-open");
+    };
+
+    const openDeleteOficioModal = (row, triggerButton = null) => {
+      pendingDeleteOficioRow = row || null;
+      pendingDeleteOficioButton = triggerButton instanceof HTMLButtonElement ? triggerButton : null;
+      if (gaboDeleteOficioValue) {
+        gaboDeleteOficioValue.textContent = String((row && row.oficio) || "-").trim() || "-";
+      }
+      if (gaboDeleteEnteValue) {
+        const enteLabel = [
+          String((row && row.ente_numero) || "").trim(),
+          String((row && row.ente_nombre) || "").trim(),
+        ].filter(Boolean).join(" - ");
+        gaboDeleteEnteValue.textContent = enteLabel || String((row && row.ente_id) || "-").trim() || "-";
+      }
+      if (gaboDeleteTipoValue) {
+        gaboDeleteTipoValue.textContent = resolveGaboOficioScopeTipo(row) || "-";
+      }
+      if (gaboDeleteTotalValue) {
+        gaboDeleteTotalValue.textContent = String(Number.parseInt(String((row && row.total) || "0"), 10) || 0);
+      }
+      if (gaboDeleteOficioFeedback) {
+        gaboDeleteOficioFeedback.textContent = "";
+        gaboDeleteOficioFeedback.dataset.level = "info";
+      }
+      if (gaboDeleteOficioModal) {
+        gaboDeleteOficioModal.hidden = false;
+      }
+      document.body.classList.add("is-modal-open");
+      if (gaboDeleteOficioConfirmBtn) {
+        window.setTimeout(() => {
+          gaboDeleteOficioConfirmBtn.focus();
+        }, 20);
+      }
+    };
+
     const deleteGaboOficioResumen = async (row, triggerButton = null) => {
       const ejercicio = principalEjercicio ? String(principalEjercicio.value || "").trim() : "";
       const enteId = String((row && row.ente_id) || "").trim();
@@ -1117,16 +1271,19 @@
       }
       const tipoAuditoria = resolveGaboOficioScopeTipo(row);
       const total = Number.parseInt(String((row && row.total) || "0"), 10) || 0;
-      const scopeLabel = tipoAuditoria ? ` del alcance ${tipoAuditoria}` : "";
-      const confirmed = window.confirm(
-        `¿Eliminar el oficio ${oficio}${scopeLabel}? Se borrarán ${total} observación(es) registradas para ese oficio.`
-      );
-      if (!confirmed) {
-        return;
-      }
       if (triggerButton instanceof HTMLButtonElement) {
         triggerButton.disabled = true;
-        triggerButton.textContent = "Eliminando...";
+      }
+      if (gaboDeleteOficioConfirmBtn) {
+        gaboDeleteOficioConfirmBtn.disabled = true;
+        gaboDeleteOficioConfirmBtn.textContent = "Eliminando...";
+      }
+      if (gaboDeleteOficioCancelBtn) {
+        gaboDeleteOficioCancelBtn.disabled = true;
+      }
+      if (gaboDeleteOficioFeedback) {
+        gaboDeleteOficioFeedback.textContent = `Se eliminarán ${total} observación(es) del oficio seleccionado.`;
+        gaboDeleteOficioFeedback.dataset.level = "info";
       }
       try {
         const scope = { ejercicio, ente_id: enteId, oficio };
@@ -1142,14 +1299,25 @@
         if (!response.ok || !payload || !payload.ok) {
           throw new Error((payload && payload.error) || "No se pudo eliminar el oficio.");
         }
+        closeDeleteOficioModal();
         showWizardToast(`Oficio eliminado: ${payload.deleted || 0} observación(es).`, "success");
         await loadGaboOficiosResumen();
       } catch (error) {
+        if (gaboDeleteOficioFeedback) {
+          gaboDeleteOficioFeedback.textContent = error instanceof Error ? error.message : "No se pudo eliminar el oficio.";
+          gaboDeleteOficioFeedback.dataset.level = "error";
+        }
         showWizardToast(error instanceof Error ? error.message : "No se pudo eliminar el oficio.", "error");
       } finally {
         if (triggerButton instanceof HTMLButtonElement) {
           triggerButton.disabled = false;
-          triggerButton.textContent = "Eliminar";
+        }
+        if (gaboDeleteOficioConfirmBtn) {
+          gaboDeleteOficioConfirmBtn.disabled = false;
+          gaboDeleteOficioConfirmBtn.textContent = "Sí, eliminar oficio";
+        }
+        if (gaboDeleteOficioCancelBtn) {
+          gaboDeleteOficioCancelBtn.disabled = false;
         }
       }
     };
@@ -2332,9 +2500,7 @@
       if (Number.isFinite(Number(payload.manual_step))) {
         setManualStep(Number(payload.manual_step));
       }
-      if (typeof payload.loader_mode === "string" && payload.loader_mode) {
-        navigateWizardMode(payload.loader_mode, { force: true });
-      }
+      setLoaderMode(initialLoaderMode);
       syncPrincipalFiltersToForms({ syncTitular: true });
       syncManualContextToPrincipal();
       renderFuentesDetalleRows();
@@ -4432,6 +4598,14 @@
       manualResumenJsonFeedback.dataset.level = level;
     };
 
+    const setManualSolventacionPdfFeedback = (message, level = "info") => {
+      if (!manualSolventacionPdfFeedback) {
+        return;
+      }
+      manualSolventacionPdfFeedback.textContent = String(message || "");
+      manualSolventacionPdfFeedback.dataset.level = level;
+    };
+
     const normalizeTipoAuditoriaImportValue = (value) => {
       const normalized = String(value || "")
         .normalize("NFD")
@@ -4772,7 +4946,101 @@
       }
     };
 
-    const processOficioPdf = async () => {
+    const buildSolventacionDetallePayload = (rows) => {
+      const payload = {};
+      solventacionTipos.forEach((tipo) => {
+        payload[tipo] = { cantidad: 0, emitido: "0", solventado: "0", pendiente: 0 };
+      });
+      (Array.isArray(rows) ? rows : []).forEach((row) => {
+        const totals = row && typeof row.solventacion_totales_by_anexo === "object"
+          ? row.solventacion_totales_by_anexo
+          : {};
+        solventacionTipos.forEach((tipo) => {
+          const item = totals && typeof totals[tipo] === "object" ? totals[tipo] : null;
+          if (!item) {
+            return;
+          }
+          payload[tipo].cantidad += Math.max(0, Number.parseInt(String(item.emitidas ?? item.cantidad ?? 0), 10) || 0);
+          payload[tipo].emitido = String(
+            (Number.parseFloat(String(payload[tipo].emitido || "0").replace(/,/g, "")) || 0)
+            + (Number.parseFloat(String(item.emitido ?? item.emitidas ?? 0).replace(/,/g, "")) || 0)
+          );
+          payload[tipo].solventado = String(
+            (Number.parseFloat(String(payload[tipo].solventado || "0").replace(/,/g, "")) || 0)
+            + (Number.parseFloat(String(item.solventado ?? item.solventadas ?? 0).replace(/,/g, "")) || 0)
+          );
+        });
+      });
+      solventacionTipos.forEach((tipo) => {
+        const emitido = Number.parseFloat(String(payload[tipo].emitido || "0").replace(/,/g, "")) || 0;
+        const solventado = Number.parseFloat(String(payload[tipo].solventado || "0").replace(/,/g, "")) || 0;
+        payload[tipo].emitido = payload[tipo].cantidad > 0 ? emitido.toFixed(2) : "0";
+        payload[tipo].solventado = payload[tipo].cantidad > 0 ? solventado.toFixed(2) : "0";
+        payload[tipo].pendiente = emitido - solventado;
+      });
+      return payload;
+    };
+
+    const applySolventacionFromPayload = (payload) => {
+      const rows = Array.isArray(payload && payload.rows) ? payload.rows : [];
+      if (!rows.length) {
+        const message = "El PDF no contiene filas válidas de resultados de solventación.";
+        setManualSolventacionPdfFeedback(message, "error");
+        showWizardToast(message, "error");
+        return;
+      }
+
+      if (Array.isArray(fuentesDetalleState) && fuentesDetalleState.length) {
+        const confirmed = window.confirm("La tabla actual se reemplazará con la carga del oficio. ¿Deseas continuar?");
+        if (!confirmed) {
+          return;
+        }
+      }
+
+      fuentesDetalleState = rows.map((row) => normalizeSourceFlags(row));
+      editingFuenteIndex = null;
+
+      if (manualAsunto) {
+        manualAsunto.value = asuntoSolventacion;
+      }
+      if (principalTipoAuditoria && payload.tipo_auditoria) {
+        principalTipoAuditoria.value = payload.tipo_auditoria;
+      }
+      if (principalNumeroOficioInput && payload.oficio) {
+        principalNumeroOficioInput.value = payload.oficio;
+        syncPrincipalOficioField({ padConsecutive: true });
+      }
+      if (principalFechaNotificacion && payload.fecha) {
+        principalFechaNotificacion.value = payload.fecha;
+      }
+      if (manualOficioBase && payload.oficio_base) {
+        manualOficioBase.value = String(payload.oficio_base || "").trim();
+      }
+      const solventacionDetallePayload = buildSolventacionDetallePayload(rows);
+      writeSolventacionDetalleJson(solventacionDetallePayload);
+      syncPrincipalFiltersToForms({ syncTitular: true });
+      syncFuentesDetalleState();
+      hydrateSolventacionDetalle();
+      renderFuentesDetalleRows();
+      renderResumenFuentes();
+      renderPreviewTable();
+      renderPdpBreakdown();
+      updateFuenteEditorMode();
+      toggleCedulaCantidadBlocks();
+      toggleObservacionesCargadas();
+      updateManualSaveState();
+      updateWizardModeAvailability();
+
+      const warnings = Array.isArray(payload && payload.warnings) ? payload.warnings.filter(Boolean) : [];
+      const destinatario = String(payload && payload.destinatario ? payload.destinatario : "").trim();
+      const baseMessage = `Oficio de solventación cargado: ${rows.length} fila(s).`;
+      const destinatarioMessage = destinatario ? ` Destinatario detectado: ${destinatario}.` : "";
+      const warningMessage = warnings.length ? ` ${warnings.join(" ")}` : "";
+      setManualSolventacionPdfFeedback(`${baseMessage}${destinatarioMessage}${warningMessage}`.trim(), warnings.length ? "warning" : "success");
+      showWizardToast(baseMessage, warnings.length ? "info" : "success");
+    };
+
+    const processCedulaPdf = async () => {
       if (!oficioSelectedFile || isOficioPdfProcessing) {
         return;
       }
@@ -4803,6 +5071,47 @@
       }
     };
 
+    const processSolventacionPdf = async () => {
+      if (!solventacionSelectedFile || isSolventacionPdfProcessing) {
+        return;
+      }
+      isSolventacionPdfProcessing = true;
+      if (solventacionUploadZone) solventacionUploadZone.classList.add("processing");
+      setManualSolventacionPdfFeedback("Procesando PDF...", "info");
+
+      const form = new FormData();
+      form.append("file", solventacionSelectedFile);
+      const ejercicio = (
+        (principalEjercicio ? principalEjercicio.value : "")
+        || (manualEjercicio ? manualEjercicio.value : "")
+      ).trim();
+      const enteId = (
+        (principalEnte ? principalEnte.value : "")
+        || (manualEnte ? manualEnte.value : "")
+      ).trim();
+      form.append("ejercicio", ejercicio);
+      form.append("ente_id", enteId);
+
+      try {
+        const res = await fetch("/api/solventacion/procesar", { method: "POST", body: form });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          const message = data.error || "Error desconocido al procesar el archivo.";
+          setManualSolventacionPdfFeedback(message, "error");
+          showWizardToast(message, "error");
+        } else {
+          applySolventacionFromPayload(data);
+        }
+      } catch (_err) {
+        const message = "Error de red al contactar el servidor.";
+        setManualSolventacionPdfFeedback(message, "error");
+        showWizardToast(message, "error");
+      } finally {
+        isSolventacionPdfProcessing = false;
+        if (solventacionUploadZone) solventacionUploadZone.classList.remove("processing");
+      }
+    };
+
     const setOficioFile = (file) => {
       if (!file || !file.name.toLowerCase().endsWith(".pdf")) {
         setManualResumenJsonFeedback("Solo se aceptan archivos PDF.", "error");
@@ -4815,7 +5124,22 @@
       }
       if (oficioUploadZone) oficioUploadZone.classList.add("has-file");
       if (oficioClearBtn) oficioClearBtn.style.display = "";
-      processOficioPdf();
+      processCedulaPdf();
+    };
+
+    const setSolventacionFile = (file) => {
+      if (!file || !file.name.toLowerCase().endsWith(".pdf")) {
+        setManualSolventacionPdfFeedback("Solo se aceptan archivos PDF.", "error");
+        return;
+      }
+      solventacionSelectedFile = file;
+      if (solventacionFileName) {
+        solventacionFileName.textContent = file.name;
+        solventacionFileName.hidden = false;
+      }
+      if (solventacionUploadZone) solventacionUploadZone.classList.add("has-file");
+      if (solventacionClearBtn) solventacionClearBtn.style.display = "";
+      processSolventacionPdf();
     };
 
     const clearOficioUpload = () => {
@@ -4825,6 +5149,15 @@
       if (oficioUploadZone) oficioUploadZone.classList.remove("has-file");
       if (oficioClearBtn) oficioClearBtn.style.display = "none";
       setManualResumenJsonFeedback("", "info");
+    };
+
+    const clearSolventacionUpload = () => {
+      solventacionSelectedFile = null;
+      if (solventacionPdfInput) solventacionPdfInput.value = "";
+      if (solventacionFileName) solventacionFileName.hidden = true;
+      if (solventacionUploadZone) solventacionUploadZone.classList.remove("has-file");
+      if (solventacionClearBtn) solventacionClearBtn.style.display = "none";
+      setManualSolventacionPdfFeedback("", "info");
     };
 
     const applyResumenJsonImport = () => {
@@ -6848,6 +7181,36 @@
     if (oficioClearBtn) {
       oficioClearBtn.addEventListener("click", () => clearOficioUpload());
     }
+    if (solventacionUploadZone) {
+      solventacionUploadZone.addEventListener("click", (e) => {
+        if (e.target === solventacionUploadZone || solventacionUploadZone.contains(e.target)) {
+          if (solventacionPdfInput && e.target !== solventacionPdfInput) solventacionPdfInput.click();
+        }
+      });
+      solventacionUploadZone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        solventacionUploadZone.classList.add("drag-over");
+      });
+      solventacionUploadZone.addEventListener("dragleave", () => {
+        solventacionUploadZone.classList.remove("drag-over");
+      });
+      solventacionUploadZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        solventacionUploadZone.classList.remove("drag-over");
+        const file = e.dataTransfer && e.dataTransfer.files[0];
+        if (file) setSolventacionFile(file);
+      });
+    }
+    if (solventacionPdfInput) {
+      solventacionPdfInput.addEventListener("change", () => {
+        if (solventacionPdfInput.files && solventacionPdfInput.files[0]) {
+          setSolventacionFile(solventacionPdfInput.files[0]);
+        }
+      });
+    }
+    if (solventacionClearBtn) {
+      solventacionClearBtn.addEventListener("click", () => clearSolventacionUpload());
+    }
     if (gaboOficiosResumenBody) {
       gaboOficiosResumenBody.addEventListener("click", (event) => {
         const target = event.target;
@@ -6864,7 +7227,28 @@
           showWizardToast("No se encontró el oficio seleccionado. Refresca la tabla.", "error");
           return;
         }
-        deleteGaboOficioResumen(row, deleteButton);
+        openDeleteOficioModal(row, deleteButton);
+      });
+    }
+    if (gaboDeleteOficioCancelBtn) {
+      gaboDeleteOficioCancelBtn.addEventListener("click", () => {
+        closeDeleteOficioModal();
+      });
+    }
+    if (gaboDeleteOficioConfirmBtn) {
+      gaboDeleteOficioConfirmBtn.addEventListener("click", async () => {
+        if (!pendingDeleteOficioRow) {
+          closeDeleteOficioModal();
+          return;
+        }
+        await deleteGaboOficioResumen(pendingDeleteOficioRow, pendingDeleteOficioButton);
+      });
+    }
+    if (gaboDeleteOficioModal) {
+      gaboDeleteOficioModal.addEventListener("click", (event) => {
+        if (event.target === gaboDeleteOficioModal) {
+          closeDeleteOficioModal();
+        }
       });
     }
     if (gaboNuevoOficioBtn) {
@@ -6959,7 +7343,7 @@
           showWizardToast(
             mode === "cedula"
               ? "Notificación de Cédula validada en modo borrador."
-              : "Notificación de Cédula validada en modo borrador.",
+              : "Resultados de Solventación validados en modo borrador.",
             "success",
           );
         }
@@ -7127,6 +7511,12 @@
     } catch (_error) {
       updateManualDraftStatus("No se pudo acceder al guardado temporal local.", "error");
     }
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && gaboDeleteOficioModal && !gaboDeleteOficioModal.hidden) {
+        closeDeleteOficioModal();
+      }
+    });
 
     if (manualEjercicio && manualEnte) {
       let manualEntesFetchId = 0;

@@ -83,6 +83,41 @@ def _extract_header(full_text):
     )
 
 
+def _extract_solventacion_header(full_text):
+    oficio, fecha = _extract_header(full_text)
+    ejercicio_match = re.search(r'ejercicio\s+fiscal\s+(\d{4})', full_text, re.IGNORECASE)
+    periodo_match = re.search(
+        r'Asunto:\s*Se emiten resultados de solventaci[oó]n\s+de(?:l| los)\s+periodo(?:s)?\s+(.+?)\s+del ejercicio',
+        full_text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    oficio_base_matches = re.findall(
+        r'mediante\s+el\s+oficio\s+(OFS/\d+/\d+)',
+        full_text,
+        re.IGNORECASE,
+    )
+    destinatario_match = re.search(
+        r'\n\s*([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ\s"().,-]+?\([A-Z0-9.\-]+\))\s*\n\s*P\s*R\s*E\s*S\s*E\s*N\s*T\s*E',
+        full_text,
+        re.IGNORECASE,
+    )
+    destinatario = None
+    if destinatario_match:
+        destinatario_raw = destinatario_match.group(1)
+        destinatario_parts = [part.strip() for part in re.split(r'\r?\n', destinatario_raw) if part.strip()]
+        destinatario = _clean_multiline(destinatario_parts[-1] if destinatario_parts else destinatario_raw)
+    oficio_base = oficio_base_matches[-1] if oficio_base_matches else None
+    periodo = _clean_multiline(periodo_match.group(1)) if periodo_match else None
+    return {
+        'oficio': oficio,
+        'fecha': fecha,
+        'ejercicio': ejercicio_match.group(1) if ejercicio_match else None,
+        'periodo': periodo,
+        'oficio_base': oficio_base,
+        'destinatario': destinatario,
+    }
+
+
 def _detect_audit_type(page_text):
     """Detecta el tipo de auditoría a partir del texto de la página."""
     t = page_text or ''
@@ -110,6 +145,18 @@ def _is_convenios_table(table):
         return False
     header_text = ' '.join(_clean_multiline(c).lower() for row in table[:2] for c in row if c)
     return 'nombre del convenio' in header_text and 'fuente' in header_text
+
+
+def _is_solventacion_table(table):
+    if not table or len(table) < 3:
+        return False
+    header_text = ' '.join(_clean_multiline(c).lower() for row in table[:2] for c in row if c)
+    return (
+        'acciones emitidas' in header_text
+        and 'solventadas' in header_text
+        and 'no solventadas' in header_text
+        and 'anexo' in header_text
+    )
 
 
 def _parse_convenios_table(table):
@@ -237,6 +284,185 @@ def _parse_cedula_table(table):
     return fuentes_list, totales
 
 
+def _build_emitidas_list(total):
+    safe_total = _parse_int(total)
+    return list(range(1, safe_total + 1)) if safe_total > 0 else []
+
+
+def _build_solventacion_totales(emitidas, solventadas, pendientes):
+    return {
+        'emitidas': len(emitidas),
+        'solventadas': len(solventadas),
+        'pendientes': len(pendientes),
+        'solventadas_indices': solventadas,
+        'pendientes_indices': pendientes,
+    }
+
+
+def _parse_solventacion_regular_table(table):
+    data = table[2:]
+    fuentes = {}
+    current_fuente = None
+    totals = {
+        accion: {'emitidas': 0, 'solventadas': 0, 'pendientes': 0}
+        for accion in ACCIONES
+    }
+    totals.update({'total_emitidas': 0, 'total_solventadas': 0, 'total_pendientes': 0})
+
+    for row in data:
+        if len(row) < 8:
+            continue
+        cells = list(row) + [''] * max(0, 8 - len(row))
+        fuente_raw, periodo_raw, anexo_raw, emitidas_raw, solv_total_raw, solv_idx_raw, pend_total_raw, pend_idx_raw = cells[:8]
+        row_title = _clean_multiline(anexo_raw or fuente_raw)
+        if row_title.upper() in {'SUBTOTAL', 'TOTAL'}:
+            continue
+
+        if fuente_raw:
+            current_fuente = _clean_multiline(fuente_raw)
+        periodo = _clean_multiline(periodo_raw)
+        anexo = _clean_multiline(anexo_raw).upper()
+        if not current_fuente or not periodo or anexo not in ACCIONES:
+            continue
+
+        emitidas = _build_emitidas_list(emitidas_raw)
+        solventadas = _parse_num_list(solv_idx_raw)
+        pendientes = _parse_num_list(pend_idx_raw)
+        registro = {
+            'periodo': periodo,
+            anexo: emitidas,
+            'solventacion': {
+                anexo: _build_solventacion_totales(emitidas, solventadas, pendientes)
+            },
+            'total_emitidas': len(emitidas),
+            'total_solventadas': len(solventadas),
+            'total_pendientes': len(pendientes),
+        }
+        fuentes.setdefault(current_fuente, []).append(registro)
+        totals[anexo] = _build_solventacion_totales(emitidas, solventadas, pendientes)
+        totals['total_emitidas'] += len(emitidas)
+        totals['total_solventadas'] += len(solventadas)
+        totals['total_pendientes'] += len(pendientes)
+
+    fuentes_list = []
+    for fuente_nombre, registros in fuentes.items():
+        merged = {}
+        for registro in registros:
+            periodo = registro['periodo']
+            target = merged.setdefault(
+                periodo,
+                {
+                    'periodo': periodo,
+                    'SA': [],
+                    'PDP': [],
+                    'PRAS': [],
+                    'PEFCF': [],
+                    'R': [],
+                    'solventacion': {},
+                    'total_emitidas': 0,
+                    'total_solventadas': 0,
+                    'total_pendientes': 0,
+                },
+            )
+            for accion in ACCIONES:
+                if accion in registro:
+                    target[accion] = registro[accion]
+                    target['solventacion'][accion] = registro['solventacion'][accion]
+            target['total_emitidas'] += int(registro.get('total_emitidas') or 0)
+            target['total_solventadas'] += int(registro.get('total_solventadas') or 0)
+            target['total_pendientes'] += int(registro.get('total_pendientes') or 0)
+        fuentes_list.append({'nombre': fuente_nombre, 'registros': list(merged.values())})
+    return fuentes_list, totals
+
+
+def _parse_solventacion_convenios_table(table):
+    data = table[2:]
+    fuentes = {}
+    current_fuente = None
+    current_convenio = None
+    totals = {
+        accion: {'emitidas': 0, 'solventadas': 0, 'pendientes': 0}
+        for accion in ACCIONES
+    }
+    totals.update({'total_emitidas': 0, 'total_solventadas': 0, 'total_pendientes': 0})
+
+    for row in data:
+        if len(row) < 9:
+            continue
+        cells = list(row) + [''] * max(0, 9 - len(row))
+        convenio_raw, fuente_raw, periodo_raw, anexo_raw, emitidas_raw, solv_total_raw, solv_idx_raw, pend_total_raw, pend_idx_raw = cells[:9]
+        row_title = _clean_multiline(anexo_raw or convenio_raw or fuente_raw)
+        if row_title.upper() in {'SUBTOTAL', 'TOTAL'}:
+            continue
+
+        if convenio_raw:
+            current_convenio = _clean_convenio(convenio_raw)
+        if fuente_raw:
+            current_fuente = _clean_multiline(fuente_raw)
+        periodo = _clean_multiline(periodo_raw)
+        anexo = _clean_multiline(anexo_raw).upper()
+        if not current_fuente or not current_convenio or not periodo or anexo not in ACCIONES:
+            continue
+
+        emitidas = _build_emitidas_list(emitidas_raw)
+        solventadas = _parse_num_list(solv_idx_raw)
+        pendientes = _parse_num_list(pend_idx_raw)
+        key = (current_fuente, current_convenio)
+        registro = {
+            'periodo': periodo,
+            anexo: emitidas,
+            'solventacion': {
+                anexo: _build_solventacion_totales(emitidas, solventadas, pendientes)
+            },
+            'total_emitidas': len(emitidas),
+            'total_solventadas': len(solventadas),
+            'total_pendientes': len(pendientes),
+        }
+        fuentes.setdefault(key, []).append(registro)
+        totals[anexo] = _build_solventacion_totales(emitidas, solventadas, pendientes)
+        totals['total_emitidas'] += len(emitidas)
+        totals['total_solventadas'] += len(solventadas)
+        totals['total_pendientes'] += len(pendientes)
+
+    fuentes_list = []
+    for (fuente_nombre, convenio_nombre), registros in fuentes.items():
+        merged = {}
+        for registro in registros:
+            periodo = registro['periodo']
+            target = merged.setdefault(
+                periodo,
+                {
+                    'periodo': periodo,
+                    'SA': [],
+                    'PDP': [],
+                    'PRAS': [],
+                    'PEFCF': [],
+                    'R': [],
+                    'solventacion': {},
+                    'total_emitidas': 0,
+                    'total_solventadas': 0,
+                    'total_pendientes': 0,
+                },
+            )
+            for accion in ACCIONES:
+                if accion in registro:
+                    target[accion] = registro[accion]
+                    target['solventacion'][accion] = registro['solventacion'][accion]
+            target['total_emitidas'] += int(registro.get('total_emitidas') or 0)
+            target['total_solventadas'] += int(registro.get('total_solventadas') or 0)
+            target['total_pendientes'] += int(registro.get('total_pendientes') or 0)
+        fuentes_list.append(
+            {
+                'nombre': fuente_nombre,
+                'modalidad': 'Convenio',
+                'convenio_nombre': convenio_nombre,
+                'convenio_ente_nombre': _infer_convenio_ente(convenio_nombre),
+                'registros': list(merged.values()),
+            }
+        )
+    return fuentes_list, totals
+
+
 def _fuente_merge_key(fuente):
     return (
         _clean_multiline(fuente.get('modalidad') or 'Fuente').lower(),
@@ -297,4 +523,53 @@ def parse_cedula(pdf_path):
     oficio, fecha = _extract_header(full_text)
     result['oficio'] = oficio
     result['fecha'] = fecha
+    return result
+
+
+def parse_solventacion(pdf_path):
+    """
+    Parsea un PDF de resultados de solventación.
+    Retorna dict con metadatos del oficio y auditorías/fuentes.
+    """
+    result = {
+        'oficio': None,
+        'fecha': None,
+        'ejercicio': None,
+        'periodo': None,
+        'oficio_base': None,
+        'destinatario': None,
+        'auditorias': [],
+    }
+    full_text = ''
+    seen_tipos = {}
+    last_tipo = None
+
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            page_text = page.extract_text() or ''
+            full_text += page_text + '\n'
+            tables = page.extract_tables()
+            page_tipo = _detect_audit_type(page_text)
+            if page_tipo != 'Sin clasificar':
+                last_tipo = page_tipo
+
+            for table in tables:
+                if not _is_solventacion_table(table):
+                    continue
+                if _is_convenios_table(table):
+                    tipo = 'Obra Pública'
+                    fuentes, totales = _parse_solventacion_convenios_table(table)
+                else:
+                    tipo = page_tipo if page_tipo != 'Sin clasificar' else (last_tipo or page_tipo)
+                    fuentes, totales = _parse_solventacion_regular_table(table)
+                if not fuentes:
+                    continue
+                if tipo in seen_tipos:
+                    _merge_fuentes(seen_tipos[tipo], fuentes)
+                else:
+                    entry = {'tipo': tipo, 'fuentes': fuentes, 'totales': totales}
+                    seen_tipos[tipo] = entry
+                    result['auditorias'].append(entry)
+
+    result.update(_extract_solventacion_header(full_text))
     return result

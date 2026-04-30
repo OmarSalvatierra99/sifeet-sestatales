@@ -35,56 +35,92 @@
     <section class="panel">
       <div class="panel-header">
         <h2>Resultados de Solventación</h2>
-        <p>Consulta observaciones cargadas por Ejercicio, Ente y Oficio.</p>
+        <p>{% if locked_scope %}Consulta fija del oficio seleccionado desde la opción de solventación.{% else %}Consulta observaciones cargadas por Ejercicio, Ente y Oficio.{% endif %}</p>
       </div>
 
       <form id="obsAdminFiltersForm" class="record-form filters-form" autocomplete="off">
-        <div class="form-grid">
-          <div class="field">
-            <label for="obs_admin_ejercicio">Ejercicio</label>
-            <select id="obs_admin_ejercicio" name="ejercicio" required>
+        {% if locked_scope %}
+          <div class="obs-admin-scope-lock-grid" id="obsAdminScopeLockGrid">
+            <div class="field">
+              <label>Ejercicio</label>
+              <div class="obs-admin-readonly-value">{{ locked_scope.ejercicio }}</div>
+            </div>
+            <div class="field">
+              <label>Ente</label>
+              <div class="obs-admin-readonly-value">{{ locked_scope.ente_label }}</div>
+            </div>
+            <div class="field">
+              <label>Oficio</label>
+              <div class="obs-admin-readonly-value">{{ locked_scope.oficio_label }}</div>
+            </div>
+          </div>
+          <div class="obs-admin-hidden-scope" aria-hidden="true">
+            <select id="obs_admin_ejercicio" name="ejercicio" required tabindex="-1">
               {% for ejercicio in ejercicios %}
-                <option value="{{ ejercicio }}" {% if ejercicio == ejercicio_default %}selected{% endif %}>{{ ejercicio }}</option>
+                <option value="{{ ejercicio }}" {% if ejercicio == locked_scope.ejercicio %}selected{% endif %}>{{ ejercicio }}</option>
               {% endfor %}
             </select>
-          </div>
-          <div class="field">
-            <label for="obs_admin_ente_id">Ente</label>
-            <select id="obs_admin_ente_id" name="ente_id">
-              <option value="">Selecciona un ente</option>
+            <select id="obs_admin_ente_id" name="ente_id" tabindex="-1">
+              <option value="{{ locked_scope.ente_id }}" selected>{{ locked_scope.ente_label }}</option>
+            </select>
+            <select id="obs_admin_oficio" name="oficio" tabindex="-1">
+              <option value="{{ locked_scope.oficio }}" selected>{{ locked_scope.oficio_label }}</option>
             </select>
           </div>
-          <div class="field">
-            <label for="obs_admin_oficio">Oficio</label>
-            <select id="obs_admin_oficio" name="oficio" disabled>
-              <option value="">Selecciona primero un ente</option>
-            </select>
+        {% else %}
+          <div class="form-grid">
+            <div class="field">
+              <label for="obs_admin_ejercicio">Ejercicio</label>
+              <select id="obs_admin_ejercicio" name="ejercicio" required>
+                {% for ejercicio in ejercicios %}
+                  <option value="{{ ejercicio }}" {% if ejercicio == ejercicio_default %}selected{% endif %}>{{ ejercicio }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="field">
+              <label for="obs_admin_ente_id">Ente</label>
+              <select id="obs_admin_ente_id" name="ente_id">
+                <option value="">Selecciona un ente</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="obs_admin_oficio">Oficio</label>
+              <select id="obs_admin_oficio" name="oficio" disabled>
+                <option value="">Selecciona primero un ente</option>
+              </select>
+            </div>
           </div>
-        </div>
+        {% endif %}
         <p class="helper">
-          Consulta automática activada: al cambiar filtros se actualizan las observaciones.
-          Los ejercicios 2023 y 2024 quedan solo en consulta para Ing. Omar Gabriel Salvatierra Garcia.
+          {% if locked_scope %}
+            Alcance bloqueado para evitar errores: este módulo solo se puede trabajar desde el acceso directo de <strong>Solventación</strong>.
+          {% else %}
+            Consulta automática activada: al cambiar filtros se actualizan las observaciones.
+            Los ejercicios 2023 y 2024 quedan solo en consulta para Ing. Omar Gabriel Salvatierra Garcia.
+          {% endif %}
         </p>
       </form>
 
-      <div class="obs-admin-safety-card" id="obsAdminSafetyCard">
-        <div class="obs-admin-safety-copy">
-          <strong id="obsAdminSafetyTitle">Consulta general</strong>
-          <p id="obsAdminSafetyHint">
-            Selecciona un ente y un oficio para editar observaciones de un solo oficio.
-          </p>
+      {% if not locked_scope %}
+        <div class="obs-admin-safety-card" id="obsAdminSafetyCard">
+          <div class="obs-admin-safety-copy">
+            <strong id="obsAdminSafetyTitle">Consulta general</strong>
+            <p id="obsAdminSafetyHint">
+              Selecciona un ente y un oficio para editar observaciones de un solo oficio.
+            </p>
+          </div>
+          <div class="obs-admin-safety-meta">
+            <span class="loader-obs-chip" id="obsAdminSafetyModeChip">Modo consulta</span>
+            <span class="loader-obs-chip" id="obsAdminSafetyScopeChip">Alcance incompleto</span>
+          </div>
         </div>
-        <div class="obs-admin-safety-meta">
-          <span class="loader-obs-chip" id="obsAdminSafetyModeChip">Modo consulta</span>
-          <span class="loader-obs-chip" id="obsAdminSafetyScopeChip">Alcance incompleto</span>
-        </div>
-      </div>
 
-      <div class="loader-preview-metrics">
-        <span class="loader-obs-chip">Total: <strong id="obsAdminMetricTotal">0</strong></span>
-        <span class="loader-obs-chip">Pendientes: <strong id="obsAdminMetricPendiente">0</strong></span>
-        <span class="loader-obs-chip">Solventadas: <strong id="obsAdminMetricSolventado">0</strong></span>
-      </div>
+        <div class="loader-preview-metrics">
+          <span class="loader-obs-chip">Total: <strong id="obsAdminMetricTotal">0</strong></span>
+          <span class="loader-obs-chip">Pendientes: <strong id="obsAdminMetricPendiente">0</strong></span>
+          <span class="loader-obs-chip">Solventadas: <strong id="obsAdminMetricSolventado">0</strong></span>
+        </div>
+      {% endif %}
 
       <section class="obs-admin-summary-card" id="obsAdminSummaryCard">
         <div class="panel-header panel-header-compact">
@@ -266,6 +302,7 @@
 
   <script>
     const initialScope = {{ initial_scope | tojson }};
+    const lockedScope = {{ locked_scope | tojson }};
     const readOnlyEjercicios = new Set({{ read_only_ejercicios | tojson }});
     const filtersForm = document.getElementById("obsAdminFiltersForm");
     const ejercicioInput = document.getElementById("obs_admin_ejercicio");
@@ -524,10 +561,13 @@
       originalRowsSnapshot = map;
     };
 
+    const isLockedScopeActive = !!(lockedScope && lockedScope.active);
+
     const readFilters = () => ({
       ejercicio: String(ejercicioInput ? ejercicioInput.value : "").trim(),
       ente_id: String(enteInput ? enteInput.value : "").trim(),
       oficio: String(oficioInput ? oficioInput.value : "").trim(),
+      tipo_auditoria: isLockedScopeActive ? String(lockedScope.tipo_auditoria || "").trim() : "",
     });
 
     const buildQueryString = (filters) => {
@@ -672,6 +712,10 @@
 
     const loadOficios = async (selectedValue = "") => {
       if (!oficioInput || !ejercicioInput || !enteInput) {
+        return;
+      }
+      if (isLockedScopeActive) {
+        oficioInput.disabled = true;
         return;
       }
       const ejercicio = String(ejercicioInput.value || "").trim();
@@ -2881,6 +2925,10 @@
       if (!ejercicioInput || !enteInput) {
         return;
       }
+      if (isLockedScopeActive) {
+        enteInput.disabled = true;
+        return;
+      }
       const ejercicio = String(ejercicioInput.value || "").trim();
       enteInput.innerHTML = '<option value="">Cargando entes...</option>';
       if (!ejercicio) {
@@ -2912,6 +2960,13 @@
 
     const applyInitialScope = async () => {
       const hasInitialScope = Object.values(initialScope || {}).some((value) => String(value || "").trim());
+      if (isLockedScopeActive) {
+        await fetchRows({ announce: false });
+        if (hasInitialScope) {
+          showStatus("Oficio bloqueado desde el contexto de solventación.", "info");
+        }
+        return;
+      }
       if (ejercicioInput && initialScope.ejercicio) {
         ejercicioInput.value = initialScope.ejercicio;
       }
@@ -2935,7 +2990,7 @@
       });
     }
 
-    if (ejercicioInput) {
+    if (ejercicioInput && !isLockedScopeActive) {
       ejercicioInput.addEventListener("change", async () => {
         clearStatus();
         await loadEntes("");
@@ -2944,7 +2999,7 @@
       });
     }
 
-    if (enteInput) {
+    if (enteInput && !isLockedScopeActive) {
       enteInput.addEventListener("change", async () => {
         clearStatus();
         await loadOficios("");
@@ -2952,7 +3007,7 @@
       });
     }
 
-    if (oficioInput) {
+    if (oficioInput && !isLockedScopeActive) {
       oficioInput.addEventListener("change", async () => {
         clearStatus();
         await fetchRows({ announce: false });

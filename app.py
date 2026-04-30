@@ -60,6 +60,7 @@ def _build_users() -> dict:
 USERS = _build_users()
 ASUNTOS_MANUALES = {
     "Notificación de Cédula de Resultados",
+    "Resultados de Solventación",
 }
 TIPOS_RESPONSABLE = {"Titular", "Administrativo", "Ambos"}
 

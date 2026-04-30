@@ -6555,6 +6555,29 @@ tbody tr:hover td {
   background: linear-gradient(180deg, #fcfefd 0%, #f4f8f5 100%);
 }
 
+.obs-admin-scope-lock-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.obs-admin-readonly-value {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0.72rem 0.9rem;
+  border: 1px solid #d2e1d8;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fbfdfc 0%, #f3f8f5 100%);
+  color: #1d4f38;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.obs-admin-hidden-scope {
+  display: none;
+}
+
 .obs-admin-safety-copy {
   display: grid;
   gap: 0.22rem;
@@ -7776,6 +7799,10 @@ body.is-modal-open {
 
   .obs-admin-safety-card {
     flex-direction: column;
+  }
+
+  .obs-admin-scope-lock-grid {
+    grid-template-columns: 1fr;
   }
 
   .obs-admin-safety-meta {
