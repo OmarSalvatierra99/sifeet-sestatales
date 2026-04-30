@@ -303,6 +303,7 @@ def _parse_solventacion_regular_table(table):
     data = table[2:]
     fuentes = {}
     current_fuente = None
+    current_periodo = None
     totals = {
         accion: {'emitidas': 0, 'solventadas': 0, 'pendientes': 0}
         for accion in ACCIONES
@@ -320,7 +321,9 @@ def _parse_solventacion_regular_table(table):
 
         if fuente_raw:
             current_fuente = _clean_multiline(fuente_raw)
-        periodo = _clean_multiline(periodo_raw)
+        if periodo_raw:
+            current_periodo = _clean_multiline(periodo_raw)
+        periodo = current_periodo or ''
         anexo = _clean_multiline(anexo_raw).upper()
         if not current_fuente or not periodo or anexo not in ACCIONES:
             continue
@@ -380,6 +383,7 @@ def _parse_solventacion_convenios_table(table):
     fuentes = {}
     current_fuente = None
     current_convenio = None
+    current_periodo = None
     totals = {
         accion: {'emitidas': 0, 'solventadas': 0, 'pendientes': 0}
         for accion in ACCIONES
@@ -399,7 +403,9 @@ def _parse_solventacion_convenios_table(table):
             current_convenio = _clean_convenio(convenio_raw)
         if fuente_raw:
             current_fuente = _clean_multiline(fuente_raw)
-        periodo = _clean_multiline(periodo_raw)
+        if periodo_raw:
+            current_periodo = _clean_multiline(periodo_raw)
+        periodo = current_periodo or ''
         anexo = _clean_multiline(anexo_raw).upper()
         if not current_fuente or not current_convenio or not periodo or anexo not in ACCIONES:
             continue

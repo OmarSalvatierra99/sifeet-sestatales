@@ -42,6 +42,77 @@ def normalize_periodo_key(ejercicio: str, periodo: str, *, label: str, strict: b
     return f"{fecha_inicio}|{fecha_fin}"
 
 
+def normalize_solventacion_periodo_key(ejercicio: str, periodo: str) -> str:
+    clean = " ".join((periodo or "").strip().split())
+    if not clean:
+        return ""
+    months_es_to_num = {
+        "enero": "01",
+        "febrero": "02",
+        "marzo": "03",
+        "abril": "04",
+        "mayo": "05",
+        "junio": "06",
+        "julio": "07",
+        "agosto": "08",
+        "septiembre": "09",
+        "octubre": "10",
+        "noviembre": "11",
+        "diciembre": "12",
+    }
+    canonical = normalize_periodo_key(
+        ejercicio,
+        clean,
+        label="periodo de solventación",
+        strict=False,
+    )
+    if "|" in canonical:
+        return canonical
+
+    match = re.match(
+        r"^\s*(\d{1,2})\s+([a-zA-ZáéíóúÁÉÍÓÚñÑ.]+)\s*[-–]\s*(\d{1,2})\s+([a-zA-ZáéíóúÁÉÍÓÚñÑ.]+)\s*$",
+        clean,
+    )
+    if not match:
+        return canonical
+
+    month_aliases = {
+        "ene": "enero",
+        "feb": "febrero",
+        "mar": "marzo",
+        "abr": "abril",
+        "may": "mayo",
+        "jun": "junio",
+        "jul": "julio",
+        "ago": "agosto",
+        "sep": "septiembre",
+        "sept": "septiembre",
+        "oct": "octubre",
+        "nov": "noviembre",
+        "dic": "diciembre",
+    }
+
+    start_day = int(match.group(1))
+    start_month_key = normalize_text_key(match.group(2)).rstrip(".")
+    end_day = int(match.group(3))
+    end_month_key = normalize_text_key(match.group(4)).rstrip(".")
+    start_month_key = month_aliases.get(start_month_key, start_month_key)
+    end_month_key = month_aliases.get(end_month_key, end_month_key)
+
+    start_month = months_es_to_num.get(start_month_key)
+    end_month = months_es_to_num.get(end_month_key)
+    if not start_month or not end_month:
+        return canonical
+
+    try:
+        year = int(str(ejercicio).strip())
+        start_date = datetime(year, int(start_month), start_day)
+        end_date = datetime(year, int(end_month), end_day)
+    except ValueError:
+        return canonical
+    return f"{start_date.strftime('%Y-%m-%d')}|{end_date.strftime('%Y-%m-%d')}"
+
+
 def parse_cedula_periodos(
     ejercicio: str,
     raw_value: str,
@@ -4262,6 +4333,28 @@ def register_gabo_routes(app, deps):
             read_only_ejercicios=sorted(_readonly_ejercicios_for_user(user)),
         )
 
+    def _parse_solventacion_progressive_numbers(raw_value) -> list[int]:
+        if isinstance(raw_value, list):
+            tokens = [str(item or "").strip() for item in raw_value]
+        else:
+            tokens = re.split(r"[\s,;|]+", str(raw_value or "").strip())
+        values: list[int] = []
+        seen: set[int] = set()
+        for token in tokens:
+            token_clean = token.strip()
+            if not token_clean:
+                continue
+            try:
+                parsed = int(token_clean)
+            except (TypeError, ValueError):
+                continue
+            if parsed <= 0 or parsed in seen:
+                continue
+            seen.add(parsed)
+            values.append(parsed)
+        values.sort()
+        return values
+
     @app.get("/carga/herramientas")
     @gabo_required
     def carga_herramientas():
@@ -5104,6 +5197,175 @@ def register_gabo_routes(app, deps):
             item["reclasificada"] = 1 if int(item.get("reclasificada") or 0) else 0
             payload.append(item)
         return jsonify({"ok": True, "rows": payload})
+
+    @app.post("/carga/observaciones-admin/solventacion-importar")
+    @gabo_required
+    def carga_observaciones_admin_solventacion_importar():
+        payload = request.get_json(silent=True) or {}
+        raw_scope = payload.get("scope") if isinstance(payload.get("scope"), dict) else {}
+        raw_rows = payload.get("rows")
+        if not isinstance(raw_rows, list) or not raw_rows:
+            return jsonify({"ok": False, "error": "No se recibieron bloques de solventación para aplicar."}), 400
+        try:
+            where_clauses, params, scope, _ = build_observaciones_admin_scope(raw_scope)
+            _require_safe_bulk_scope(scope, action_label="importar solventación")
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), _readonly_error_status(exc)
+
+        db = get_db()
+        where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+        rows = db.execute(
+            f"""
+            SELECT
+                id,
+                TRIM(COALESCE(tipo_auditoria, '')) AS tipo_auditoria,
+                TRIM(COALESCE(fuente_financiamiento, '')) AS fuente_financiamiento,
+                TRIM(COALESCE(periodo_cedula, '')) AS periodo_cedula,
+                TRIM(COALESCE(tipo_anexo, '')) AS tipo_anexo,
+                COALESCE(numero_observacion, 0) AS numero_observacion,
+                TRIM(COALESCE(estado, '')) AS estado
+            FROM observaciones
+            WHERE {where_sql}
+            ORDER BY
+                LOWER(TRIM(COALESCE(tipo_auditoria, ''))),
+                LOWER(TRIM(COALESCE(fuente_financiamiento, ''))),
+                LOWER(TRIM(COALESCE(periodo_cedula, ''))),
+                LOWER(TRIM(COALESCE(tipo_anexo, ''))),
+                COALESCE(numero_observacion, 0),
+                id
+            """,
+            params,
+        ).fetchall()
+        if not rows:
+            return jsonify({"ok": False, "error": "No hay observaciones del oficio actual para aplicar la solventación."}), 404
+
+        grouped_rows: dict[tuple[str, str, str, str], list[sqlite3.Row]] = {}
+        scope_ejercicio = str(scope.get("ejercicio") or "").strip()
+        for row in rows:
+            key = (
+                " ".join(str(row["tipo_auditoria"] or "").split()).lower(),
+                " ".join(str(row["fuente_financiamiento"] or "").split()).lower(),
+                normalize_solventacion_periodo_key(scope_ejercicio, str(row["periodo_cedula"] or "")),
+                " ".join(str(row["tipo_anexo"] or "").split()).upper(),
+            )
+            grouped_rows.setdefault(key, []).append(row)
+
+        normalized_import_rows: list[dict[str, object]] = []
+        for index, item in enumerate(raw_rows, start=1):
+            if not isinstance(item, dict):
+                return jsonify({"ok": False, "error": f"El bloque {index} es inválido."}), 400
+            tipo_auditoria = " ".join(str(item.get("tipo_auditoria") or item.get("tipoAuditoria") or "").split())
+            fuente = " ".join(str(item.get("fuente_financiamiento") or item.get("fuente_nombre") or "").split())
+            periodo = " ".join(str(item.get("periodo") or "").split())
+            tipo_anexo = " ".join(str(item.get("tipo_anexo") or "").split()).upper()
+            emitidas = int(item.get("emitidas") or 0)
+            solventadas = _parse_solventacion_progressive_numbers(item.get("solventadas_indices") or [])
+            pendientes = _parse_solventacion_progressive_numbers(item.get("pendientes_indices") or [])
+            if not tipo_auditoria or not fuente or not periodo or not tipo_anexo:
+                return jsonify({"ok": False, "error": f"El bloque {index} debe incluir tipo, fuente, periodo y anexo."}), 400
+            if emitidas < 0:
+                return jsonify({"ok": False, "error": f"El bloque {index} incluye una cantidad emitida inválida."}), 400
+            if emitidas == 0 and (solventadas or pendientes):
+                return jsonify({"ok": False, "error": f"El bloque {index} no puede incluir progresivos si las emitidas son 0."}), 400
+            overlap = sorted(set(solventadas) & set(pendientes))
+            if overlap:
+                return jsonify({"ok": False, "error": f"El bloque {index} repite números en solventadas y pendientes: {', '.join(map(str, overlap))}."}), 400
+            if emitidas > 0:
+                expected_numbers = set(range(1, emitidas + 1))
+                received_numbers = set(solventadas) | set(pendientes)
+                if received_numbers != expected_numbers:
+                    missing = sorted(expected_numbers - received_numbers)
+                    extras = sorted(received_numbers - expected_numbers)
+                    parts = []
+                    if missing:
+                        parts.append(f"faltan {', '.join(map(str, missing))}")
+                    if extras:
+                        parts.append(f"sobran {', '.join(map(str, extras))}")
+                    return jsonify({"ok": False, "error": f"El bloque {index} no cubre exactamente las emitidas: {'; '.join(parts)}."}), 400
+            normalized_import_rows.append(
+                {
+                    "tipo_auditoria": tipo_auditoria,
+                    "fuente": fuente,
+                    "periodo": periodo,
+                    "tipo_anexo": tipo_anexo,
+                    "emitidas": emitidas,
+                    "solventadas": solventadas,
+                    "pendientes": pendientes,
+                }
+            )
+
+        updates: list[tuple[str, int, int]] = []
+        touched_ids: list[int] = []
+        for item in normalized_import_rows:
+            key = (
+                str(item["tipo_auditoria"]).lower(),
+                str(item["fuente"]).lower(),
+                normalize_solventacion_periodo_key(scope_ejercicio, str(item["periodo"])),
+                str(item["tipo_anexo"]).upper(),
+            )
+            target_rows = list(grouped_rows.get(key) or [])
+            if not target_rows:
+                if int(item["emitidas"]) == 0:
+                    continue
+                return jsonify(
+                    {
+                        "ok": False,
+                        "error": (
+                            "No se encontró el bloque "
+                            f"{item['tipo_auditoria']} / {item['fuente']} / {item['periodo']} / {item['tipo_anexo']}"
+                        ),
+                    }
+                ), 400
+            if int(item["emitidas"]) == 0:
+                return jsonify(
+                    {
+                        "ok": False,
+                        "error": (
+                            "El bloque "
+                            f"{item['tipo_auditoria']} / {item['fuente']} / {item['periodo']} / {item['tipo_anexo']} "
+                            f"marca 0 emitidas, pero el oficio actual tiene {len(target_rows)} observaciones."
+                        ),
+                    }
+                ), 400
+            if len(target_rows) != int(item["emitidas"]):
+                return jsonify(
+                    {
+                        "ok": False,
+                        "error": (
+                            "El bloque "
+                            f"{item['tipo_auditoria']} / {item['fuente']} / {item['periodo']} / {item['tipo_anexo']} "
+                            f"espera {item['emitidas']} observaciones y el oficio actual tiene {len(target_rows)}."
+                        ),
+                    }
+                ), 400
+            solventadas_set = set(item["solventadas"])
+            for number, row in enumerate(target_rows, start=1):
+                estado = "Solventado" if number in solventadas_set else "Pendiente"
+                updates.append((estado, number, int(row["id"])))
+                touched_ids.append(int(row["id"]))
+
+        if not updates:
+            return jsonify({"ok": False, "error": "No se generaron cambios para aplicar."}), 400
+
+        backup_path = _create_db_snapshot("observaciones-solventacion-importar")
+        db.executemany(
+            """
+            UPDATE observaciones
+            SET estado = ?,
+                numero_observacion = ?
+            WHERE id = ?
+            """,
+            updates,
+        )
+        db.commit()
+        return jsonify(
+            {
+                "ok": True,
+                "updated": len(touched_ids),
+                "blocks": len(normalized_import_rows),
+                "backup_path": backup_path,
+            }
+        )
 
     @app.post("/carga/observaciones-admin/<int:observacion_id>/borrar")
     @gabo_required

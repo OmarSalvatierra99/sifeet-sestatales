@@ -142,6 +142,62 @@
         </div>
       </section>
 
+      <section class="obs-admin-summary-card" id="obsAdminSolventacionImportCard">
+        <div class="panel-header panel-header-compact">
+          <h3>Cargar oficio de solventación</h3>
+          <p>Sube un PDF o pega JSON para preparar el bloque y editar los números progresivos antes de aplicarlo al oficio actual.</p>
+        </div>
+        <details class="manual-resumen-json-import" id="obsAdminSolventacionImportDetails" open>
+          <summary>Subir PDF de resultados de solventación</summary>
+          <p class="helper">
+            Sube el PDF individual del oficio de solventación para extraer las observaciones y preparar los números progresivos
+            exactamente sobre este oficio bloqueado.
+          </p>
+          <div class="oficio-upload-zone" id="obsAdminSolventacionUploadZone">
+            <input type="file" id="obsAdminSolventacionPdfInput" accept=".pdf" hidden>
+            <span class="oficio-upload-icon">📄</span>
+            <p>Arrastra aquí el PDF de resultados de solventación</p>
+            <p>o <button class="oficio-upload-link" type="button" id="obsAdminSolventacionBrowseBtn">selecciona un archivo</button></p>
+            <p class="oficio-file-name" id="obsAdminSolventacionFileName" hidden></p>
+          </div>
+          <div class="manual-resumen-json-actions">
+            <button type="button" class="btn-secondary btn-compact" id="obsAdminSolventacionClearBtn" style="display:none;">Limpiar</button>
+          </div>
+          <details class="oficio-json-fallback">
+            <summary class="helper">Pegar JSON manualmente</summary>
+            <textarea
+              id="obsAdminSolventacionJsonInput"
+              rows="8"
+              spellcheck="false"
+              placeholder='{
+  "rows": [
+    {
+      "tipo_auditoria": "Financiera",
+      "fuente_nombre": "Participaciones Estatales",
+      "periodo": "01 de Enero al 30 de Junio",
+      "solventacion_totales_by_anexo": {
+        "SA": {
+          "emitidas": 20,
+          "solventadas_indices": [1,2],
+          "pendientes_indices": [3,4]
+        }
+      }
+    }
+  ]
+}'
+            ></textarea>
+            <div class="manual-resumen-json-actions">
+              <button type="button" class="btn-secondary btn-compact" id="obsAdminSolventacionJsonApplyBtn">Cargar JSON</button>
+              <button type="button" class="btn-secondary btn-compact" id="obsAdminSolventacionJsonClearBtn">Limpiar texto</button>
+            </div>
+          </details>
+          <p class="helper manual-resumen-json-feedback" id="obsAdminSolventacionImportFeedback"></p>
+        </details>
+        <div id="obsAdminSolventacionEditor" class="obs-admin-summary-body">
+          <p class="muted">Carga un PDF o JSON para editar y aplicar los números progresivos del oficio.</p>
+        </div>
+      </section>
+
       <div id="obsAdminStatus" class="status status-info" hidden></div>
 
       <div class="table-meta">
@@ -320,6 +376,17 @@
     const safetyScopeChip = document.getElementById("obsAdminSafetyScopeChip");
     const summaryBody = document.getElementById("obsAdminSummaryBody");
     const amountSummaryBody = document.getElementById("obsAdminAmountSummaryBody");
+    const solventacionImportDetails = document.getElementById("obsAdminSolventacionImportDetails");
+    const solventacionUploadZone = document.getElementById("obsAdminSolventacionUploadZone");
+    const solventacionPdfInput = document.getElementById("obsAdminSolventacionPdfInput");
+    const solventacionBrowseBtn = document.getElementById("obsAdminSolventacionBrowseBtn");
+    const solventacionFileName = document.getElementById("obsAdminSolventacionFileName");
+    const solventacionClearBtn = document.getElementById("obsAdminSolventacionClearBtn");
+    const solventacionJsonInput = document.getElementById("obsAdminSolventacionJsonInput");
+    const solventacionJsonApplyBtn = document.getElementById("obsAdminSolventacionJsonApplyBtn");
+    const solventacionJsonClearBtn = document.getElementById("obsAdminSolventacionJsonClearBtn");
+    const solventacionImportFeedback = document.getElementById("obsAdminSolventacionImportFeedback");
+    const solventacionEditor = document.getElementById("obsAdminSolventacionEditor");
     const saveFilteredBtn = document.getElementById("obsAdminSaveFilteredBtn");
     const solveAllBtn = document.getElementById("obsAdminSolveAllBtn");
     const pendingAllBtn = document.getElementById("obsAdminPendingAllBtn");
@@ -363,6 +430,9 @@
     let originalRowsSnapshot = new Map();
     let confirmModalResolver = null;
     let confirmModalFocusTarget = null;
+    let solventacionImportRows = [];
+    let solventacionImportFile = null;
+    let isSolventacionImportProcessing = false;
 
     const escapeHtml = (value) => (
       String(value || "")
@@ -381,6 +451,12 @@
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       });
+    };
+
+    const setSolventacionImportFeedback = (message = "", level = "info") => {
+      if (!solventacionImportFeedback) return;
+      solventacionImportFeedback.textContent = String(message || "").trim();
+      solventacionImportFeedback.dataset.level = level;
     };
 
     const formatCount = (value) => (
@@ -811,6 +887,252 @@
     const parsePositiveInt = (value) => {
       const parsed = Number.parseInt(String(value || "").trim(), 10);
       return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    };
+
+    const normalizeProgressiveList = (values) => {
+      if (!Array.isArray(values)) {
+        return [];
+      }
+      const seen = new Set();
+      const numbers = [];
+      values.forEach((value) => {
+        const parsed = parsePositiveInt(value);
+        if (!parsed || seen.has(parsed)) return;
+        seen.add(parsed);
+        numbers.push(parsed);
+      });
+      numbers.sort((a, b) => a - b);
+      return numbers;
+    };
+
+    const parseProgressiveText = (rawValue) => {
+      const raw = String(rawValue || "").trim();
+      if (!raw || raw === "0") {
+        return [];
+      }
+      return normalizeProgressiveList(
+        raw.split(/[,\s;|]+/g).filter(Boolean)
+      );
+    };
+
+    const formatProgressiveList = (values) => {
+      const numbers = normalizeProgressiveList(values);
+      return numbers.length ? numbers.join(",") : "0";
+    };
+
+    const normalizeSolventacionImportRows = (payload) => {
+      const sourceRows = Array.isArray(payload)
+        ? payload
+        : (payload && Array.isArray(payload.rows) ? payload.rows : []);
+      const rows = [];
+      sourceRows.forEach((row) => {
+        const tipoAuditoria = normalizeTipoAuditoria(
+          row && (row.tipo_auditoria || row.tipoAuditoria || row.tipo || "Financiera")
+        );
+        const fuente = String((row && (row.fuente_nombre || row.fuente_financiamiento || row.fuente || "")) || "").trim();
+        const periodo = String((row && row.periodo) || "").trim();
+        const totals = row && typeof row.solventacion_totales_by_anexo === "object"
+          ? row.solventacion_totales_by_anexo
+          : {};
+        ["SA", "PDP", "PRAS", "PEFCF", "R"].forEach((anexo) => {
+          const item = totals && typeof totals[anexo] === "object" ? totals[anexo] : {};
+          const emitidas = parsePositiveInt(item && (item.emitidas ?? item.emitido ?? 0));
+          const solventadas = normalizeProgressiveList(item && item.solventadas_indices);
+          const pendientes = normalizeProgressiveList(item && item.pendientes_indices);
+          if (!fuente || !periodo) {
+            return;
+          }
+          rows.push({
+            source_index: rows.length,
+            tipo_auditoria: tipoAuditoria,
+            fuente_financiamiento: fuente,
+            periodo,
+            tipo_anexo: anexo,
+            emitidas,
+            solventadas_text: formatProgressiveList(solventadas),
+            pendientes_text: formatProgressiveList(pendientes),
+          });
+        });
+      });
+      rows.sort((a, b) => {
+        const tipoCmp = (tipoSortOrder[a.tipo_auditoria] || 99) - (tipoSortOrder[b.tipo_auditoria] || 99);
+        if (tipoCmp !== 0) return tipoCmp;
+        const fuenteCmp = a.fuente_financiamiento.localeCompare(b.fuente_financiamiento, "es", { sensitivity: "base" });
+        if (fuenteCmp !== 0) return fuenteCmp;
+        const periodoCmp = a.periodo.localeCompare(b.periodo, "es", { sensitivity: "base" });
+        if (periodoCmp !== 0) return periodoCmp;
+        return (anexoSortOrder[a.tipo_anexo] || 99) - (anexoSortOrder[b.tipo_anexo] || 99);
+      });
+      return rows;
+    };
+
+    const renderSolventacionImportTable = () => {
+      if (!solventacionImportRows.length) {
+        return "";
+      }
+      const groupedByTipo = new Map();
+      solventacionImportRows.forEach((row) => {
+        const tipo = normalizeTipoAuditoria(row.tipo_auditoria);
+        const tipoKey = tipo.toLowerCase();
+        if (!groupedByTipo.has(tipoKey)) {
+          groupedByTipo.set(tipoKey, { tipo, fuentes: new Map() });
+        }
+        const tipoEntry = groupedByTipo.get(tipoKey);
+        const fuenteKey = `${String(row.fuente_financiamiento || "").trim().toLowerCase()}||${String(row.periodo || "").trim().toLowerCase()}`;
+        if (!tipoEntry.fuentes.has(fuenteKey)) {
+          tipoEntry.fuentes.set(fuenteKey, {
+            fuente: String(row.fuente_financiamiento || "").trim() || "-",
+            periodo: String(row.periodo || "").trim() || "-",
+            rows: [],
+          });
+        }
+        tipoEntry.fuentes.get(fuenteKey).rows.push(row);
+      });
+
+      const orderedTipos = Array.from(groupedByTipo.values()).sort((a, b) => {
+        const orderA = tipoSortOrder[a.tipo] || 99;
+        const orderB = tipoSortOrder[b.tipo] || 99;
+        if (orderA !== orderB) return orderA - orderB;
+        return a.tipo.localeCompare(b.tipo, "es", { sensitivity: "base" });
+      });
+
+      return orderedTipos.map((tipoEntry, tipoIndex) => {
+        let totalEmitidas = 0;
+        let totalSolventadas = 0;
+        let totalPendientes = 0;
+        const bodyParts = [];
+        Array.from(tipoEntry.fuentes.values()).forEach((group) => {
+          const rows = group.rows.slice().sort((a, b) => (anexoSortOrder[a.tipo_anexo] || 99) - (anexoSortOrder[b.tipo_anexo] || 99));
+          const rowSpan = rows.length + 1;
+          let renderedFuente = false;
+          let renderedPeriodo = false;
+          let subtotalEmitidas = 0;
+          let subtotalSolventadas = 0;
+          let subtotalPendientes = 0;
+          rows.forEach((row) => {
+            const emitidas = parsePositiveInt(row.emitidas);
+            const solventadasList = parseProgressiveText(row.solventadas_text);
+            const pendientesList = parseProgressiveText(row.pendientes_text);
+            const solventadasTotal = solventadasList.length;
+            const pendientesTotal = pendientesList.length;
+            subtotalEmitidas += emitidas;
+            subtotalSolventadas += solventadasTotal;
+            subtotalPendientes += pendientesTotal;
+            totalEmitidas += emitidas;
+            totalSolventadas += solventadasTotal;
+            totalPendientes += pendientesTotal;
+            const cells = [];
+            if (!renderedFuente) {
+              cells.push(`<td rowspan="${rowSpan}" class="obs-admin-summary-group-cell">${escapeHtml(group.fuente)}</td>`);
+              renderedFuente = true;
+            }
+            if (!renderedPeriodo) {
+              cells.push(`<td rowspan="${rowSpan}" class="obs-admin-summary-group-cell">${escapeHtml(group.periodo)}</td>`);
+              renderedPeriodo = true;
+            }
+            cells.push(`<td>${escapeHtml(row.tipo_anexo)}</td>`);
+            cells.push(`<td>${emitidas}</td>`);
+            cells.push(`<td><strong>${solventadasTotal}</strong></td>`);
+            cells.push(
+              `<td>` +
+                `<input type="text" class="obs-admin-inline-input" data-solv-field="solventadas" value="${escapeHtml(row.solventadas_text || "0")}" placeholder="1,2,3" ${emitidas <= 0 ? "disabled" : ""}>` +
+              `</td>`
+            );
+            cells.push(`<td><strong>${pendientesTotal}</strong></td>`);
+            cells.push(
+              `<td>` +
+                `<input type="text" class="obs-admin-inline-input" data-solv-field="pendientes" value="${escapeHtml(row.pendientes_text || "0")}" placeholder="4,5,6" ${emitidas <= 0 ? "disabled" : ""}>` +
+              `</td>`
+            );
+            bodyParts.push(`<tr data-solv-import-row="${row.source_index}">${cells.join("")}</tr>`);
+          });
+          bodyParts.push(
+            `<tr class="obs-admin-summary-subtotal">` +
+              `<th class="obs-admin-summary-subtotal-label">SUBTOTAL</th>` +
+              `<th>${subtotalEmitidas}</th>` +
+              `<th>${subtotalSolventadas}</th>` +
+              `<th></th>` +
+              `<th>${subtotalPendientes}</th>` +
+              `<th></th>` +
+            `</tr>`
+          );
+        });
+        bodyParts.push(
+          `<tr class="obs-admin-summary-total">` +
+            `<th>TOTAL</th>` +
+            `<th></th>` +
+            `<th></th>` +
+            `<th>${totalEmitidas}</th>` +
+            `<th>${totalSolventadas}</th>` +
+            `<th></th>` +
+            `<th>${totalPendientes}</th>` +
+            `<th></th>` +
+          `</tr>`
+        );
+        return (
+          `<div class="obs-admin-summary-section">` +
+            `<h4>${escapeHtml(formatTipoSectionTitle(tipoEntry.tipo, tipoIndex))}</h4>` +
+            `<div class="obs-admin-summary-table-wrap">` +
+              `<table class="obs-admin-summary-table">` +
+                `<thead>` +
+                  `<tr>` +
+                    `<th>Nombre de la Fuente de Financiamiento</th>` +
+                    `<th>Periodo</th>` +
+                    `<th>Anexo</th>` +
+                    `<th>Acciones Emitidas</th>` +
+                    `<th>Solventadas - Total</th>` +
+                    `<th>Solventadas - Número Progresivo</th>` +
+                    `<th>No Solventadas - Total</th>` +
+                    `<th>No Solventadas - Número Progresivo</th>` +
+                  `</tr>` +
+                `</thead>` +
+                `<tbody>${bodyParts.join("")}</tbody>` +
+              `</table>` +
+            `</div>` +
+          `</div>`
+        );
+      }).join("");
+    };
+
+    const renderSolventacionImportEditor = () => {
+      if (!solventacionEditor) {
+        return;
+      }
+      if (!solventacionImportRows.length) {
+        solventacionEditor.innerHTML = '<p class="muted">Carga un PDF o JSON para revisar el oficio y aplicar los números progresivos marcados.</p>';
+        return;
+      }
+      solventacionEditor.innerHTML = (
+        `<div class="manual-resumen-json-actions">` +
+          `<button type="button" class="btn-secondary btn-compact" id="obsAdminSolventacionClearRowsBtn">Eliminar todas</button>` +
+          `<button type="button" class="btn-primary btn-compact" id="obsAdminSolventacionApplyBtn">Aplicar al oficio actual</button>` +
+        `</div>` +
+        `<div class="panel-header panel-header-compact" style="padding-top:0.5rem;">` +
+          `<h4>Tabla editable del oficio para comparación</h4>` +
+          `<p>Se muestra con el formato del PDF. Solo se aplican los números progresivos marcados; las filas con 0 permanecen informativas.</p>` +
+        `</div>` +
+        `${renderSolventacionImportTable()}`
+      );
+    };
+
+    const collectSolventacionImportRows = () => {
+      const rows = [];
+      Array.from(solventacionEditor ? solventacionEditor.querySelectorAll("tr[data-solv-import-row]") : []).forEach((rowElement) => {
+        const sourceIndex = Number.parseInt(String(rowElement.getAttribute("data-solv-import-row") || ""), 10);
+        const source = Number.isInteger(sourceIndex) && sourceIndex >= 0 ? (solventacionImportRows[sourceIndex] || {}) : {};
+        const solventadasInput = rowElement.querySelector('[data-solv-field="solventadas"]');
+        const pendientesInput = rowElement.querySelector('[data-solv-field="pendientes"]');
+        rows.push({
+          tipo_auditoria: String(source.tipo_auditoria || "").trim() || "Financiera",
+          fuente_financiamiento: String(source.fuente_financiamiento || "").trim(),
+          periodo: String(source.periodo || "").trim(),
+          tipo_anexo: normalizeTipoAnexo(source.tipo_anexo || ""),
+          emitidas: parsePositiveInt(source.emitidas),
+          solventadas_indices: parseProgressiveText(solventadasInput ? solventadasInput.value : source.solventadas_text),
+          pendientes_indices: parseProgressiveText(pendientesInput ? pendientesInput.value : source.pendientes_text),
+        });
+      });
+      return rows;
     };
 
     const buildProgressiveText = (values) => {
@@ -1455,6 +1777,162 @@
       }
     };
 
+    const setSolventacionImportFile = (file) => {
+      if (!file || !file.name.toLowerCase().endsWith(".pdf")) {
+        setSolventacionImportFeedback("Solo se aceptan archivos PDF.", "error");
+        return;
+      }
+      solventacionImportFile = file;
+      if (solventacionFileName) {
+        solventacionFileName.textContent = file.name;
+        solventacionFileName.hidden = false;
+      }
+      if (solventacionUploadZone) {
+        solventacionUploadZone.classList.add("has-file");
+      }
+      if (solventacionClearBtn) {
+        solventacionClearBtn.style.display = "";
+      }
+      setSolventacionImportFeedback("PDF listo para procesar.", "info");
+    };
+
+    const clearSolventacionImport = () => {
+      solventacionImportFile = null;
+      solventacionImportRows = [];
+      if (solventacionPdfInput) solventacionPdfInput.value = "";
+      if (solventacionFileName) solventacionFileName.hidden = true;
+      if (solventacionUploadZone) solventacionUploadZone.classList.remove("has-file", "processing", "drag-over");
+      if (solventacionClearBtn) solventacionClearBtn.style.display = "none";
+      if (solventacionJsonInput) solventacionJsonInput.value = "";
+      setSolventacionImportFeedback("", "info");
+      renderSolventacionImportEditor();
+    };
+
+    const processSolventacionImportPayload = (payload) => {
+      const rows = normalizeSolventacionImportRows(payload);
+      if (!rows.length) {
+        setSolventacionImportFeedback("El archivo no contiene bloques válidos para este oficio.", "error");
+        return;
+      }
+      solventacionImportRows = rows;
+      renderSolventacionImportEditor();
+      setSolventacionImportFeedback(`Bloques cargados: ${rows.length}. Revisa los números progresivos antes de aplicar.`, "success");
+      if (solventacionImportDetails && "open" in solventacionImportDetails) {
+        solventacionImportDetails.open = false;
+      }
+    };
+
+    const processSolventacionImportPdf = async () => {
+      const filters = readFilters();
+      if (!solventacionImportFile) {
+        setSolventacionImportFeedback("Selecciona un PDF antes de continuar.", "error");
+        return;
+      }
+      if (!filters.ejercicio || !filters.ente_id) {
+        setSolventacionImportFeedback("El oficio debe tener ejercicio y ente activos antes de procesar el PDF.", "error");
+        return;
+      }
+      isSolventacionImportProcessing = true;
+      if (solventacionUploadZone) solventacionUploadZone.classList.add("processing");
+      setSolventacionImportFeedback("Procesando PDF...", "info");
+      const form = new FormData();
+      form.append("file", solventacionImportFile);
+      form.append("ejercicio", filters.ejercicio);
+      form.append("ente_id", filters.ente_id);
+      try {
+        const response = await fetch("/api/solventacion/procesar", {
+          method: "POST",
+          body: form,
+        });
+        const payload = await response.json();
+        if (!response.ok || payload.error) {
+          throw new Error(payload.error || "No se pudo procesar el PDF.");
+        }
+        processSolventacionImportPayload(payload);
+      } catch (error) {
+        setSolventacionImportFeedback(error && error.message ? error.message : "Error al procesar el PDF.", "error");
+      } finally {
+        isSolventacionImportProcessing = false;
+        if (solventacionUploadZone) solventacionUploadZone.classList.remove("processing");
+      }
+    };
+
+    const applySolventacionImportRows = async () => {
+      const filters = readFilters();
+      if (!hasEditableOfficeScope(filters)) {
+        showStatus("Selecciona un oficio editable antes de aplicar la carga de solventación.", "error");
+        return;
+      }
+      const rows = collectSolventacionImportRows();
+      if (!rows.length) {
+        setSolventacionImportFeedback("No hay bloques preparados para aplicar.", "error");
+        return;
+      }
+      const confirmed = await showConfirmModal({
+        title: "Confirmar aplicación del oficio de solventación",
+        subtitle: "Se actualizarán estado y número progresivo de las observaciones del oficio actual.",
+        metaItems: [
+          { label: "Ejercicio", value: filters.ejercicio || "-" },
+          { label: "Oficio", value: filters.oficio || "-" },
+          { label: "Bloques", value: formatCount(rows.length) },
+        ],
+        highlightItems: [
+          { label: "Observaciones afectadas", value: formatCount(rows.reduce((acc, item) => acc + (item.emitidas || 0), 0)), tone: "warning" },
+        ],
+        showSummary: false,
+        previewTitle: "Vista previa de bloques",
+        previewColumns: [
+          { key: "tipo_auditoria", label: "Tipo" },
+          { key: "fuente_financiamiento", label: "Fuente" },
+          { key: "periodo", label: "Periodo" },
+          { key: "tipo_anexo", label: "Anexo" },
+          { key: "emitidas", label: "Emitidas", align: "right" },
+          { key: "solventadas", label: "Solventadas" },
+          { key: "pendientes", label: "Pendientes" },
+        ],
+        previewRows: rows.map((item) => ({
+          ...item,
+          solventadas: formatProgressiveList(item.solventadas_indices),
+          pendientes: formatProgressiveList(item.pendientes_indices),
+        })),
+        warningText: "ATENCION: esta acción reordenará el número progresivo del bloque y marcará cada observación como Solventado o Pendiente.",
+        confirmLabel: "Aplicar cambios del oficio",
+        cancelLabel: "Seguir revisando",
+        triggerButton: solventacionEditor ? solventacionEditor.querySelector("#obsAdminSolventacionApplyBtn") : null,
+        fallbackMessage: "¿Confirmas aplicar la carga del oficio de solventación?",
+      });
+      if (!confirmed) {
+        return;
+      }
+      setSolventacionImportFeedback("Aplicando cambios del oficio...", "info");
+      try {
+        const response = await fetch("/carga/observaciones-admin/solventacion-importar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            scope: {
+              ejercicio: filters.ejercicio,
+              ente_id: filters.ente_id,
+              oficio: filters.oficio,
+              tipo_auditoria: filters.tipo_auditoria,
+            },
+            rows,
+          }),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error || "No se pudo aplicar el oficio de solventación.");
+        }
+        await fetchRows({ announce: false });
+        clearSolventacionImport();
+        setSolventacionImportFeedback(`Oficio aplicado correctamente. Observaciones actualizadas: ${payload.updated || 0}.`, "success");
+        showStatus(`Oficio de solventación aplicado: ${payload.updated || 0} observación(es).`, "success");
+      } catch (error) {
+        setSolventacionImportFeedback(error && error.message ? error.message : "No se pudo aplicar el oficio.", "error");
+        showStatus(error && error.message ? error.message : "No se pudo aplicar el oficio.", "error");
+      }
+    };
+
     const renderSummaryByOficio = (rows) => {
       if (!summaryBody) {
         return;
@@ -1576,7 +2054,7 @@
               const solventadasIndices = [];
               const noSolventadasIndices = [];
               items.forEach((item, index) => {
-                const progressive = index + 1;
+                const progressive = parsePositiveInt(item.numero_observacion) || (index + 1);
                 if (normalizeEstado(item.estado) === "Solventado") {
                   solventadasIndices.push(progressive);
                 } else {
@@ -3122,6 +3600,109 @@
         closePdpQuickModal();
       }
     });
+
+    if (solventacionBrowseBtn) {
+      solventacionBrowseBtn.addEventListener("click", () => {
+        if (solventacionPdfInput) solventacionPdfInput.click();
+      });
+    }
+
+    if (solventacionUploadZone) {
+      solventacionUploadZone.addEventListener("click", (event) => {
+        if (event.target === solventacionBrowseBtn) return;
+        if (solventacionPdfInput && event.target !== solventacionPdfInput) {
+          solventacionPdfInput.click();
+        }
+      });
+      solventacionUploadZone.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        solventacionUploadZone.classList.add("drag-over");
+      });
+      solventacionUploadZone.addEventListener("dragleave", () => {
+        solventacionUploadZone.classList.remove("drag-over");
+      });
+      solventacionUploadZone.addEventListener("drop", async (event) => {
+        event.preventDefault();
+        solventacionUploadZone.classList.remove("drag-over");
+        const file = event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files[0] : null;
+        if (!file) return;
+        setSolventacionImportFile(file);
+        await processSolventacionImportPdf();
+      });
+    }
+
+    if (solventacionPdfInput) {
+      solventacionPdfInput.addEventListener("change", async () => {
+        const file = solventacionPdfInput.files && solventacionPdfInput.files[0] ? solventacionPdfInput.files[0] : null;
+        if (!file) return;
+        setSolventacionImportFile(file);
+        await processSolventacionImportPdf();
+      });
+    }
+
+    if (solventacionClearBtn) {
+      solventacionClearBtn.addEventListener("click", () => {
+        clearSolventacionImport();
+      });
+    }
+
+    if (solventacionJsonClearBtn) {
+      solventacionJsonClearBtn.addEventListener("click", () => {
+        if (solventacionJsonInput) solventacionJsonInput.value = "";
+        setSolventacionImportFeedback("", "info");
+      });
+    }
+
+    if (solventacionJsonApplyBtn) {
+      solventacionJsonApplyBtn.addEventListener("click", () => {
+        const raw = String(solventacionJsonInput ? solventacionJsonInput.value : "").trim();
+        if (!raw) {
+          setSolventacionImportFeedback("Pega un JSON antes de cargarlo.", "error");
+          return;
+        }
+        try {
+          const payload = JSON.parse(raw);
+          processSolventacionImportPayload(payload);
+        } catch (_error) {
+          setSolventacionImportFeedback("El contenido pegado no es un JSON válido.", "error");
+        }
+      });
+    }
+
+    if (solventacionEditor) {
+      solventacionEditor.addEventListener("click", async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (target.id === "obsAdminSolventacionClearRowsBtn") {
+          solventacionImportRows = [];
+          renderSolventacionImportEditor();
+          return;
+        }
+        if (target.id === "obsAdminSolventacionApplyBtn") {
+          await applySolventacionImportRows();
+        }
+      });
+      solventacionEditor.addEventListener("input", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        const rowElement = target.closest("tr[data-solv-import-row]");
+        if (!rowElement) return;
+        const rowIndex = Number.parseInt(String(rowElement.getAttribute("data-solv-import-row") || ""), 10);
+        if (!Number.isInteger(rowIndex) || !solventacionImportRows[rowIndex]) return;
+        const field = target.getAttribute("data-solv-field");
+        if (field === "solventadas") {
+          solventacionImportRows[rowIndex].solventadas_text = String(target.value || "");
+        } else if (field === "pendientes") {
+          solventacionImportRows[rowIndex].pendientes_text = String(target.value || "");
+        }
+      });
+      solventacionEditor.addEventListener("change", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (!target.matches('[data-solv-field="solventadas"], [data-solv-field="pendientes"]')) return;
+        renderSolventacionImportEditor();
+      });
+    }
 
     if (tableBody) {
       tableBody.addEventListener("change", (event) => {
