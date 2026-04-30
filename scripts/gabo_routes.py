@@ -5223,7 +5223,9 @@ def register_gabo_routes(app, deps):
                 TRIM(COALESCE(periodo_cedula, '')) AS periodo_cedula,
                 TRIM(COALESCE(tipo_anexo, '')) AS tipo_anexo,
                 COALESCE(numero_observacion, 0) AS numero_observacion,
-                TRIM(COALESCE(estado, '')) AS estado
+                TRIM(COALESCE(estado, '')) AS estado,
+                COALESCE(monto_pdp_emitido, 0) AS monto_pdp_emitido,
+                COALESCE(monto_pdp_solventado, 0) AS monto_pdp_solventado
             FROM observaciones
             WHERE {where_sql}
             ORDER BY
@@ -5348,15 +5350,49 @@ def register_gabo_routes(app, deps):
             return jsonify({"ok": False, "error": "No se generaron cambios para aplicar."}), 400
 
         backup_path = _create_db_snapshot("observaciones-solventacion-importar")
-        db.executemany(
-            """
-            UPDATE observaciones
-            SET estado = ?,
-                numero_observacion = ?
-            WHERE id = ?
-            """,
-            updates,
-        )
+        current_rows_by_id = {int(row["id"]): row for row in rows}
+        for estado, numero_observacion, observacion_id in updates:
+            current = current_rows_by_id.get(observacion_id)
+            if current is None:
+                continue
+            if str(current["tipo_anexo"] or "").strip().upper() == "PDP":
+                monto_emitido = float(current["monto_pdp_emitido"] or 0.0)
+                monto_solventado_actual = float(current["monto_pdp_solventado"] or 0.0)
+                monto_solventado = (
+                    monto_emitido
+                    if estado == "Solventado"
+                    else min(max(monto_solventado_actual, 0.0), monto_emitido)
+                )
+                monto_pendiente = max(0.0, monto_emitido - monto_solventado)
+                db.execute(
+                    """
+                    UPDATE observaciones
+                    SET estado = ?,
+                        numero_observacion = ?,
+                        monto_pdp_solventado = ?,
+                        monto_pdp_pendiente = ?,
+                        monto = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        estado,
+                        numero_observacion,
+                        monto_solventado,
+                        monto_pendiente,
+                        monto_emitido,
+                        observacion_id,
+                    ),
+                )
+            else:
+                db.execute(
+                    """
+                    UPDATE observaciones
+                    SET estado = ?,
+                        numero_observacion = ?
+                    WHERE id = ?
+                    """,
+                    (estado, numero_observacion, observacion_id),
+                )
         db.commit()
         return jsonify(
             {

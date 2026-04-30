@@ -483,6 +483,32 @@
       return clean;
     };
 
+    const isEstadoSolventado = (value) => normalizeEstado(value) === "Solventado";
+
+    const resolvePdpSolventadoAmount = (row) => {
+      const emitido = Number.parseFloat(String((row && row.monto_pdp_emitido) || "0"));
+      const solventado = Number.parseFloat(String((row && row.monto_pdp_solventado) || "0"));
+      const safeEmitido = Number.isFinite(emitido) ? Math.max(0, emitido) : 0;
+      if (isEstadoSolventado(row && row.estado)) {
+        return safeEmitido;
+      }
+      const safeSolventado = Number.isFinite(solventado) ? Math.max(0, solventado) : 0;
+      return Math.min(safeSolventado, safeEmitido);
+    };
+
+    const resolvePdpPendienteAmount = (row) => {
+      const emitido = Number.parseFloat(String((row && row.monto_pdp_emitido) || "0"));
+      const safeEmitido = Number.isFinite(emitido) ? Math.max(0, emitido) : 0;
+      const pendienteRaw = Number.parseFloat(String((row && row.monto_pdp_pendiente) || "0"));
+      if (isEstadoSolventado(row && row.estado)) {
+        return 0;
+      }
+      if (Number.isFinite(pendienteRaw)) {
+        return Math.max(0, Math.min(pendienteRaw, safeEmitido));
+      }
+      return Math.max(0, safeEmitido - resolvePdpSolventadoAmount(row));
+    };
+
     const normalizeTipoAuditoriaForFilter = (value) => {
       const clean = String(value || "").trim();
       if (!clean) return "";
@@ -1814,9 +1840,15 @@
         setSolventacionImportFeedback("El archivo no contiene bloques válidos para este oficio.", "error");
         return;
       }
+      const hasPdpRows = rows.some((row) => normalizeTipoAnexo(row && row.tipo_anexo) === "PDP" && Number(row.emitidas || 0) > 0);
       solventacionImportRows = rows;
       renderSolventacionImportEditor();
-      setSolventacionImportFeedback(`Bloques cargados: ${rows.length}. Revisa los números progresivos antes de aplicar.`, "success");
+      setSolventacionImportFeedback(
+        hasPdpRows
+          ? `Bloques cargados: ${rows.length}. Revisa los progresivos; al aplicar, los PDP solventados quedarán con monto completo y después podrás afinar pendientes con la carga rápida PDP.`
+          : `Bloques cargados: ${rows.length}. Revisa los números progresivos antes de aplicar.`,
+        "success",
+      );
       if (solventacionImportDetails && "open" in solventacionImportDetails) {
         solventacionImportDetails.open = false;
       }
@@ -2179,13 +2211,9 @@
         }
         const target = grouped.get(key);
         const emitido = Number.parseFloat(String(row.monto_pdp_emitido || "0"));
-        const solventado = Number.parseFloat(String(row.monto_pdp_solventado || "0"));
-        const pendienteRaw = Number.parseFloat(String(row.monto_pdp_pendiente || "0"));
         const safeEmitido = Number.isFinite(emitido) && emitido > 0 ? emitido : 0;
-        const safeSolventado = Number.isFinite(solventado) && solventado > 0 ? solventado : 0;
-        const safePendiente = Number.isFinite(pendienteRaw)
-          ? Math.max(0, pendienteRaw)
-          : Math.max(0, safeEmitido - safeSolventado);
+        const safeSolventado = resolvePdpSolventadoAmount(row);
+        const safePendiente = resolvePdpPendienteAmount(row);
         target.emitido += safeEmitido;
         target.solventado += safeSolventado;
         target.pendiente += safePendiente;
@@ -2592,19 +2620,20 @@
         return;
       }
       const selectedAnexo = String(filterTipoAnexoInput ? filterTipoAnexoInput.value : "").trim().toUpperCase();
-      if (!selectedAnexo) {
-        showStatus("Selecciona Tipo de anexo para guardar cambios del bloque.", "info");
-        return;
-      }
 
       const visibleRows = Array.from(
         tableBody ? tableBody.querySelectorAll("tr[data-observacion-id]") : []
       );
-      const matchingRows = visibleRows.filter(
-        (row) => normalizeTipoAnexo(row.dataset.tipoAnexo || "") === selectedAnexo
-      );
+      const matchingRows = selectedAnexo
+        ? visibleRows.filter((row) => normalizeTipoAnexo(row.dataset.tipoAnexo || "") === selectedAnexo)
+        : visibleRows;
       if (!matchingRows.length) {
-        showStatus("No hay observaciones visibles para guardar con el anexo seleccionado.", "info");
+        showStatus(
+          selectedAnexo
+            ? "No hay observaciones visibles para guardar con el anexo seleccionado."
+            : "No hay observaciones visibles para guardar con los filtros actuales.",
+          "info",
+        );
         return;
       }
 
@@ -2640,12 +2669,17 @@
           tipoAuditoria: normalizeTipoAuditoria(sourceRow && sourceRow.tipo_auditoria),
           fuente: String((sourceRow && sourceRow.fuente_financiamiento) || "").trim() || "-",
           periodo: String((sourceRow && sourceRow.periodo_cedula) || "").trim() || "-",
-          isPdp: selectedAnexo === "PDP",
+          isPdp: normalizeTipoAnexo(sourceRow && sourceRow.tipo_anexo) === "PDP",
         });
       }
 
       if (!pendingUpdates.length) {
-        showStatus("No hay cambios pendientes por guardar para el anexo seleccionado.", "info");
+        showStatus(
+          selectedAnexo
+            ? "No hay cambios pendientes por guardar para el anexo seleccionado."
+            : "No hay cambios pendientes por guardar con los filtros actuales.",
+          "info",
+        );
         return;
       }
 
@@ -2671,7 +2705,7 @@
         { label: "Estado final Pendiente", value: formatCount(estadoSummary.Pendiente), align: "right" },
         { label: "Estado final Solventado", value: formatCount(estadoSummary.Solventado), align: "right" },
       ];
-      if (selectedAnexo === "PDP") {
+      if (pdpMontoChanges.length) {
         summaryRows.push(
           { label: "Montos PDP modificados", value: formatCount(pdpMontoChanges.length), align: "right" },
           { label: "Monto PDP antes", value: formatMoney(pdpMontoAntes), align: "right" },
@@ -2688,7 +2722,7 @@
         { key: "estadoAntes", label: "Estado antes" },
         { key: "estadoAhora", label: "Estado ahora" },
       ];
-      if (selectedAnexo === "PDP") {
+      if (pdpMontoChanges.length) {
         previewColumns.push(
           { key: "montoAntes", label: "Monto PDP antes", align: "right" },
           { key: "montoAhora", label: "Monto PDP ahora", align: "right" },
@@ -2709,17 +2743,19 @@
 
       const confirmed = await showConfirmModal({
         title: "Confirmar guardado por filtros",
-        subtitle: "Se guardarán cambios en bloque para las observaciones visibles del anexo seleccionado.",
+        subtitle: selectedAnexo
+          ? "Se guardarán cambios en bloque para las observaciones visibles del anexo seleccionado."
+          : "Se guardarán cambios en bloque para todas las observaciones visibles.",
         metaItems: [
           { label: "Ejercicio", value: filters.ejercicio || "-" },
           { label: "Ente", value: enteLabel },
           { label: "Oficio", value: filters.oficio || "-" },
-          { label: "Tipo de anexo", value: selectedAnexo || "-" },
+          { label: "Tipo de anexo", value: selectedAnexo || "Todos los visibles" },
         ],
         highlightItems: [
           { label: "Registros a guardar", value: formatCount(pendingUpdates.length), tone: "default" },
           { label: "Cambios de estado", value: formatCount(estadoChanges), tone: "default" },
-          selectedAnexo === "PDP"
+          pdpMontoChanges.length
             ? { label: "Cambios de monto PDP", value: formatCount(pdpMontoChanges.length), tone: "warning" }
             : null,
         ],
@@ -2728,13 +2764,15 @@
         previewTitle: `Vista previa (${formatCount(previewRows.length)} de ${formatCount(pendingUpdates.length)} registros)`,
         previewColumns,
         previewRows,
-        warningText: selectedAnexo === "PDP"
+        warningText: pdpMontoChanges.length
           ? "Confirma con cuidado: además del estado se actualizarán montos PDP."
           : "Confirma con cuidado: esta acción guardará cambios en lote para el bloque filtrado.",
         confirmLabel: "Guardar cambios",
         cancelLabel: "Revisar nuevamente",
         triggerButton: saveFilteredBtn,
-        fallbackMessage: `¿Confirmas guardar ${pendingUpdates.length} cambios del anexo ${selectedAnexo}?`,
+        fallbackMessage: selectedAnexo
+          ? `¿Confirmas guardar ${pendingUpdates.length} cambios del anexo ${selectedAnexo}?`
+          : `¿Confirmas guardar ${pendingUpdates.length} cambios visibles?`,
       });
       if (!confirmed) {
         return;
@@ -2786,15 +2824,7 @@
     };
 
     const parsePdpPendingAmount = (row) => {
-      const emitido = Number.parseFloat(String((row && row.monto_pdp_emitido) || "0"));
-      const solventado = Number.parseFloat(String((row && row.monto_pdp_solventado) || "0"));
-      const pendienteRaw = Number.parseFloat(String((row && row.monto_pdp_pendiente) || "0"));
-      if (Number.isFinite(pendienteRaw)) {
-        return Math.max(0, pendienteRaw);
-      }
-      const safeEmitido = Number.isFinite(emitido) ? emitido : 0;
-      const safeSolventado = Number.isFinite(solventado) ? solventado : 0;
-      return Math.max(0, safeEmitido - safeSolventado);
+      return resolvePdpPendienteAmount(row);
     };
 
     const parsePdpEmitidoAmount = (row) => {
@@ -2803,8 +2833,7 @@
     };
 
     const parsePdpSolventadoAmount = (row) => {
-      const solventado = Number.parseFloat(String((row && row.monto_pdp_solventado) || "0"));
-      return Number.isFinite(solventado) ? Math.max(0, solventado) : 0;
+      return resolvePdpSolventadoAmount(row);
     };
 
     const buildBulkActionConfirmData = (rows, action = "solventar", options = {}) => {

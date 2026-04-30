@@ -259,3 +259,124 @@ def test_solventacion_import_ignores_zero_blocks_without_matching_observaciones(
         ).fetchall()
 
     assert rows == [(1, "Pendiente"), (2, "Solventado"), (3, "Pendiente")]
+
+
+def test_solventacion_import_normalizes_pdp_amounts_for_solventadas(solventacion_client, tmp_path):
+    client = solventacion_client
+    db_path = tmp_path / "solventacion_import.db"
+    now = datetime.now(UTC).isoformat(timespec="seconds")
+
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO observaciones (
+                ejercicio,
+                ente_id,
+                ente_numero,
+                ente_nombre,
+                tipo_auditoria,
+                fuente_financiamiento,
+                ramo_33,
+                periodo_cedula,
+                periodo_titular,
+                oficio,
+                fecha_notificacion,
+                tipo_anexo,
+                numero_observacion,
+                estado,
+                monto_pdp_emitido,
+                monto_pdp_solventado,
+                monto_pdp_pendiente,
+                monto,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    "2025",
+                    "27",
+                    "27",
+                    "Unidad de Servicios Educativos del Estado de Tlaxcala (USET)",
+                    "Financiera",
+                    "Participaciones Estatales",
+                    "No",
+                    "01 de Enero al 31 de Marzo",
+                    "01 de Enero al 31 de Marzo",
+                    "OFS/0646/2026",
+                    "2026-02-10",
+                    "PDP",
+                    1,
+                    "Emitido",
+                    120.50,
+                    0.0,
+                    0.0,
+                    120.50,
+                    now,
+                ),
+                (
+                    "2025",
+                    "27",
+                    "27",
+                    "Unidad de Servicios Educativos del Estado de Tlaxcala (USET)",
+                    "Financiera",
+                    "Participaciones Estatales",
+                    "No",
+                    "01 de Enero al 31 de Marzo",
+                    "01 de Enero al 31 de Marzo",
+                    "OFS/0646/2026",
+                    "2026-02-10",
+                    "PDP",
+                    2,
+                    "Emitido",
+                    80.0,
+                    15.0,
+                    65.0,
+                    80.0,
+                    now,
+                ),
+            ],
+        )
+
+    response = client.post(
+        "/carga/observaciones-admin/solventacion-importar",
+        json={
+            "scope": {
+                "ejercicio": "2025",
+                "ente_id": "27",
+                "oficio": "OFS/0646/2026",
+                "tipo_auditoria": "Financiera",
+            },
+            "rows": [
+                {
+                    "tipo_auditoria": "Financiera",
+                    "fuente_financiamiento": "Participaciones Estatales",
+                    "periodo": "01 de Enero al 31 de Marzo",
+                    "tipo_anexo": "PDP",
+                    "emitidas": 2,
+                    "solventadas_indices": [1],
+                    "pendientes_indices": [2],
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["updated"] == 2
+
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT numero_observacion, estado, monto_pdp_emitido, monto_pdp_solventado, monto_pdp_pendiente
+            FROM observaciones
+            WHERE ejercicio = '2025' AND ente_id = '27' AND oficio = 'OFS/0646/2026'
+            ORDER BY numero_observacion
+            """
+        ).fetchall()
+
+    assert rows == [
+        (1, "Solventado", 120.5, 120.5, 0.0),
+        (2, "Pendiente", 80.0, 15.0, 65.0),
+    ]
