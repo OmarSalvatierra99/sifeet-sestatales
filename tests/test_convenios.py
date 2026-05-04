@@ -19,9 +19,35 @@ def client():
 def test_parse_cedula_detects_obra_convenios_without_duplicate_child_group():
     payload = parse_cedula(Path("examples/1.16.- SI_OFS_0342_2026_Ene-Jun.pdf"))
 
-    obra = next(item for item in payload["auditorias"] if item["tipo"] == "Obra Pública")
-    convenios = [fuente for fuente in obra["fuentes"] if fuente.get("modalidad") == "Convenio"]
+    auditorias = {item["tipo"]: item for item in payload["auditorias"]}
+    obra = auditorias["Obra Pública"]
+    convenios_section = auditorias["Convenios"]
+    convenios = convenios_section["fuentes"]
 
+    assert auditorias["Financiera"]["totales"] == {
+        "SA": 12,
+        "PDP": 2,
+        "PRAS": 2,
+        "PEFCF": 0,
+        "R": 8,
+        "total_emitidas": 24,
+    }
+    assert obra["totales"] == {
+        "SA": 0,
+        "PDP": 79,
+        "PRAS": 13,
+        "PEFCF": 0,
+        "R": 0,
+        "total_emitidas": 92,
+    }
+    assert convenios_section["totales"] == {
+        "SA": 1,
+        "PDP": 8,
+        "PRAS": 1,
+        "PEFCF": 0,
+        "R": 0,
+        "total_emitidas": 10,
+    }
     assert len(convenios) == 3
     assert {
         fuente["convenio_ente_nombre"] for fuente in convenios
@@ -36,6 +62,40 @@ def test_parse_cedula_detects_obra_convenios_without_duplicate_child_group():
         for registro in fuente["registros"]
         for tipo in ("SA", "PDP", "PRAS", "PEFCF", "R")
     ) == 10
+
+
+def test_parse_cedula_keeps_itife_financial_continuation_before_obra_header():
+    payload = parse_cedula(Path("examples/19.- ITIFE_OFS_0328_2026_Ene-Jun.pdf"))
+
+    auditorias = {item["tipo"]: item for item in payload["auditorias"]}
+    financiera = auditorias["Financiera"]
+    obra = auditorias["Obra Pública"]
+    convenios = auditorias["Convenios"]
+
+    assert financiera["totales"] == {
+        "SA": 24,
+        "PDP": 8,
+        "PRAS": 6,
+        "PEFCF": 5,
+        "R": 11,
+        "total_emitidas": 54,
+    }
+    assert obra["totales"] == {
+        "SA": 35,
+        "PDP": 66,
+        "PRAS": 15,
+        "PEFCF": 0,
+        "R": 0,
+        "total_emitidas": 116,
+    }
+    assert convenios["totales"] == {
+        "SA": 0,
+        "PDP": 10,
+        "PRAS": 4,
+        "PEFCF": 0,
+        "R": 0,
+        "total_emitidas": 14,
+    }
 
 
 def test_gabo_manual_save_materializes_convenio_scope(client, monkeypatch, tmp_path):
@@ -137,6 +197,113 @@ def test_gabo_manual_save_materializes_convenio_scope(client, monkeypatch, tmp_p
         "convenio_ente_id": "33",
         "convenio_ente_nombre": "TRIBUNAL DE JUSTICIA ADMINISTRATIVA DEL ESTADO DE TLAXCALA",
     }
+
+
+def test_gabo_manual_save_replaces_partial_multi_source_oficio(client, monkeypatch, tmp_path):
+    import app as app_module
+
+    test_db_path = tmp_path / "replace_partial_save.db"
+    monkeypatch.setattr(app_module, "DB_PATH", str(test_db_path))
+    app_module.init_db()
+
+    conn = sqlite3.connect(test_db_path)
+    try:
+        conn.execute(
+            """
+            INSERT INTO entes_detalle (
+                ente_id, ejercicio, ente_numero, ente_nombre,
+                responsable, clasificacion, ramo33, ramo28, created_at
+            )
+            VALUES ('1.3', '2025', '1.3', 'Secretaría de Finanzas (SF)', '', '', 'No', 'No', 'now')
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    first_row = [
+        {
+            "tipo_auditoria": "Financiera",
+            "fuente_nombre": "PARTICIPACIONES ESTATALES (FONDO GENERAL DE PARTICIPACIONES)",
+            "periodo": "01 de Enero al 20 de Marzo",
+            "cantidad_sa": 0,
+            "cantidad_pdp": 0,
+            "cantidad_pras": 0,
+            "cantidad_pefcf": 0,
+            "cantidad_r": 1,
+        }
+    ]
+    full_rows = first_row + [
+        {
+            "tipo_auditoria": "Financiera",
+            "fuente_nombre": "PARTICIPACIONES ESTATALES (FONDO GENERAL DE PARTICIPACIONES)",
+            "periodo": "21 de Marzo al 16 de Septiembre",
+            "cantidad_sa": 1,
+            "cantidad_pdp": 0,
+            "cantidad_pras": 0,
+            "cantidad_pefcf": 0,
+            "cantidad_r": 0,
+        }
+    ]
+
+    with client.session_transaction() as session_data:
+        session_data["user"] = "gabo"
+        session_data["role"] = "loader"
+
+    base_form = {
+        "action": "manual_save",
+        "manual_ente_id": "1.3",
+        "manual_tipo_auditoria": "Financiera",
+        "manual_numero_oficio": "OFS/1142/2026",
+        "manual_asunto": "Notificación de Cédula de Resultados",
+        "manual_ejercicio": "2025",
+        "manual_periodo": "01 de Enero al 20 de Marzo",
+        "manual_fecha_notificacion": "2026-05-04",
+        "manual_fuente_id": "__new__",
+        "manual_fuente_nueva": "PARTICIPACIONES ESTATALES (FONDO GENERAL DE PARTICIPACIONES)",
+        "manual_pdp_detalle_json": "[]",
+    }
+
+    response = client.post(
+        "/carga",
+        data={**base_form, "manual_fuentes_detalle_json": json.dumps(first_row, ensure_ascii=False)},
+    )
+    assert response.status_code == 200
+
+    response = client.post(
+        "/carga",
+        data={**base_form, "manual_fuentes_detalle_json": json.dumps(full_rows, ensure_ascii=False)},
+    )
+    assert response.status_code == 200
+
+    conn = sqlite3.connect(test_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        cargas_count = conn.execute("SELECT COUNT(*) AS total FROM cargas_manuales").fetchone()["total"]
+        observaciones = conn.execute(
+            """
+            SELECT periodo_cedula, tipo_anexo, COUNT(*) AS total
+            FROM observaciones
+            GROUP BY periodo_cedula, tipo_anexo
+            ORDER BY periodo_cedula, tipo_anexo
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert cargas_count == 2
+    assert [dict(row) for row in observaciones] == [
+        {
+            "periodo_cedula": "01 de Enero al 20 de Marzo",
+            "tipo_anexo": "R",
+            "total": 1,
+        },
+        {
+            "periodo_cedula": "21 de Marzo al 16 de Septiembre",
+            "tipo_anexo": "SA",
+            "total": 1,
+        },
+    ]
 
 
 def test_gabo_manual_save_uses_fuente_catalog_classification(client, monkeypatch, tmp_path):

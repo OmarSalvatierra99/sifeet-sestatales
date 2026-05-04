@@ -8,7 +8,6 @@
   <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
 </head>
 <body class="loader-page" data-loader-mode="{{ initial_loader_mode }}" data-current-user="{{ user.username }}">
-  {% set user_display_names = {'luis': 'C.P Luis Felipe Camilo Fuentes', 'gabo': 'Ing. Omar Gabriel Salvatierra Garcia'} %}
   <header class="site-header">
     <div class="header-inner">
       <img src="{{ url_for('static', filename='img/ofs_logo.png') }}" alt="Logo institucional" class="ofs-logo">
@@ -20,7 +19,7 @@
       <div class="header-badge user-badge">
         <div class="user-meta">
           <span>Usuario</span>
-          <strong>{{ user_display_names.get(user.username, user.username) }}</strong>
+          <strong>{{ user.display_name|default(user.username, true) }}</strong>
         </div>
         <div class="user-actions">
           <form
@@ -334,6 +333,23 @@
                   </div>
                 </details>
                 <p class="helper manual-resumen-json-feedback" id="manualResumenJsonFeedback"></p>
+              </details>
+              <details class="manual-resumen-json-import" id="manualPdpExcelImport">
+                <summary>Cargar detalle PDP desde Excel</summary>
+                <p class="helper">
+                  El archivo debe incluir TIPO DE FUENTE, F.F, PERIODO, SUBTIPO DE AUDITORIA, NUMERAL, CONCEPTO PDP y MONTO PDP.
+                </p>
+                <div class="oficio-upload-zone" id="pdpExcelUploadZone">
+                  <input type="file" id="pdpExcelInput" accept=".xlsx" hidden>
+                  <span class="oficio-upload-icon">📊</span>
+                  <p>Arrastra aquí el Excel de detalle PDP</p>
+                  <p>o <button class="oficio-upload-link" type="button">selecciona un archivo</button></p>
+                  <p class="oficio-file-name" id="pdpExcelFileName" hidden></p>
+                </div>
+                <div class="manual-resumen-json-actions">
+                  <button type="button" class="btn-secondary btn-compact" id="pdpExcelClearBtn" style="display:none">Limpiar</button>
+                </div>
+                <p class="helper manual-resumen-json-feedback" id="manualPdpExcelFeedback"></p>
               </details>
               <div id="manualResumenFuentesBody" class="manual-resumen-table">
                 <p class="helper">Agrega fuentes para generar el resumen.</p>
@@ -924,10 +940,16 @@
     const manualResumenJsonFeedback = document.getElementById("manualResumenJsonFeedback");
     const manualResumenFuentesSection = document.getElementById("manualResumenFuentesSection");
     const manualSolventacionPdfSection = document.getElementById("manualSolventacionPdfSection");
+    const manualPdpExcelImport = document.getElementById("manualPdpExcelImport");
     const oficioUploadZone = document.getElementById("oficioUploadZone");
     const oficioPdfInput = document.getElementById("oficioPdfInput");
     const oficioFileName = document.getElementById("oficioFileName");
     const oficioClearBtn = document.getElementById("oficioClearBtn");
+    const pdpExcelUploadZone = document.getElementById("pdpExcelUploadZone");
+    const pdpExcelInput = document.getElementById("pdpExcelInput");
+    const pdpExcelFileName = document.getElementById("pdpExcelFileName");
+    const pdpExcelClearBtn = document.getElementById("pdpExcelClearBtn");
+    const manualPdpExcelFeedback = document.getElementById("manualPdpExcelFeedback");
     const solventacionUploadZone = document.getElementById("solventacionUploadZone");
     const solventacionPdfInput = document.getElementById("solventacionPdfInput");
     const solventacionFileName = document.getElementById("solventacionFileName");
@@ -942,8 +964,10 @@
     const gaboDeleteOficioCancelBtn = document.getElementById("gaboDeleteOficioCancelBtn");
     const gaboDeleteOficioConfirmBtn = document.getElementById("gaboDeleteOficioConfirmBtn");
     let oficioSelectedFile = null;
+    let pdpExcelSelectedFile = null;
     let solventacionSelectedFile = null;
     let isOficioPdfProcessing = false;
+    let isPdpExcelProcessing = false;
     let isSolventacionPdfProcessing = false;
     let pendingDeleteOficioRow = null;
     let pendingDeleteOficioButton = null;
@@ -2827,6 +2851,11 @@
           cantidad_pras: Math.max(0, Number.parseInt(String(item.cantidad_pras || "0"), 10) || 0),
           cantidad_pefcf: Math.max(0, Number.parseInt(String(item.cantidad_pefcf || "0"), 10) || 0),
           cantidad_r: Math.max(0, Number.parseInt(String(item.cantidad_r || "0"), 10) || 0),
+          pdp_numerales: Array.isArray(item.pdp_numerales)
+            ? item.pdp_numerales
+              .map((value) => Number.parseInt(String(value || "").trim(), 10))
+              .filter((value) => Number.isFinite(value) && value > 0)
+            : [],
         }));
       } catch (_error) {
         return [];
@@ -3628,15 +3657,33 @@
       }
       const touchedLocalIndices = new Set();
       const implicitEntries = [];
+      const explicitEntries = entries.filter((entry) => entry && entry.targetIndex !== null);
+      const explicitMode = explicitEntries.length
+        ? (
+          explicitEntries.every((entry) => (
+            Number.isFinite(Number(entry.targetIndex))
+            && Number(entry.targetIndex) >= 0
+            && Number(entry.targetIndex) < scope.count
+          ))
+            ? "local"
+            : explicitEntries.every((entry) => (
+              Number.isFinite(Number(entry.targetIndex))
+              && Number(entry.targetIndex) >= scope.start
+              && Number(entry.targetIndex) <= scope.end
+            ))
+              ? "absolute"
+              : "mixed"
+        )
+        : "local";
       for (const entry of entries) {
         if (entry.targetIndex === null) {
           implicitEntries.push(entry);
           continue;
         }
-        let localTarget = Number(entry.targetIndex);
-        if (localTarget >= scope.start && localTarget <= scope.end) {
-          localTarget = localTarget - scope.start;
-        }
+        const parsedTarget = Number(entry.targetIndex);
+        let localTarget = explicitMode === "absolute"
+          ? parsedTarget - scope.start
+          : parsedTarget;
         if (!Number.isFinite(localTarget) || localTarget < 0 || localTarget >= scope.count) {
           const message = `La observación PDP ${entry.targetIndex + 1} no existe para esta fuente/periodo.`;
           setInlinePdpBulkFeedback(idx, message, "error");
@@ -3696,31 +3743,60 @@
       showWizardToast(message, "success");
     };
 
-    const renderPdpInlineEditor = (rowIndex, normalizedPdp, scope) => {
+    const getPdpMontoDuplicateKeys = (state) => {
+      const counts = new Map();
+      (Array.isArray(state) ? state : []).forEach((item) => {
+        const monto = parseMoneyInput(item && item.monto);
+        if (monto === null) {
+          return;
+        }
+        const key = monto.toFixed(2);
+        counts.set(key, (counts.get(key) || 0) + 1);
+      });
+      const duplicates = new Set();
+      counts.forEach((count, key) => {
+        if (count > 1) {
+          duplicates.add(key);
+        }
+      });
+      return duplicates;
+    };
+
+    const renderPdpInlineEditor = (rowIndex, normalizedPdp, scope, duplicateMontoKeys = new Set()) => {
       if (!scope || scope.count <= 0) {
         return '<span class="muted">—</span>';
       }
       const entries = [];
       let completeCount = 0;
+      let duplicateCount = 0;
       for (let localIdx = 0; localIdx < scope.count; localIdx += 1) {
         const absIdx = scope.start + localIdx;
         const detail = normalizedPdp[absIdx] || { concepto: "", monto: "" };
         const concepto = String(detail.concepto || "").trim();
         const montoParsed = parseMoneyInput(detail.monto);
+        const montoKey = montoParsed === null ? "" : montoParsed.toFixed(2);
+        const montoDuplicado = !!montoKey && duplicateMontoKeys.has(montoKey);
+        if (montoDuplicado) {
+          duplicateCount += 1;
+        }
         if (concepto && montoParsed !== null) {
           completeCount += 1;
         }
         entries.push(
-          `<div class="manual-resumen-pdp-item">` +
+          `<div class="manual-resumen-pdp-item${montoDuplicado ? " is-duplicate-monto" : ""}">` +
           `<span class="manual-resumen-pdp-index">PDP ${localIdx + 1}</span>` +
           `<select data-inline-pdp-concept="${absIdx}">${buildPdpConceptOptionsInline(concepto)}</select>` +
           `<input type="text" inputmode="decimal" data-inline-pdp-monto="${absIdx}" value="${escapeHtml(montoParsed === null ? "" : montoParsed.toFixed(2))}" placeholder="0.00">` +
+          `${montoDuplicado ? '<small class="manual-resumen-pdp-warning">Monto PDP repetido</small>' : ""}` +
           `</div>`
         );
       }
+      const duplicateSummary = duplicateCount
+        ? ` <span class="manual-resumen-pdp-summary-warning">${duplicateCount} monto(s) repetido(s)</span>`
+        : "";
       return (
-        `<details class="manual-resumen-pdp-details">` +
-        `<summary>${completeCount}/${scope.count} PDP capturadas</summary>` +
+        `<details class="manual-resumen-pdp-details${duplicateCount ? " has-duplicate-monto" : ""}">` +
+        `<summary>${completeCount}/${scope.count} PDP capturadas${duplicateSummary}</summary>` +
         `<div class="manual-resumen-pdp-list">${entries.join("")}</div>` +
         `<details class="manual-resumen-pdp-bulk">` +
         `<summary>Carga masiva</summary>` +
@@ -3759,6 +3835,8 @@
         return;
       }
       const normalizedPdp = ensurePdpDetalleAlignedToFuentes();
+      const duplicateMontoKeys = getPdpMontoDuplicateKeys(normalizedPdp);
+      const duplicateFuenteIndexes = getFuenteDuplicateIndexSet(fuentesDetalleState);
       const fuenteCatalog = collectManualFuenteCatalog();
       const periodCatalog = collectManualPeriodoCatalog();
       const fuenteOptionsHtml = fuenteCatalog
@@ -3856,6 +3934,7 @@
           const pefcf = parseResumenCountValue(row.cantidad_pefcf);
           const r = parseResumenCountValue(row.cantidad_r);
           const rowTotal = sa + pdp + pras + pefcf + r;
+          const isDuplicateFuente = duplicateFuenteIndexes.has(rowIndex);
           const scope = getPdpScopeByRowIndex(rowIndex);
           let rowMontoPdpEmitido = 0;
           for (let abs = scope.start; abs <= scope.end; abs += 1) {
@@ -3892,10 +3971,11 @@
             ? `<small class="manual-resumen-inline-help">Convenio de Obra Pública.</small>`
             : `<select data-row-field="tipo_auditoria" data-row-index="${rowIndex}" class="manual-resumen-tipo-select">${tipoOptionsHtml(resolveTipoWithinScope(row.tipo_auditoria))}</select>`;
           return (
-            `<tr data-row-index="${rowIndex}">` +
+            `<tr data-row-index="${rowIndex}"${isDuplicateFuente ? ' class="is-duplicate-source"' : ""}>` +
             `<td class="manual-resumen-cell-fuente">` +
             `<input type="text" list="manual_resumen_fuentes_options" data-row-field="fuente_nombre" data-row-index="${rowIndex}" value="${escapeHtml(fuenteNombre)}" placeholder="Selecciona o escribe fuente">` +
             `<small class="manual-resumen-inline-help">Selecciona fuente del catálogo o escribe una nueva.</small>` +
+            `${isDuplicateFuente ? '<small class="manual-resumen-duplicate-warning">Fuente repetida con el mismo periodo y tipo de auditoría.</small>' : ""}` +
             tipoControlHtml +
             `</td>` +
             convenioCellHtml +
@@ -3910,7 +3990,7 @@
             `<td class="col-anexo"><input class="manual-resumen-count-input" type="number" min="0" data-row-field="cantidad_r" data-row-index="${rowIndex}" value="${r}"></td>` +
             `<td><strong>${rowTotal}</strong></td>` +
             `<td><strong>${escapeHtml(formatMoney(rowMontoPdpEmitido))}</strong></td>` +
-            `<td>${renderPdpInlineEditor(rowIndex, normalizedPdp, scope)}</td>` +
+            `<td>${renderPdpInlineEditor(rowIndex, normalizedPdp, scope, duplicateMontoKeys)}</td>` +
             `<td class="manual-resumen-actions">` +
             `<button type="button" class="btn-secondary btn-compact" data-summary-remove-row="${rowIndex}">Eliminar</button>` +
             `</td>` +
@@ -4519,6 +4599,29 @@
       return duplicates;
     };
 
+    const getFuenteDuplicateIndexSet = (rows) => {
+      const groups = new Map();
+      (Array.isArray(rows) ? rows : []).forEach((row, idx) => {
+        const fuente = normalizeInlineText(row && row.fuente_nombre);
+        const periodo = normalizeInlineText(row && row.periodo);
+        if (!fuente || !periodo) {
+          return;
+        }
+        const key = buildFuenteDuplicateKey(row);
+        if (!groups.has(key)) {
+          groups.set(key, []);
+        }
+        groups.get(key).push(idx);
+      });
+      const duplicateIndexes = new Set();
+      groups.forEach((indexes) => {
+        if (indexes.length > 1) {
+          indexes.forEach((idx) => duplicateIndexes.add(idx));
+        }
+      });
+      return duplicateIndexes;
+    };
+
     const resumenPeriodoMonthLabels = {
       ene: "Enero",
       enero: "Enero",
@@ -4598,6 +4701,14 @@
       manualResumenJsonFeedback.dataset.level = level;
     };
 
+    const setManualPdpExcelFeedback = (message, level = "info") => {
+      if (!manualPdpExcelFeedback) {
+        return;
+      }
+      manualPdpExcelFeedback.textContent = String(message || "");
+      manualPdpExcelFeedback.dataset.level = level;
+    };
+
     const setManualSolventacionPdfFeedback = (message, level = "info") => {
       if (!manualSolventacionPdfFeedback) {
         return;
@@ -4661,6 +4772,19 @@
       return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
     };
 
+    const parseResumenJsonNumberList = (source, key) => {
+      const field = getResumenJsonField(source, key);
+      if (!field.found) {
+        return [];
+      }
+      const values = Array.isArray(field.value)
+        ? field.value
+        : String(field.value ?? "").split(/[\s,;|]+/);
+      return values
+        .map((value) => Number.parseInt(String(value ?? "").trim(), 10))
+        .filter((value) => Number.isFinite(value) && value > 0);
+    };
+
     const buildResumenJsonImportResult = (payload) => {
       const fallbackTipo = resolveCurrentOrDefaultTipoAuditoria();
       const rows = [];
@@ -4695,6 +4819,7 @@
           cantidad_pras: Math.max(0, Number.parseInt(String(row.cantidad_pras || 0), 10) || 0),
           cantidad_pefcf: Math.max(0, Number.parseInt(String(row.cantidad_pefcf || 0), 10) || 0),
           cantidad_r: Math.max(0, Number.parseInt(String(row.cantidad_r || 0), 10) || 0),
+          pdp_numerales: Array.isArray(row.pdp_numerales) ? row.pdp_numerales : [],
         };
         const totalRow = safeRow.cantidad_sa
           + safeRow.cantidad_pdp
@@ -4735,6 +4860,9 @@
             cantidad_pras: row.cantidad_pras ?? row.cantidadPras ?? row.PRAS ?? 0,
             cantidad_pefcf: row.cantidad_pefcf ?? row.cantidadPefcf ?? row.PEFCF ?? 0,
             cantidad_r: row.cantidad_r ?? row.cantidadR ?? row.R ?? 0,
+            pdp_numerales: Array.isArray(row.pdp_numerales)
+              ? row.pdp_numerales
+              : parseResumenJsonNumberList(row, "PDP"),
           });
         });
       } else {
@@ -4829,6 +4957,7 @@
               cantidad_pras: cantidadPras,
               cantidad_pefcf: cantidadPefcf,
               cantidad_r: cantidadR,
+              pdp_numerales: parseResumenJsonNumberList(registroItem, "PDP"),
             });
           });
         });
@@ -5040,6 +5169,441 @@
       showWizardToast(baseMessage, warnings.length ? "info" : "success");
     };
 
+    const normalizePdpExcelMatchKey = (value) => (
+      String(value || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim()
+        .replace(/\s+/g, " ")
+    );
+
+    const normalizePdpExcelSourceAliasKey = (value) => (
+      normalizePdpExcelMatchKey(value)
+        .replace(/\bremanentes de ejercicios anteriores\b/g, "rea")
+        .replace(/\bde ejercicios anteriores\b/g, "rea")
+        .replace(/\s+/g, " ")
+        .trim()
+    );
+
+    const stripPdpExcelSourceOrigin = (value) => (
+      normalizePdpExcelSourceAliasKey(value)
+        .replace(/^(?:rea|remanente|remanentes)\s+/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+    );
+
+    const stripPdpExcelSourceYears = (value) => (
+      String(value || "")
+        .replace(/\b20\d{2}\b/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+    );
+
+    const buildPdpExcelSourceMatchKeys = (value, { convenio = false } = {}) => {
+      const base = normalizePdpExcelMatchKey(value);
+      const alias = normalizePdpExcelSourceAliasKey(value);
+      const withoutOrigin = stripPdpExcelSourceOrigin(value);
+      const keys = [base, alias, withoutOrigin];
+      if (convenio) {
+        keys.push(stripPdpExcelSourceYears(base));
+        keys.push(stripPdpExcelSourceYears(alias));
+        keys.push(stripPdpExcelSourceYears(withoutOrigin));
+      }
+      return Array.from(new Set(keys.filter(Boolean)));
+    };
+
+    const pdpExcelSourceKeysMatch = (entryKeys, candidateKeys, { convenio = false } = {}) => (
+      entryKeys.some((entryKey) => candidateKeys.some((candidateKey) => {
+        if (!entryKey || !candidateKey) {
+          return false;
+        }
+        if (entryKey === candidateKey) {
+          return true;
+        }
+        return convenio && (
+          entryKey.includes(candidateKey) || candidateKey.includes(entryKey)
+        );
+      }))
+    );
+
+    const buildPdpExcelEntrySourceKeys = (entry, { convenio = false } = {}) => {
+      const values = [
+        entry && entry.fuente_nombre,
+        entry && entry.fuente_nombre_original,
+      ];
+      return Array.from(new Set(
+        values.reduce((acc, value) => acc.concat(buildPdpExcelSourceMatchKeys(value, { convenio })), [])
+          .filter(Boolean)
+      ));
+    };
+
+    const buildPdpExcelFuenteCandidates = (row) => {
+      const source = normalizeInlineText(row && row.fuente_nombre);
+      const convenio = normalizeInlineText(row && row.convenio_nombre);
+      const convenioEnte = normalizeInlineText(row && row.convenio_ente_nombre);
+      const candidates = [source];
+      if (convenio) {
+        candidates.push(`${convenio} ${source}`);
+        candidates.push(`CONVENIO: ${convenio} ${source}`);
+      }
+      if (convenioEnte) {
+        candidates.push(`${convenioEnte} ${source}`);
+      }
+      return Array.from(new Set(candidates.filter(Boolean)));
+    };
+
+    const pdpExcelConvenioMatches = (entry, row) => {
+      const entryConvenio = normalizeInlineText(entry && entry.convenio_nombre);
+      if (!entryConvenio) {
+        return true;
+      }
+      const rowConvenio = normalizeInlineText(row && row.convenio_nombre);
+      if (!rowConvenio) {
+        return false;
+      }
+      const entryKeys = buildPdpExcelSourceMatchKeys(entryConvenio, { convenio: true });
+      const rowKeys = buildPdpExcelSourceMatchKeys(rowConvenio, { convenio: true });
+      return pdpExcelSourceKeysMatch(entryKeys, rowKeys, { convenio: true });
+    };
+
+    const pdpExcelFuenteMatches = (entry, row) => {
+      const entryModalidad = normalizeInlineText(entry && entry.modalidad || "Fuente");
+      const entryIsConvenio = entryModalidad.toLowerCase() === "convenio";
+      const entryKeys = buildPdpExcelEntrySourceKeys(entry, {
+        convenio: entryIsConvenio,
+      });
+      if (!entryKeys.length) {
+        return false;
+      }
+      const rowModalidad = normalizeInlineText(row && row.modalidad || "Fuente");
+      const rowIsConvenio = rowModalidad.toLowerCase() === "convenio";
+      if (entryIsConvenio && !rowIsConvenio) {
+        return false;
+      }
+      if (!entryIsConvenio && rowIsConvenio) {
+        return false;
+      }
+      if (entryIsConvenio && !pdpExcelConvenioMatches(entry, row)) {
+        return false;
+      }
+      return buildPdpExcelFuenteCandidates(row).some((candidate) => {
+        const candidateKeys = buildPdpExcelSourceMatchKeys(candidate, {
+          convenio: entryIsConvenio,
+        });
+        return pdpExcelSourceKeysMatch(entryKeys, candidateKeys, {
+          convenio: entryIsConvenio,
+        });
+      });
+    };
+
+    const buildPdpExcelEntryGroupKey = (entry) => {
+      const modalidad = normalizeInlineText(entry && entry.modalidad || "Fuente");
+      const isConvenio = modalidad.toLowerCase() === "convenio";
+      const convenio = isConvenio
+        ? normalizePdpExcelMatchKey(entry && entry.convenio_nombre)
+        : "";
+      const sourceKeys = buildPdpExcelEntrySourceKeys(entry, { convenio: isConvenio });
+      return [
+        isConvenio ? "Convenio" : "Fuente",
+        normalizeTipoAuditoriaImportValue(entry && entry.tipo_auditoria),
+        normalizePeriodoMatchValue(entry && entry.periodo),
+        convenio,
+        sourceKeys[0] || "",
+      ].join("||");
+    };
+
+    const buildPdpExcelGroupNumerals = (entries) => {
+      const groups = new Map();
+      (Array.isArray(entries) ? entries : []).forEach((entry) => {
+        const key = buildPdpExcelEntryGroupKey(entry);
+        const numeral = Number.parseInt(String(entry && entry.numeral || "").trim(), 10);
+        if (!key || !Number.isFinite(numeral) || numeral <= 0) {
+          return;
+        }
+        if (!groups.has(key)) {
+          groups.set(key, new Set());
+        }
+        groups.get(key).add(numeral);
+      });
+      const normalized = new Map();
+      groups.forEach((set, key) => {
+        normalized.set(key, Array.from(set).sort((a, b) => a - b));
+      });
+      return normalized;
+    };
+
+    const getPdpExcelRowNumerales = (row) => (
+      Array.isArray(row && row.pdp_numerales)
+        ? row.pdp_numerales
+          .map((value) => Number.parseInt(String(value || "").trim(), 10))
+          .filter((value) => Number.isFinite(value) && value > 0)
+        : []
+    );
+
+    const resolvePdpExcelLocalIndex = (entry, row, count, groupNumerals = []) => {
+      const numeral = Number.parseInt(String(entry && entry.numeral || "").trim(), 10);
+      if (!Number.isFinite(numeral) || numeral <= 0 || count <= 0) {
+        return -1;
+      }
+      const numerales = getPdpExcelRowNumerales(row);
+      if (numerales.length) {
+        return numerales.indexOf(numeral);
+      }
+      const groupedIndex = (Array.isArray(groupNumerals) ? groupNumerals : []).indexOf(numeral);
+      if (groupedIndex >= 0 && groupedIndex < count) {
+        return groupedIndex;
+      }
+      return numeral <= count ? numeral - 1 : -1;
+    };
+
+    const scorePdpExcelScope = (row, count, groupNumerals) => {
+      if (getPdpExcelRowNumerales(row).length) {
+        return 100;
+      }
+      if (Array.isArray(groupNumerals) && groupNumerals.length === count) {
+        return 80;
+      }
+      if (Array.isArray(groupNumerals) && groupNumerals.length > 0 && groupNumerals.length < count) {
+        return 60;
+      }
+      return 10;
+    };
+
+    const findFirstAvailablePdpLocalIndex = (rowStart, count, touched) => {
+      for (let localIdx = 0; localIdx < count; localIdx += 1) {
+        if (!touched || !touched.has(rowStart + localIdx)) {
+          return localIdx;
+        }
+      }
+      return -1;
+    };
+
+    const findPdpExcelScope = (entry, { touched = null, groupNumerals = [] } = {}) => {
+      let start = 0;
+      const entryTipo = normalizeTipoAuditoriaImportValue(entry && entry.tipo_auditoria);
+      const entryPeriodo = normalizePeriodoMatchValue(entry && entry.periodo);
+      let numeralMismatch = "";
+      let duplicateMismatch = "";
+      const matches = [];
+      for (let rowIndex = 0; rowIndex < fuentesDetalleState.length; rowIndex += 1) {
+        const row = fuentesDetalleState[rowIndex] || {};
+        const count = parseResumenCountValue(row.cantidad_pdp);
+        const rowStart = start;
+        start += count;
+        if (count <= 0) {
+          continue;
+        }
+        const rowModalidad = normalizeInlineText(row && row.modalidad || "Fuente");
+        const rowIsConvenio = rowModalidad.toLowerCase() === "convenio";
+        const rowTipo = rowIsConvenio
+          ? "Obra Pública"
+          : normalizeTipoAuditoriaImportValue(row.tipo_auditoria);
+        const rowPeriodo = normalizePeriodoMatchValue(row.periodo);
+        if (entryTipo !== rowTipo || entryPeriodo !== rowPeriodo) {
+          continue;
+        }
+        if (!pdpExcelFuenteMatches(entry, row)) {
+          continue;
+        }
+        const rowNumerales = getPdpExcelRowNumerales(row);
+        const convenioSameCount = rowIsConvenio
+          && Array.isArray(groupNumerals)
+          && groupNumerals.length === count;
+        const localIndex = convenioSameCount || (rowIsConvenio && !rowNumerales.length)
+          ? findFirstAvailablePdpLocalIndex(rowStart, count, touched)
+          : resolvePdpExcelLocalIndex(entry, row, count, groupNumerals);
+        if (localIndex < 0 || localIndex >= count) {
+          if (!numeralMismatch) {
+            numeralMismatch = `Fila ${entry.row_number || "?"}: el numeral PDP ${entry.numeral} no existe para ${row.fuente_nombre} (${row.periodo}).`;
+          }
+          continue;
+        }
+        const absoluteIndex = rowStart + localIndex;
+        if (touched && touched.has(absoluteIndex)) {
+          if (!duplicateMismatch) {
+            duplicateMismatch = `Fila ${entry.row_number || "?"}: PDP repetida para ${row.fuente_nombre} (${row.periodo}) numeral ${entry.numeral}.`;
+          }
+          continue;
+        }
+        matches.push({
+          rowIndex,
+          row,
+          start: rowStart,
+          count,
+          localIndex,
+          absoluteIndex,
+          score: scorePdpExcelScope(row, count, groupNumerals),
+        });
+      }
+      if (matches.length) {
+        matches.sort((a, b) => {
+          if (b.score !== a.score) {
+            return b.score - a.score;
+          }
+          return a.rowIndex - b.rowIndex;
+        });
+        return matches[0];
+      }
+      if (numeralMismatch) {
+        return { error: numeralMismatch, reason: "numeral" };
+      }
+      if (duplicateMismatch) {
+        return { error: duplicateMismatch, reason: "duplicate" };
+      }
+      return {
+        error: `Fila ${entry && entry.row_number ? entry.row_number : "?"}: no se encontró fuente/periodo/tipo para "${entry && entry.fuente_nombre ? entry.fuente_nombre : ""}".`,
+        reason: "scope",
+      };
+    };
+
+    const countCompletePdpDetails = (state) => (
+      (Array.isArray(state) ? state : []).filter((item) => isPdpDetalleItemComplete(item)).length
+    );
+
+    const applyPdpExcelEntries = (entries) => {
+      const rows = Array.isArray(entries) ? entries : [];
+      const totalPdp = getTotalPdpTargetCount();
+      if (!Array.isArray(fuentesDetalleState) || !fuentesDetalleState.length || totalPdp <= 0) {
+        const message = "Primero carga el oficio PDF para tener fuentes y cantidad de PDP.";
+        setManualPdpExcelFeedback(message, "error");
+        showWizardToast(message, "error");
+        return;
+      }
+      if (!rows.length) {
+        const message = "El Excel no contiene detalle PDP para aplicar.";
+        setManualPdpExcelFeedback(message, "error");
+        showWizardToast(message, "error");
+        return;
+      }
+
+      const nextState = normalizePdpDetalleState(
+        totalPdp,
+        pdpDetalleState.length ? pdpDetalleState : parsePdpDetalleState(),
+      );
+      const touched = new Set();
+      const errors = [];
+      const groupNumeralsByKey = buildPdpExcelGroupNumerals(rows);
+      const errorStats = {
+        scope: 0,
+        numeral: 0,
+        duplicate: 0,
+        other: 0,
+      };
+      let matched = 0;
+      rows.forEach((entry) => {
+        const scope = findPdpExcelScope(entry, {
+          touched,
+          groupNumerals: groupNumeralsByKey.get(buildPdpExcelEntryGroupKey(entry)) || [],
+        });
+        if (!scope || scope.error) {
+          const reason = scope && scope.reason ? scope.reason : "other";
+          errorStats[reason] = (errorStats[reason] || 0) + 1;
+          errors.push(scope && scope.error ? scope.error : "No se pudo cruzar una fila del Excel.");
+          return;
+        }
+        if (touched.has(scope.absoluteIndex)) {
+          errorStats.duplicate += 1;
+          errors.push(`Fila ${entry.row_number || "?"}: PDP repetida para ${scope.row.fuente_nombre} (${scope.row.periodo}) numeral ${entry.numeral}.`);
+          return;
+        }
+        touched.add(scope.absoluteIndex);
+        nextState[scope.absoluteIndex] = {
+          concepto: normalizeInlineText(entry.concepto),
+          subconcepto: "",
+          monto: Number(entry.monto || 0).toFixed(2),
+        };
+        if (entry.origen_fuente) {
+          fuentesDetalleState[scope.rowIndex] = {
+            ...(fuentesDetalleState[scope.rowIndex] || {}),
+            origen_fuente: normalizeOrigenFuenteChoice(entry.origen_fuente, scope.row.fuente_nombre),
+          };
+        }
+        matched += 1;
+      });
+
+      if (!matched) {
+        const message = errors[0] || "No se pudo cruzar ninguna fila del Excel con el oficio actual.";
+        setManualPdpExcelFeedback(message, "error");
+        showWizardToast(message, "error");
+        return;
+      }
+
+      pdpDetalleState = nextState;
+      syncFuentesDetalleState();
+      syncPdpDetalleJson();
+      renderFuentesDetalleRows();
+      renderPdpDetalleMenu();
+      renderPdpBreakdown();
+      renderManualReviewSummary();
+      updateManualSaveState();
+      updateWizardModeAvailability();
+
+      const completedCount = countCompletePdpDetails(nextState);
+      const omittedCount = Math.max(0, rows.length - matched);
+      const duplicateMontoKeys = getPdpMontoDuplicateKeys(nextState);
+      const duplicateMontoText = duplicateMontoKeys.size
+        ? ` Montos PDP repetidos detectados: ${Array.from(duplicateMontoKeys).slice(0, 5).join(", ")}${duplicateMontoKeys.size > 5 ? "..." : ""}.`
+        : "";
+      const statsText = [
+        errorStats.scope ? `${errorStats.scope} sin fuente/periodo/tipo en este oficio` : "",
+        errorStats.numeral ? `${errorStats.numeral} con numeral PDP fuera de la fila encontrada` : "",
+        errorStats.duplicate ? `${errorStats.duplicate} repetida(s)` : "",
+        errorStats.other ? `${errorStats.other} con error de cruce` : "",
+      ].filter(Boolean).join("; ");
+      const warningText = errors.length
+        ? ` Omitidas: ${omittedCount}${statsText ? ` (${statsText})` : ""}. ${errors.slice(0, 4).join(" ")}${errors.length > 4 ? ` y ${errors.length - 4} aviso(s) más.` : ""}`
+        : "";
+      const message = `Detalle PDP cargado: ${matched} fila(s) aplicadas. Oficio actual: ${completedCount}/${totalPdp} PDP con detalle. Excel: ${rows.length} fila(s).${duplicateMontoText}${warningText}`;
+      setManualPdpExcelFeedback(message, errors.length ? "warning" : "success");
+      showWizardToast(
+        `Detalle PDP cargado: ${matched} fila(s).`,
+        errors.length ? "info" : "success",
+      );
+      if (manualPdpExcelImport && "open" in manualPdpExcelImport && !errors.length) {
+        manualPdpExcelImport.open = false;
+      }
+    };
+
+    const processPdpExcel = async () => {
+      if (!pdpExcelSelectedFile || isPdpExcelProcessing) {
+        return;
+      }
+      isPdpExcelProcessing = true;
+      if (pdpExcelUploadZone) pdpExcelUploadZone.classList.add("processing");
+      setManualPdpExcelFeedback("Procesando Excel PDP...", "info");
+
+      const form = new FormData();
+      form.append("pdp_file", pdpExcelSelectedFile);
+
+      try {
+        const res = await fetch("/carga/pdp-detalle-excel/preview", { method: "POST", body: form });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          const message = data.error || "Error desconocido al procesar el Excel PDP.";
+          setManualPdpExcelFeedback(message, "error");
+          showWizardToast(message, "error");
+        } else {
+          const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
+          applyPdpExcelEntries(Array.isArray(data.entries) ? data.entries : []);
+          if (warnings.length) {
+            setManualPdpExcelFeedback(
+              `${manualPdpExcelFeedback ? manualPdpExcelFeedback.textContent : ""} ${warnings.join(" ")}`.trim(),
+              "warning",
+            );
+          }
+        }
+      } catch (_err) {
+        const message = "Error de red al contactar el servidor.";
+        setManualPdpExcelFeedback(message, "error");
+        showWizardToast(message, "error");
+      } finally {
+        isPdpExcelProcessing = false;
+        if (pdpExcelUploadZone) pdpExcelUploadZone.classList.remove("processing");
+      }
+    };
+
     const processCedulaPdf = async () => {
       if (!oficioSelectedFile || isOficioPdfProcessing) {
         return;
@@ -5127,6 +5691,21 @@
       processCedulaPdf();
     };
 
+    const setPdpExcelFile = (file) => {
+      if (!file || !file.name.toLowerCase().endsWith(".xlsx")) {
+        setManualPdpExcelFeedback("Solo se aceptan archivos .xlsx.", "error");
+        return;
+      }
+      pdpExcelSelectedFile = file;
+      if (pdpExcelFileName) {
+        pdpExcelFileName.textContent = file.name;
+        pdpExcelFileName.hidden = false;
+      }
+      if (pdpExcelUploadZone) pdpExcelUploadZone.classList.add("has-file");
+      if (pdpExcelClearBtn) pdpExcelClearBtn.style.display = "";
+      processPdpExcel();
+    };
+
     const setSolventacionFile = (file) => {
       if (!file || !file.name.toLowerCase().endsWith(".pdf")) {
         setManualSolventacionPdfFeedback("Solo se aceptan archivos PDF.", "error");
@@ -5149,6 +5728,15 @@
       if (oficioUploadZone) oficioUploadZone.classList.remove("has-file");
       if (oficioClearBtn) oficioClearBtn.style.display = "none";
       setManualResumenJsonFeedback("", "info");
+    };
+
+    const clearPdpExcelUpload = () => {
+      pdpExcelSelectedFile = null;
+      if (pdpExcelInput) pdpExcelInput.value = "";
+      if (pdpExcelFileName) pdpExcelFileName.hidden = true;
+      if (pdpExcelUploadZone) pdpExcelUploadZone.classList.remove("has-file");
+      if (pdpExcelClearBtn) pdpExcelClearBtn.style.display = "none";
+      setManualPdpExcelFeedback("", "info");
     };
 
     const clearSolventacionUpload = () => {
@@ -7180,6 +7768,36 @@
     }
     if (oficioClearBtn) {
       oficioClearBtn.addEventListener("click", () => clearOficioUpload());
+    }
+    if (pdpExcelUploadZone) {
+      pdpExcelUploadZone.addEventListener("click", (e) => {
+        if (e.target === pdpExcelUploadZone || pdpExcelUploadZone.contains(e.target)) {
+          if (pdpExcelInput && e.target !== pdpExcelInput) pdpExcelInput.click();
+        }
+      });
+      pdpExcelUploadZone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        pdpExcelUploadZone.classList.add("drag-over");
+      });
+      pdpExcelUploadZone.addEventListener("dragleave", () => {
+        pdpExcelUploadZone.classList.remove("drag-over");
+      });
+      pdpExcelUploadZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        pdpExcelUploadZone.classList.remove("drag-over");
+        const file = e.dataTransfer && e.dataTransfer.files[0];
+        if (file) setPdpExcelFile(file);
+      });
+    }
+    if (pdpExcelInput) {
+      pdpExcelInput.addEventListener("change", () => {
+        if (pdpExcelInput.files && pdpExcelInput.files[0]) {
+          setPdpExcelFile(pdpExcelInput.files[0]);
+        }
+      });
+    }
+    if (pdpExcelClearBtn) {
+      pdpExcelClearBtn.addEventListener("click", () => clearPdpExcelUpload());
     }
     if (solventacionUploadZone) {
       solventacionUploadZone.addEventListener("click", (e) => {

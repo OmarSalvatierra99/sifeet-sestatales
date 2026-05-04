@@ -121,15 +121,23 @@ def _extract_solventacion_header(full_text):
 def _detect_audit_type(page_text):
     """Detecta el tipo de auditoría a partir del texto de la página."""
     t = page_text or ''
-    if re.search(r'[A-Z]\)\s*Auditor[íi]a\s+(?:de\s+Cumplimiento\s+de\s+)?Obra\s+[Pp][úu]blica', t):
+    if re.search(
+        r'[A-Z]\)\s*Auditor[íi]a\s+(?:de\s+)?(?:Cumplimiento\s+(?:de\s+)?)?Obra\s+[Pp][úu]blica',
+        t,
+        re.IGNORECASE,
+    ):
         return 'Obra Pública'
-    if re.search(r'[A-Z]\)\s*Auditor[íi]a\s+(?:de\s+Cumplimiento\s+)?Financier[ao]', t):
+    if re.search(
+        r'[A-Z]\)\s*Auditor[íi]a\s+(?:de\s+)?(?:Cumplimiento\s+(?:de\s+)?)?Financier[ao]',
+        t,
+        re.IGNORECASE,
+    ):
         return 'Financiera'
-    if re.search(r'[A-Z]\)\s*Auditor[íi]a\s+(?:de\s+)?Desempe[ñn]o', t):
+    if re.search(r'[A-Z]\)\s*Auditor[íi]a\s+(?:de\s+)?Desempe[ñn]o', t, re.IGNORECASE):
         return 'Desempeño'
-    if re.search(r'Obra\s+[Pp][úu]blica', t):
+    if re.search(r'Obra\s+[Pp][úu]blica', t) and not re.search(r'Convenio', t, re.IGNORECASE):
         return 'Obra Pública'
-    if re.search(r'[Ff]inancier[ao]', t):
+    if re.search(r'[Ff]inancier[ao]', t) and not re.search(r'Convenio', t, re.IGNORECASE):
         return 'Financiera'
     return 'Sin clasificar'
 
@@ -477,6 +485,59 @@ def _fuente_merge_key(fuente):
     )
 
 
+def _merge_action_total_values(current, incoming):
+    if not isinstance(current, dict):
+        current = {}
+    if not isinstance(incoming, dict):
+        return current
+    current['emitidas'] = int(current.get('emitidas') or 0) + int(incoming.get('emitidas') or 0)
+    current['solventadas'] = int(current.get('solventadas') or 0) + int(incoming.get('solventadas') or 0)
+    current['pendientes'] = int(current.get('pendientes') or 0) + int(incoming.get('pendientes') or 0)
+    current['solventadas_indices'] = sorted(
+        {
+            int(value)
+            for value in (current.get('solventadas_indices') or [])
+            if int(value) > 0
+        }
+        | {
+            int(value)
+            for value in (incoming.get('solventadas_indices') or [])
+            if int(value) > 0
+        }
+    )
+    current['pendientes_indices'] = sorted(
+        {
+            int(value)
+            for value in (current.get('pendientes_indices') or [])
+            if int(value) > 0
+        }
+        | {
+            int(value)
+            for value in (incoming.get('pendientes_indices') or [])
+            if int(value) > 0
+        }
+    )
+    return current
+
+
+def _merge_totales_dict(current, incoming):
+    if not isinstance(current, dict):
+        current = {}
+    if not isinstance(incoming, dict):
+        return current
+    for accion in ACCIONES:
+        if isinstance(incoming.get(accion), dict) or isinstance(current.get(accion), dict):
+            current[accion] = _merge_action_total_values(current.get(accion), incoming.get(accion))
+            continue
+        current[accion] = int(current.get(accion) or 0) + int(incoming.get(accion) or 0)
+    current['total_emitidas'] = int(current.get('total_emitidas') or 0) + int(incoming.get('total_emitidas') or 0)
+    if 'total_solventadas' in current or 'total_solventadas' in incoming:
+        current['total_solventadas'] = int(current.get('total_solventadas') or 0) + int(incoming.get('total_solventadas') or 0)
+    if 'total_pendientes' in current or 'total_pendientes' in incoming:
+        current['total_pendientes'] = int(current.get('total_pendientes') or 0) + int(incoming.get('total_pendientes') or 0)
+    return current
+
+
 def _merge_fuentes(entry, fuentes):
     existing = {_fuente_merge_key(fuente): fuente for fuente in entry.get('fuentes', [])}
     for fuente in fuentes:
@@ -504,23 +565,38 @@ def parse_cedula(pdf_path):
             full_text += page_text + '\n'
             tables = page.extract_tables()
             page_tipo = _detect_audit_type(page_text)
+            previous_tipo = last_tipo
             if page_tipo != 'Sin clasificar':
                 last_tipo = page_tipo
 
-            for table in tables:
-                if not _is_cedula_table(table):
-                    continue
+            cedula_tables = [table for table in tables if _is_cedula_table(table)]
+            regular_table_count = sum(
+                1 for table in cedula_tables if not _is_convenios_table(table)
+            )
+            regular_table_seen = 0
+
+            for table in cedula_tables:
                 if _is_convenios_table(table):
-                    tipo = 'Obra Pública'
+                    tipo = 'Convenios'
                     fuentes, totales = _parse_convenios_table(table)
                 else:
                     tipo = page_tipo if page_tipo != 'Sin clasificar' else (last_tipo or page_tipo)
+                    if (
+                        previous_tipo
+                        and page_tipo != 'Sin clasificar'
+                        and page_tipo != previous_tipo
+                        and regular_table_count > 1
+                        and regular_table_seen == 0
+                    ):
+                        tipo = previous_tipo
+                    regular_table_seen += 1
                     fuentes, totales = _parse_cedula_table(table)
                 if not fuentes:
                     continue
 
                 if tipo in seen_tipos:
                     _merge_fuentes(seen_tipos[tipo], fuentes)
+                    seen_tipos[tipo]['totales'] = _merge_totales_dict(seen_tipos[tipo].get('totales'), totales)
                 else:
                     entry = {'tipo': tipo, 'fuentes': fuentes, 'totales': totales}
                     seen_tipos[tipo] = entry
@@ -551,31 +627,66 @@ def parse_solventacion(pdf_path):
     last_tipo = None
 
     with pdfplumber.open(pdf_path) as pdf:
+        table_plan = []
         for page in pdf.pages:
             page_text = page.extract_text() or ''
             full_text += page_text + '\n'
             tables = page.extract_tables()
             page_tipo = _detect_audit_type(page_text)
-            if page_tipo != 'Sin clasificar':
-                last_tipo = page_tipo
-
             for table in tables:
                 if not _is_solventacion_table(table):
                     continue
-                if _is_convenios_table(table):
+                table_plan.append(
+                    {
+                        'table': table,
+                        'page_tipo': page_tipo,
+                        'is_convenio': _is_convenios_table(table),
+                    }
+                )
+
+        first_convenio_index = next(
+            (index for index, item in enumerate(table_plan) if item['is_convenio']),
+            None,
+        )
+        regular_before_convenio = [
+            index
+            for index, item in enumerate(table_plan)
+            if not item['is_convenio'] and (first_convenio_index is None or index < first_convenio_index)
+        ]
+        implicit_obra_start_index = (
+            regular_before_convenio[1]
+            if first_convenio_index is not None and len(regular_before_convenio) > 1
+            else None
+        )
+
+        for plan_index, item in enumerate(table_plan):
+            table = item['table']
+            page_tipo = item['page_tipo']
+            if page_tipo != 'Sin clasificar':
+                last_tipo = page_tipo
+
+            if item['is_convenio']:
+                tipo = 'Convenios'
+                fuentes, totales = _parse_solventacion_convenios_table(table)
+            else:
+                if page_tipo != 'Sin clasificar':
+                    tipo = page_tipo
+                elif implicit_obra_start_index is not None and implicit_obra_start_index <= plan_index < first_convenio_index:
                     tipo = 'Obra Pública'
-                    fuentes, totales = _parse_solventacion_convenios_table(table)
                 else:
-                    tipo = page_tipo if page_tipo != 'Sin clasificar' else (last_tipo or page_tipo)
-                    fuentes, totales = _parse_solventacion_regular_table(table)
-                if not fuentes:
-                    continue
-                if tipo in seen_tipos:
-                    _merge_fuentes(seen_tipos[tipo], fuentes)
-                else:
-                    entry = {'tipo': tipo, 'fuentes': fuentes, 'totales': totales}
-                    seen_tipos[tipo] = entry
-                    result['auditorias'].append(entry)
+                    tipo = last_tipo or page_tipo
+                if tipo != 'Sin clasificar':
+                    last_tipo = tipo
+                fuentes, totales = _parse_solventacion_regular_table(table)
+            if not fuentes:
+                continue
+            if tipo in seen_tipos:
+                _merge_fuentes(seen_tipos[tipo], fuentes)
+                seen_tipos[tipo]['totales'] = _merge_totales_dict(seen_tipos[tipo].get('totales'), totales)
+            else:
+                entry = {'tipo': tipo, 'fuentes': fuentes, 'totales': totales}
+                seen_tipos[tipo] = entry
+                result['auditorias'].append(entry)
 
     result.update(_extract_solventacion_header(full_text))
     return result
