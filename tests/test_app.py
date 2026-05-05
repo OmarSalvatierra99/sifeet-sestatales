@@ -1,6 +1,8 @@
 """Tests para SIFET Estatales (07-sifet-estatales)."""
+from io import BytesIO
 import os
 import pytest
+from openpyxl import load_workbook
 
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-testing-only")
 os.environ.setdefault("FLASK_ENV", "testing")
@@ -47,10 +49,37 @@ def test_login_with_valid_credentials(client):
     assert r.status_code == 302
 
 
-def test_luis_operational_pages_share_navigation(client):
-    """Las páginas operativas de Luis deben exponer la navegación modular común."""
+def test_odilia_login_uses_luis_viewer_access(client):
+    """Odilia debe entrar con rol de consulta desde el catálogo compartido."""
+    login_response = client.post(
+        "/login",
+        data={"username": "odilia", "password": "odilia2025"},
+    )
+    assert login_response.status_code == 302
+
+    response = client.get("/")
+    assert response.status_code == 200
+    assert b'data-luis-view="consulta"' in response.data
+    assert "C.P. Odilia Cuamatzi Bautista".encode("utf-8") in response.data
+
+    export_response = client.get("/fuentes-financiamiento-exportar?ejercicio=2025")
+    assert export_response.status_code == 200
+    assert export_response.headers["Content-Type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+
+@pytest.mark.parametrize(
+    ("username", "display_name"),
+    [
+        ("luis", "C.P Luis Felipe Camilo Fuentes"),
+        ("odilia", "C.P. Odilia Cuamatzi Bautista"),
+    ],
+)
+def test_viewer_operational_pages_share_navigation(client, username, display_name):
+    """Los usuarios de consulta deben exponer la misma navegación modular."""
     with client.session_transaction() as session_data:
-        session_data["user"] = "luis"
+        session_data["user"] = username
         session_data["role"] = "viewer"
 
     pages = [
@@ -69,6 +98,9 @@ def test_luis_operational_pages_share_navigation(client):
         assert view_marker in response.data
         assert label in response.data
         assert b"Comparativo anual" in response.data
+        assert display_name.encode("utf-8") in response.data
+        if path == "/fuente-financiamiento":
+            assert b"Exportar Fuentes de Financiamiento" in response.data
 
 
 def test_login_with_invalid_credentials(client):
@@ -92,6 +124,13 @@ def test_fuentes_export_requires_and_uses_ejercicio(client):
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
     assert "fuentes_financiamiento_2025_" in response.headers["Content-Disposition"]
+    workbook = load_workbook(BytesIO(response.data))
+    sheet = workbook.active
+    assert sheet["A1"].value == "Fuentes de Financiamiento"
+    assert sheet["A2"].value == "Ejercicio fiscal"
+    assert sheet["B2"].value == "2025"
+    assert sheet["A6"].value == "No."
+    assert sheet["B6"].value == "Fuente de Financiamiento"
 
 
 def test_luis_breakdown_exports(client):
@@ -151,3 +190,6 @@ def test_auth_users_from_catalog():
     assert check_password_hash(users["luis"]["password_hash"], "luis2025")
     assert "gabo" in users
     assert users["gabo"]["role"] == "loader"
+    assert "odilia" in users
+    assert users["odilia"]["role"] == "viewer"
+    assert check_password_hash(users["odilia"]["password_hash"], "odilia2025")

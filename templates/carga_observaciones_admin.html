@@ -8,7 +8,6 @@
   <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
 </head>
 <body class="loader-page obs-admin-page">
-  {% set user_display_names = {'luis': 'C.P Luis Felipe Camilo Fuentes', 'gabo': 'Ing. Omar Gabriel Salvatierra Garcia'} %}
   <header class="site-header">
     <div class="header-inner">
       <img src="{{ url_for('static', filename='img/ofs_logo.png') }}" alt="Logo institucional" class="ofs-logo">
@@ -20,7 +19,7 @@
       <div class="header-badge user-badge">
         <div class="user-meta">
           <span>Usuario</span>
-          <strong>{{ user_display_names.get(user.username, user.username) }}</strong>
+          <strong>{{ user.display_name|default(user.username, true) }}</strong>
         </div>
         <div class="user-actions">
           <a class="btn-secondary btn-compact" href="{{ url_for('logout') }}">Cerrar sesión</a>
@@ -200,62 +199,64 @@
 
       <div id="obsAdminStatus" class="status status-info" hidden></div>
 
-      <div class="table-meta">
-        <span id="obsAdminCount">Selecciona un ente y un oficio; la consulta es automática.</span>
-        <div class="obs-admin-actions-inline">
-          <button type="button" class="btn-secondary" id="obsAdminSaveFilteredBtn">Guardar cambios (filtro)</button>
-          <button type="button" class="btn-secondary" id="obsAdminSolveAllBtn">Solventar todo</button>
-          <button type="button" class="btn-secondary" id="obsAdminPendingAllBtn">Pendiente todo</button>
-          <button type="button" class="btn-secondary" id="obsAdminOpenPdpQuickBtn">Carga rápida de montos PDP</button>
+      <section class="obs-admin-records-shell" aria-label="Observaciones cargadas">
+        <div class="table-meta">
+          <span id="obsAdminCount">Selecciona un ente y un oficio; la consulta es automática.</span>
+          <div class="obs-admin-actions-inline">
+            <button type="button" class="btn-secondary" id="obsAdminSaveFilteredBtn">Guardar cambios (filtro)</button>
+            <button type="button" class="btn-secondary" id="obsAdminSolveAllBtn">Solventar todo</button>
+            <button type="button" class="btn-secondary" id="obsAdminPendingAllBtn">Pendiente todo</button>
+            <button type="button" class="btn-secondary" id="obsAdminOpenPdpQuickBtn">Carga rápida de montos PDP</button>
+          </div>
         </div>
-      </div>
 
-      <section class="obs-admin-table-filters" aria-label="Filtros de observaciones cargadas">
-        <div class="form-grid obs-admin-table-filters-grid">
-          <div class="field">
-            <label for="obs_admin_filter_tipo_auditoria">Tipo de auditoría</label>
-            <select id="obs_admin_filter_tipo_auditoria">
-              <option value="">Todas</option>
-            </select>
+        <section class="obs-admin-table-filters" aria-label="Filtros de observaciones cargadas">
+          <div class="form-grid obs-admin-table-filters-grid">
+            <div class="field">
+              <label for="obs_admin_filter_tipo_auditoria">Tipo de auditoría</label>
+              <select id="obs_admin_filter_tipo_auditoria">
+                <option value="">Todas</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="obs_admin_filter_fuente">Fuente de Financiamiento</label>
+              <select id="obs_admin_filter_fuente">
+                <option value="">Todas</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="obs_admin_filter_periodo">Periodo</label>
+              <select id="obs_admin_filter_periodo">
+                <option value="">Todos</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="obs_admin_filter_tipo_anexo">Tipo de anexo</label>
+              <select id="obs_admin_filter_tipo_anexo">
+                <option value="">Todos</option>
+              </select>
+            </div>
           </div>
-          <div class="field">
-            <label for="obs_admin_filter_fuente">Fuente de Financiamiento</label>
-            <select id="obs_admin_filter_fuente">
-              <option value="">Todas</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="obs_admin_filter_periodo">Periodo</label>
-            <select id="obs_admin_filter_periodo">
-              <option value="">Todos</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="obs_admin_filter_tipo_anexo">Tipo de anexo</label>
-            <select id="obs_admin_filter_tipo_anexo">
-              <option value="">Todos</option>
-            </select>
-          </div>
+        </section>
+
+        <div class="loader-obs-table-wrap">
+          <table class="loader-obs-table obs-admin-table">
+            <thead>
+              <tr>
+                <th>Observación</th>
+                <th>Contexto</th>
+                <th>Estado</th>
+                <th class="col-anexo">PDP</th>
+              </tr>
+            </thead>
+            <tbody id="obsAdminTableBody">
+              <tr>
+                <td colspan="4" class="muted">Sin resultados para mostrar.</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
-
-      <div class="loader-obs-table-wrap">
-        <table class="loader-obs-table obs-admin-table">
-          <thead>
-            <tr>
-              <th>Observación</th>
-              <th>Contexto</th>
-              <th>Estado</th>
-              <th class="col-anexo">PDP</th>
-            </tr>
-          </thead>
-          <tbody id="obsAdminTableBody">
-            <tr>
-              <td colspan="4" class="muted">Sin resultados para mostrar.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
     </section>
   </main>
 
@@ -293,25 +294,6 @@
       </div>
       <div class="obs-admin-modal-meta" id="obsAdminConfirmMeta" hidden></div>
       <div class="obs-admin-confirm-highlights" id="obsAdminConfirmHighlights" hidden></div>
-
-      <section class="obs-admin-confirm-section">
-        <h4 id="obsAdminConfirmSummaryTitle">Resumen general</h4>
-        <div class="obs-admin-summary-table-wrap obs-admin-confirm-table-wrap">
-          <table class="obs-admin-summary-table obs-admin-confirm-table">
-            <thead>
-              <tr>
-                <th>Concepto</th>
-                <th>Detalle</th>
-              </tr>
-            </thead>
-            <tbody id="obsAdminConfirmSummaryBody">
-              <tr>
-                <td colspan="2" class="muted">Sin datos para confirmar.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
 
       <section class="obs-admin-confirm-section">
         <h4 id="obsAdminConfirmPreviewTitle">Vista previa de cambios</h4>
@@ -433,6 +415,7 @@
     let solventacionImportRows = [];
     let solventacionImportFile = null;
     let isSolventacionImportProcessing = false;
+    let solventacionImportPdpReviewed = false;
 
     const escapeHtml = (value) => (
       String(value || "")
@@ -516,6 +499,9 @@
       if (lowered === "obra publica" || lowered === "obra pública") {
         return "Obra Pública";
       }
+      if (lowered === "convenio" || lowered === "convenios") {
+        return "Convenios";
+      }
       return clean;
     };
 
@@ -554,7 +540,7 @@
         if (tipo) tipoSeen.set(tipo.toLowerCase(), tipo);
       });
       const tipoOptions = Array.from(tipoSeen.values()).sort((a, b) => {
-        const tipoOrder = { financiera: 1, "obra pública": 2 };
+        const tipoOrder = { financiera: 1, "obra pública": 2, convenios: 3 };
         const orderA = tipoOrder[String(a || "").trim().toLowerCase()] || 99;
         const orderB = tipoOrder[String(b || "").trim().toLowerCase()] || 99;
         if (orderA !== orderB) return orderA - orderB;
@@ -900,10 +886,14 @@
     const tipoSortOrder = {
       Financiera: 1,
       "Obra Pública": 2,
+      Convenios: 3,
     };
 
     const formatTipoSectionTitle = (tipo, index) => {
       const letter = String.fromCharCode(65 + index);
+      if (tipo === "Convenios") {
+        return `${letter}) Convenios`;
+      }
       if (tipo === "Obra Pública") {
         return `${letter}) Auditoría de Obra Pública`;
       }
@@ -950,12 +940,16 @@
       const sourceRows = Array.isArray(payload)
         ? payload
         : (payload && Array.isArray(payload.rows) ? payload.rows : []);
-      const rows = [];
+      const groupedRows = new Map();
       sourceRows.forEach((row) => {
         const tipoAuditoria = normalizeTipoAuditoria(
           row && (row.tipo_auditoria || row.tipoAuditoria || row.tipo || "Financiera")
         );
         const fuente = String((row && (row.fuente_nombre || row.fuente_financiamiento || row.fuente || "")) || "").trim();
+        const modalidad = normalizeObservacionModalidad(row && row.modalidad);
+        const convenioNombre = modalidad === "Convenio"
+          ? normalizeConvenioText(row && row.convenio_nombre)
+          : "";
         const periodo = String((row && row.periodo) || "").trim();
         const totals = row && typeof row.solventacion_totales_by_anexo === "object"
           ? row.solventacion_totales_by_anexo
@@ -968,21 +962,65 @@
           if (!fuente || !periodo) {
             return;
           }
-          rows.push({
-            source_index: rows.length,
+          const rowKey = [
+            tipoAuditoria.toLowerCase(),
+            modalidad.toLowerCase(),
+            convenioNombre.toLowerCase(),
+            fuente.toLowerCase(),
+            periodo.toLowerCase(),
+            anexo,
+          ].join("||");
+          const existing = groupedRows.get(rowKey);
+          const normalizedRow = {
             tipo_auditoria: tipoAuditoria,
+            modalidad,
+            convenio_nombre: convenioNombre,
             fuente_financiamiento: fuente,
             periodo,
             tipo_anexo: anexo,
             emitidas,
             solventadas_text: formatProgressiveList(solventadas),
             pendientes_text: formatProgressiveList(pendientes),
-          });
+          };
+          if (!existing) {
+            groupedRows.set(rowKey, {
+              ...normalizedRow,
+              source_index: groupedRows.size,
+            });
+            return;
+          }
+          if (emitidas > (existing.emitidas || 0)) {
+            existing.emitidas = emitidas;
+          }
+          if ((existing.emitidas || 0) > 0 && emitidas === 0) {
+            if (existing.solventadas_text === "0" && solventadas.length) {
+              existing.solventadas_text = formatProgressiveList(solventadas);
+            }
+            if (existing.pendientes_text === "0" && pendientes.length) {
+              existing.pendientes_text = formatProgressiveList(pendientes);
+            }
+            return;
+          }
+          const mergedSolventadas = normalizeProgressiveList([
+            ...parseProgressiveText(existing.solventadas_text),
+            ...solventadas,
+          ]);
+          const mergedPendientes = normalizeProgressiveList([
+            ...parseProgressiveText(existing.pendientes_text),
+            ...pendientes,
+          ]);
+          existing.solventadas_text = formatProgressiveList(mergedSolventadas);
+          existing.pendientes_text = formatProgressiveList(mergedPendientes);
         });
       });
+      const rows = Array.from(groupedRows.values());
       rows.sort((a, b) => {
         const tipoCmp = (tipoSortOrder[a.tipo_auditoria] || 99) - (tipoSortOrder[b.tipo_auditoria] || 99);
         if (tipoCmp !== 0) return tipoCmp;
+        const modalidadCmp = String(a.modalidad || "").localeCompare(String(b.modalidad || ""), "es", { sensitivity: "base" });
+        if (modalidadCmp !== 0) return modalidadCmp;
+        const convenioCmp = String(a.convenio_nombre || "").localeCompare(String(b.convenio_nombre || ""), "es", { sensitivity: "base" });
+        if (convenioCmp !== 0) return convenioCmp;
         const fuenteCmp = a.fuente_financiamiento.localeCompare(b.fuente_financiamiento, "es", { sensitivity: "base" });
         if (fuenteCmp !== 0) return fuenteCmp;
         const periodoCmp = a.periodo.localeCompare(b.periodo, "es", { sensitivity: "base" });
@@ -1004,10 +1042,19 @@
           groupedByTipo.set(tipoKey, { tipo, fuentes: new Map() });
         }
         const tipoEntry = groupedByTipo.get(tipoKey);
-        const fuenteKey = `${String(row.fuente_financiamiento || "").trim().toLowerCase()}||${String(row.periodo || "").trim().toLowerCase()}`;
+        const modalidad = normalizeObservacionModalidad(row.modalidad);
+        const convenioNombre = normalizeConvenioText(row.convenio_nombre || "");
+        const fuenteKey = [
+          modalidad.toLowerCase(),
+          convenioNombre.toLowerCase(),
+          String(row.fuente_financiamiento || "").trim().toLowerCase(),
+          String(row.periodo || "").trim().toLowerCase(),
+        ].join("||");
         if (!tipoEntry.fuentes.has(fuenteKey)) {
           tipoEntry.fuentes.set(fuenteKey, {
             fuente: String(row.fuente_financiamiento || "").trim() || "-",
+            modalidad,
+            convenioNombre,
             periodo: String(row.periodo || "").trim() || "-",
             rows: [],
           });
@@ -1049,7 +1096,10 @@
             totalPendientes += pendientesTotal;
             const cells = [];
             if (!renderedFuente) {
-              cells.push(`<td rowspan="${rowSpan}" class="obs-admin-summary-group-cell">${escapeHtml(group.fuente)}</td>`);
+              const fuenteLabel = group.modalidad === "Convenio" && group.convenioNombre
+                ? `${escapeHtml(group.fuente)}<br><small>${escapeHtml(group.convenioNombre)}</small>`
+                : escapeHtml(group.fuente);
+              cells.push(`<td rowspan="${rowSpan}" class="obs-admin-summary-group-cell">${fuenteLabel}</td>`);
               renderedFuente = true;
             }
             if (!renderedPeriodo) {
@@ -1150,6 +1200,8 @@
         const pendientesInput = rowElement.querySelector('[data-solv-field="pendientes"]');
         rows.push({
           tipo_auditoria: String(source.tipo_auditoria || "").trim() || "Financiera",
+          modalidad: normalizeObservacionModalidad(source.modalidad),
+          convenio_nombre: normalizeConvenioText(source.convenio_nombre || ""),
           fuente_financiamiento: String(source.fuente_financiamiento || "").trim(),
           periodo: String(source.periodo || "").trim(),
           tipo_anexo: normalizeTipoAnexo(source.tipo_anexo || ""),
@@ -1199,8 +1251,16 @@
       const clean = String(value || "").trim();
       if (!clean) return "Financiera";
       if (clean.toLowerCase() === "obra publica") return "Obra Pública";
+      if (clean.toLowerCase() === "convenio" || clean.toLowerCase() === "convenios") return "Convenios";
       return clean;
     };
+
+    const normalizeObservacionModalidad = (value) => {
+      const clean = String(value || "").trim().toLowerCase();
+      return clean === "convenio" ? "Convenio" : "Fuente";
+    };
+
+    const normalizeConvenioText = (value) => String(value || "").replace(/\s+/g, " ").trim();
 
     const sortObservacionesForDetail = (rows) => {
       const safeRows = Array.isArray(rows) ? rows.slice() : [];
@@ -1786,6 +1846,7 @@
           showStatus(`PDP actualizadas: ${updated}. Con incidencias: ${failed.length}.`, "error");
           return;
         }
+        solventacionImportPdpReviewed = true;
         closePdpQuickModal();
         showStatus(`PDP actualizadas en lote: ${updated}.`, "success");
       } catch (error) {
@@ -1825,6 +1886,7 @@
     const clearSolventacionImport = () => {
       solventacionImportFile = null;
       solventacionImportRows = [];
+      solventacionImportPdpReviewed = false;
       if (solventacionPdfInput) solventacionPdfInput.value = "";
       if (solventacionFileName) solventacionFileName.hidden = true;
       if (solventacionUploadZone) solventacionUploadZone.classList.remove("has-file", "processing", "drag-over");
@@ -1842,6 +1904,7 @@
       }
       const hasPdpRows = rows.some((row) => normalizeTipoAnexo(row && row.tipo_anexo) === "PDP" && Number(row.emitidas || 0) > 0);
       solventacionImportRows = rows;
+      solventacionImportPdpReviewed = false;
       renderSolventacionImportEditor();
       setSolventacionImportFeedback(
         hasPdpRows
@@ -1889,6 +1952,58 @@
       }
     };
 
+    const getSolventacionImportPdpScopes = (rows) => {
+      const scopes = new Map();
+      (Array.isArray(rows) ? rows : []).forEach((row) => {
+        if (normalizeTipoAnexo(row && row.tipo_anexo) !== "PDP") return;
+        if (parsePositiveInt(row && row.emitidas) <= 0) return;
+        const fuente = String((row && row.fuente_financiamiento) || "").trim();
+        const periodo = String((row && row.periodo) || "").trim();
+        if (!fuente || !periodo) return;
+        const convenio = normalizeConvenioText(row && row.convenio_nombre);
+        const key = [fuente.toLowerCase(), periodo.toLowerCase(), convenio.toLowerCase()].join("||");
+        if (!scopes.has(key)) {
+          scopes.set(key, {
+            fuente,
+            periodo,
+            convenio,
+            emitidas: 0,
+          });
+        }
+        scopes.get(key).emitidas += parsePositiveInt(row && row.emitidas);
+      });
+      return Array.from(scopes.values());
+    };
+
+    const focusImportPdpScope = (scope) => {
+      if (!(scope && filterTipoAnexoInput && filterFuenteInput && filterPeriodoInput)) {
+        return false;
+      }
+      const fuente = String(scope.fuente || "").trim();
+      const periodo = String(scope.periodo || "").trim();
+      if (filterTipoAnexoInput) {
+        filterTipoAnexoInput.value = "";
+      }
+      if (filterFuenteInput) {
+        filterFuenteInput.value = "";
+      }
+      if (filterPeriodoInput) {
+        filterPeriodoInput.value = "";
+      }
+      populateTableFilters();
+      if (Array.from(filterFuenteInput.options).some((option) => option.value === fuente)) {
+        filterFuenteInput.value = fuente;
+      }
+      populateTableFilters();
+      if (Array.from(filterPeriodoInput.options).some((option) => option.value === periodo)) {
+        filterPeriodoInput.value = periodo;
+      }
+      populateTableFilters();
+      filterTipoAnexoInput.value = "PDP";
+      applyClientFilters();
+      return true;
+    };
+
     const applySolventacionImportRows = async () => {
       const filters = readFilters();
       if (!hasEditableOfficeScope(filters)) {
@@ -1898,6 +2013,23 @@
       const rows = collectSolventacionImportRows();
       if (!rows.length) {
         setSolventacionImportFeedback("No hay bloques preparados para aplicar.", "error");
+        return;
+      }
+      const pdpScopes = getSolventacionImportPdpScopes(rows);
+      if (pdpScopes.length && !solventacionImportPdpReviewed) {
+        focusImportPdpScope(pdpScopes[0]);
+        const scopeLabels = pdpScopes
+          .map((item) => `${item.fuente} · ${item.periodo}${item.convenio ? ` · ${item.convenio}` : ""}`)
+          .join("; ");
+        setSolventacionImportFeedback(
+          `Antes de aplicar el oficio, captura los montos PDP de estas fuentes: ${scopeLabels}. Se abrió la carga rápida sobre el primer bloque PDP.`,
+          "info",
+        );
+        showStatus(
+          `Completa primero la carga rápida de montos PDP para: ${scopeLabels}.`,
+          "info",
+        );
+        openPdpQuickModalForGabo();
         return;
       }
       const confirmed = await showConfirmModal({
@@ -1924,6 +2056,9 @@
         ],
         previewRows: rows.map((item) => ({
           ...item,
+          fuente_financiamiento: item.modalidad === "Convenio" && item.convenio_nombre
+            ? `${item.fuente_financiamiento} · ${item.convenio_nombre}`
+            : item.fuente_financiamiento,
           solventadas: formatProgressiveList(item.solventadas_indices),
           pendientes: formatProgressiveList(item.pendientes_indices),
         })),

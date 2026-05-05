@@ -4277,6 +4277,92 @@ def register_gabo_routes(app, deps):
             return jsonify({"ok": False, "error": str(exc)}), 400
         return jsonify(preview)
 
+    @app.get("/carga/convenios-pdp-referencias")
+    @gabo_required
+    def carga_convenios_pdp_referencias():
+        ejercicio = (request.args.get("ejercicio") or "").strip()
+        oficio = " ".join((request.args.get("oficio") or "").split())
+        if not ejercicio:
+            return jsonify({"ok": True, "rows": []})
+
+        where = [
+            "TRIM(COALESCE(ejercicio, '')) = ?",
+            "TRIM(COALESCE(tipo_anexo, '')) = 'PDP'",
+            "TRIM(COALESCE(modalidad, 'Fuente')) = 'Convenio'",
+            "COALESCE(monto_pdp_emitido, 0) > 0",
+            "TRIM(COALESCE(pdp_concepto_irregularidad, '')) != ''",
+        ]
+        params: list[object] = [ejercicio]
+        if oficio:
+            where.append("LOWER(TRIM(COALESCE(oficio, ''))) != LOWER(TRIM(COALESCE(?, '')))")
+            params.append(oficio)
+
+        db = get_db()
+        rows = db.execute(
+            f"""
+            SELECT
+                id,
+                TRIM(COALESCE(ejercicio, '')) AS ejercicio,
+                TRIM(COALESCE(ente_id, '')) AS ente_id,
+                TRIM(COALESCE(ente_nombre, '')) AS ente_nombre,
+                TRIM(COALESCE(tipo_auditoria, '')) AS tipo_auditoria,
+                TRIM(COALESCE(fuente_financiamiento, '')) AS fuente_financiamiento,
+                TRIM(COALESCE(modalidad, 'Fuente')) AS modalidad,
+                TRIM(COALESCE(convenio_nombre, '')) AS convenio_nombre,
+                TRIM(COALESCE(convenio_ente_nombre, '')) AS convenio_ente_nombre,
+                TRIM(COALESCE(convenio_ente_id, '')) AS convenio_ente_id,
+                TRIM(COALESCE(periodo_cedula, '')) AS periodo_cedula,
+                TRIM(COALESCE(oficio, '')) AS oficio,
+                COALESCE(numero_observacion, 0) AS numero_observacion,
+                COALESCE(monto_pdp_emitido, 0) AS monto_pdp_emitido,
+                TRIM(COALESCE(pdp_concepto_irregularidad, '')) AS pdp_concepto_irregularidad,
+                TRIM(COALESCE(pdp_subconcepto_irregularidad, '')) AS pdp_subconcepto_irregularidad,
+                TRIM(COALESCE(created_at, '')) AS created_at
+            FROM observaciones
+            WHERE {" AND ".join(where)}
+            ORDER BY id DESC
+            LIMIT 5000
+            """,
+            params,
+        ).fetchall()
+
+        payload: list[dict[str, object]] = []
+        for row in rows:
+            monto = float(row["monto_pdp_emitido"] or 0)
+            if monto <= 0:
+                continue
+            convenio_nombre = normalize_convenio_text(row["convenio_nombre"] or "")
+            fuente_financiamiento = " ".join((row["fuente_financiamiento"] or "").split())
+            periodo = " ".join((row["periodo_cedula"] or "").split())
+            payload.append(
+                {
+                    "id": int(row["id"]),
+                    "ejercicio": row["ejercicio"] or "",
+                    "ente_id": normalize_ente_id(row["ente_id"] or ""),
+                    "ente_nombre": row["ente_nombre"] or "",
+                    "tipo_auditoria": row["tipo_auditoria"] or "Obra Pública",
+                    "modalidad": "Convenio",
+                    "fuente_nombre": fuente_financiamiento,
+                    "fuente_financiamiento": fuente_financiamiento,
+                    "convenio_nombre": convenio_nombre,
+                    "convenio_ente_nombre": normalize_convenio_text(row["convenio_ente_nombre"] or ""),
+                    "convenio_ente_id": normalize_ente_id(row["convenio_ente_id"] or ""),
+                    "periodo": periodo,
+                    "periodo_cedula": periodo,
+                    "periodo_key": normalize_solventacion_periodo_key(ejercicio, periodo),
+                    "oficio": row["oficio"] or "",
+                    "numero_observacion": int(row["numero_observacion"] or 0),
+                    "monto": monto,
+                    "concepto": row["pdp_concepto_irregularidad"] or "",
+                    "subconcepto": row["pdp_subconcepto_irregularidad"] or "",
+                    "created_at": row["created_at"] or "",
+                    "convenio_key": _convenio_match_key(convenio_nombre),
+                    "fuente_key": _convenio_match_key(fuente_financiamiento),
+                }
+            )
+
+        return jsonify({"ok": True, "rows": payload})
+
     @app.get("/carga/observaciones-cargadas")
     @gabo_required
     def carga_observaciones_cargadas():

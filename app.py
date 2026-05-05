@@ -43,13 +43,13 @@ app.config["TEMPLATES_AUTO_RELOAD"] = template_auto_reload
 app.jinja_env.auto_reload = template_auto_reload
 
 PROJECT_KEY = "07-sifet-estatales"
-LUIS_USERNAME = "luis"
 GABO_USERNAME = "gabo"
+VIEWER_ROLES = {"viewer", "editor"}
 
 def _build_users() -> dict:
     users: dict = {}
     for username, payload in build_user_map(PROJECT_KEY).items():
-        role = payload["role"] or ("loader" if username == GABO_USERNAME else "viewer")
+        role = (payload["role"] or ("loader" if username == GABO_USERNAME else "viewer")).strip().lower()
         users[username] = {
             "password_hash": generate_password_hash(payload["password"]),
             "role": role,
@@ -1349,11 +1349,15 @@ def get_current_user():
     user = USERS.get(username)
     if not user:
         return None
-    return {"username": username, "role": user["role"]}
+    return {
+        "username": username,
+        "role": user["role"],
+        "display_name": user["display_name"],
+    }
 
 
 def is_luis_user(user: dict | None) -> bool:
-    return bool(user and user.get("username") == LUIS_USERNAME)
+    return bool(user and user.get("role") in VIEWER_ROLES)
 
 
 def is_gabo_user(user: dict | None) -> bool:
@@ -2320,7 +2324,7 @@ def login():
         if current_user is not None:
             return redirect(url_for(home_endpoint_for_user(current_user)))
         next_url = request.args.get("next", "")
-    usuarios_activos = ordered_users(PROJECT_KEY, priority={"luis": 0, "gabo": 1})
+    usuarios_activos = ordered_users(PROJECT_KEY, priority={"luis": 0, "odilia": 1, "gabo": 2})
     selected_display = get_display_name(selected_username, fallback="usuario")
     return render_template(
         "login.html",
@@ -2385,6 +2389,8 @@ ROUTE_DEPS = {
     "luis_required": luis_required,
     "gabo_required": gabo_required,
     "role_required": role_required,
+    "is_luis_user": is_luis_user,
+    "is_gabo_user": is_gabo_user,
     "get_current_user": get_current_user,
     "get_db": get_db,
     "normalize_ente_id": normalize_ente_id,

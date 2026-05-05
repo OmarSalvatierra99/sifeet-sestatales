@@ -969,6 +969,7 @@
     let isOficioPdfProcessing = false;
     let isPdpExcelProcessing = false;
     let isSolventacionPdfProcessing = false;
+    let convenioPdpAutoFillRequestId = 0;
     let pendingDeleteOficioRow = null;
     let pendingDeleteOficioButton = null;
     const manualResumenContainer = document.getElementById("manualResumenFuentesBody");
@@ -5073,6 +5074,9 @@
       if (manualResumenJsonImport && "open" in manualResumenJsonImport) {
         manualResumenJsonImport.open = false;
       }
+      autoFillConvenioPdpFromHistory().catch((error) => {
+        console.warn("No se pudieron aplicar referencias históricas de convenios.", error);
+      });
     };
 
     const buildSolventacionDetallePayload = (rows) => {
@@ -5458,6 +5462,290 @@
       };
     };
 
+    const isConvenioPdpAutoFillRow = (row) => (
+      String((row && row.modalidad) || "Fuente").trim().toLowerCase() === "convenio"
+        && parseResumenCountValue(row && row.cantidad_pdp) > 0
+    );
+
+    const buildConvenioPdpReferenceEntry = (reference) => ({
+      modalidad: "Convenio",
+      tipo_auditoria: reference && reference.tipo_auditoria ? reference.tipo_auditoria : "Obra Pública",
+      periodo: (reference && (reference.periodo || reference.periodo_cedula)) || "",
+      fuente_nombre: (reference && (reference.fuente_nombre || reference.fuente_financiamiento)) || "",
+      fuente_nombre_original: (reference && (reference.fuente_financiamiento || reference.fuente_nombre)) || "",
+      convenio_nombre: (reference && reference.convenio_nombre) || "",
+      numeral: (reference && (reference.numero_observacion || reference.numeral)) || "",
+      concepto: (reference && (reference.concepto || reference.pdp_concepto_irregularidad)) || "",
+      subconcepto: (reference && (reference.subconcepto || reference.pdp_subconcepto_irregularidad)) || "",
+      monto: Number(reference && (reference.monto || reference.monto_pdp_emitido) || 0),
+      id: Number(reference && reference.id || 0),
+      oficio: (reference && reference.oficio) || "",
+      ente_id: (reference && reference.ente_id) || "",
+    });
+
+    const convenioPdpReferenceMatchesRow = (reference, row) => {
+      if (!isConvenioPdpAutoFillRow(row)) {
+        return false;
+      }
+      const entry = buildConvenioPdpReferenceEntry(reference);
+      const entryTipo = normalizeTipoAuditoriaImportValue(entry.tipo_auditoria) || "Obra Pública";
+      const rowTipo = normalizeTipoAuditoriaImportValue(row && row.tipo_auditoria) || "Obra Pública";
+      if (entryTipo !== rowTipo) {
+        return false;
+      }
+      const entryPeriodo = normalizePeriodoMatchValue(entry.periodo);
+      const rowPeriodo = normalizePeriodoMatchValue(row && row.periodo);
+      if (!entryPeriodo || !rowPeriodo || entryPeriodo !== rowPeriodo) {
+        return false;
+      }
+      return pdpExcelFuenteMatches(entry, row);
+    };
+
+    const buildConvenioPdpCurrentKey = (row) => {
+      const sourceKeys = buildPdpExcelSourceMatchKeys(row && row.fuente_nombre, { convenio: true });
+      const convenioValue = (row && (row.convenio_nombre || row.convenio_ente_nombre || row.convenio_ente_id)) || "";
+      const convenioKeys = buildPdpExcelSourceMatchKeys(convenioValue, { convenio: true });
+      return [
+        "Convenio",
+        normalizeTipoAuditoriaImportValue(row && row.tipo_auditoria) || "Obra Pública",
+        normalizePeriodoMatchValue(row && row.periodo),
+        convenioKeys[0] || "",
+        sourceKeys[0] || "",
+      ].join("||");
+    };
+
+    const buildConvenioPdpReferenceGroupKey = (reference) => {
+      const entry = buildConvenioPdpReferenceEntry(reference);
+      return [
+        normalizePdpExcelMatchKey(entry.oficio),
+        normalizePdpExcelMatchKey(entry.ente_id),
+        buildPdpExcelEntryGroupKey(entry),
+      ].join("||");
+    };
+
+    const getConvenioPdpReferenceRows = (group) => {
+      const latestByNumeral = new Map();
+      (group && Array.isArray(group.rows) ? group.rows : []).forEach((reference) => {
+        const entry = buildConvenioPdpReferenceEntry(reference);
+        const numeral = Number.parseInt(String(entry.numeral || "").trim(), 10);
+        const monto = Number(entry.monto || 0);
+        const concepto = normalizeInlineText(entry.concepto);
+        if (!concepto || !Number.isFinite(monto) || monto <= 0) {
+          return;
+        }
+        const key = Number.isFinite(numeral) && numeral > 0
+          ? `num:${numeral}`
+          : `id:${entry.id || latestByNumeral.size}`;
+        const current = latestByNumeral.get(key);
+        if (!current || Number(entry.id || 0) > Number(current.id || 0)) {
+          latestByNumeral.set(key, {
+            ...entry,
+            numeral,
+            monto,
+            concepto,
+            subconcepto: normalizeInlineText(entry.subconcepto),
+          });
+        }
+      });
+      return Array.from(latestByNumeral.values()).sort((a, b) => {
+        const aNumeral = Number.isFinite(a.numeral) ? a.numeral : 0;
+        const bNumeral = Number.isFinite(b.numeral) ? b.numeral : 0;
+        if (aNumeral > 0 && bNumeral > 0 && aNumeral !== bNumeral) {
+          return aNumeral - bNumeral;
+        }
+        return Number(a.id || 0) - Number(b.id || 0);
+      });
+    };
+
+    const selectConvenioPdpReferenceGroup = (references, row, count) => {
+      const groups = new Map();
+      const currentEnteKey = normalizePdpExcelMatchKey(principalEnte ? principalEnte.value || "" : "");
+      (Array.isArray(references) ? references : []).forEach((reference) => {
+        if (!convenioPdpReferenceMatchesRow(reference, row)) {
+          return;
+        }
+        const key = buildConvenioPdpReferenceGroupKey(reference);
+        if (!groups.has(key)) {
+          groups.set(key, {
+            key,
+            rows: [],
+            maxId: 0,
+            sameEnte: false,
+          });
+        }
+        const group = groups.get(key);
+        group.rows.push(reference);
+        group.maxId = Math.max(group.maxId, Number(reference && reference.id || 0));
+        if (currentEnteKey && normalizePdpExcelMatchKey(reference && reference.ente_id) === currentEnteKey) {
+          group.sameEnte = true;
+        }
+      });
+      const ranked = Array.from(groups.values()).map((group) => {
+        const rows = getConvenioPdpReferenceRows(group);
+        return {
+          ...group,
+          rows,
+          coverage: Math.min(rows.length, count),
+          sameCount: rows.length === count,
+        };
+      }).filter((group) => group.coverage > 0);
+      ranked.sort((a, b) => {
+        if (Number(b.sameCount) !== Number(a.sameCount)) {
+          return Number(b.sameCount) - Number(a.sameCount);
+        }
+        if (Number(b.sameEnte) !== Number(a.sameEnte)) {
+          return Number(b.sameEnte) - Number(a.sameEnte);
+        }
+        if (b.coverage !== a.coverage) {
+          return b.coverage - a.coverage;
+        }
+        return b.maxId - a.maxId;
+      });
+      return ranked[0] || null;
+    };
+
+    const isConvenioPdpAutoFillDetailComplete = (item) => {
+      const concepto = normalizeInlineText(item && item.concepto);
+      const monto = parseMoneyInput(item && item.monto);
+      return !!concepto && monto !== null;
+    };
+
+    const applyConvenioPdpReferenceGroup = (group, row, scope, nextState) => {
+      if (!group || !Array.isArray(group.rows) || !group.rows.length || !scope || scope.count <= 0) {
+        return 0;
+      }
+      let filled = 0;
+      if (group.rows.length === scope.count) {
+        group.rows.forEach((reference, localIndex) => {
+          const absoluteIndex = scope.start + localIndex;
+          if (absoluteIndex < scope.start || absoluteIndex > scope.end) {
+            return;
+          }
+          if (isConvenioPdpAutoFillDetailComplete(nextState[absoluteIndex])) {
+            return;
+          }
+          nextState[absoluteIndex] = {
+            concepto: reference.concepto,
+            subconcepto: reference.subconcepto || "",
+            monto: Number(reference.monto || 0).toFixed(2),
+          };
+          filled += 1;
+        });
+        return filled;
+      }
+      const groupNumerals = group.rows
+        .map((reference) => Number.parseInt(String(reference.numeral || "").trim(), 10))
+        .filter((value) => Number.isFinite(value) && value > 0);
+      group.rows.forEach((reference) => {
+        const localIndex = resolvePdpExcelLocalIndex(reference, row, scope.count, groupNumerals);
+        if (localIndex < 0 || localIndex >= scope.count) {
+          return;
+        }
+        const absoluteIndex = scope.start + localIndex;
+        if (isConvenioPdpAutoFillDetailComplete(nextState[absoluteIndex])) {
+          return;
+        }
+        nextState[absoluteIndex] = {
+          concepto: reference.concepto,
+          subconcepto: reference.subconcepto || "",
+          monto: Number(reference.monto || 0).toFixed(2),
+        };
+        filled += 1;
+      });
+      return filled;
+    };
+
+    const autoFillConvenioPdpFromHistory = async () => {
+      const totalPdp = getTotalPdpTargetCount();
+      const convenioRows = (Array.isArray(fuentesDetalleState) ? fuentesDetalleState : [])
+        .map((row, rowIndex) => ({ row, rowIndex }))
+        .filter(({ row }) => isConvenioPdpAutoFillRow(row));
+      if (!convenioRows.length || totalPdp <= 0) {
+        return;
+      }
+      const ejercicio = String(
+        (manualEjercicio ? manualEjercicio.value : "")
+        || (principalEjercicio ? principalEjercicio.value : "")
+        || "",
+      ).trim();
+      if (!ejercicio) {
+        return;
+      }
+      const requestId = ++convenioPdpAutoFillRequestId;
+      const params = new URLSearchParams();
+      params.set("ejercicio", ejercicio);
+      const oficio = String(
+        (principalNumeroOficio ? principalNumeroOficio.value : "")
+        || (manualNumeroOficio ? manualNumeroOficio.value : "")
+        || "",
+      ).trim();
+      if (oficio) {
+        params.set("oficio", oficio);
+      }
+      const response = await fetch(`/carga/convenios-pdp-referencias?${params.toString()}`);
+      const payload = await response.json().catch(() => ({}));
+      if (requestId !== convenioPdpAutoFillRequestId) {
+        return;
+      }
+      if (!response.ok || !payload || payload.ok === false) {
+        throw new Error((payload && (payload.error || payload.message)) || "No se pudieron consultar convenios históricos.");
+      }
+      const references = Array.isArray(payload.rows) ? payload.rows : [];
+      if (!references.length) {
+        return;
+      }
+      const nextState = normalizePdpDetalleState(
+        totalPdp,
+        pdpDetalleState.length ? pdpDetalleState : parsePdpDetalleState(),
+      );
+      const seenCurrentKeys = new Set();
+      let filled = 0;
+      let rowsFilled = 0;
+      let repeatedRowsSkipped = 0;
+      convenioRows.forEach(({ row, rowIndex }) => {
+        const count = parseResumenCountValue(row && row.cantidad_pdp);
+        const currentKey = buildConvenioPdpCurrentKey(row);
+        if (seenCurrentKeys.has(currentKey)) {
+          repeatedRowsSkipped += 1;
+          return;
+        }
+        seenCurrentKeys.add(currentKey);
+        const scope = getPdpScopeByRowIndex(rowIndex);
+        if (!scope || scope.count <= 0 || count <= 0) {
+          return;
+        }
+        const group = selectConvenioPdpReferenceGroup(references, row, scope.count);
+        const applied = applyConvenioPdpReferenceGroup(group, row, scope, nextState);
+        if (applied > 0) {
+          filled += applied;
+          rowsFilled += 1;
+        }
+      });
+      if (filled <= 0) {
+        return;
+      }
+
+      pdpDetalleState = nextState;
+      syncPdpDetalleJson();
+      renderFuentesDetalleRows();
+      renderPdpDetalleMenu();
+      renderPdpBreakdown();
+      renderManualReviewSummary();
+      updateManualSaveState();
+      updateWizardModeAvailability();
+
+      const duplicateMontoKeys = getPdpMontoDuplicateKeys(nextState);
+      const duplicateMontoText = duplicateMontoKeys.size
+        ? ` Montos PDP repetidos detectados: ${Array.from(duplicateMontoKeys).slice(0, 5).join(", ")}${duplicateMontoKeys.size > 5 ? "..." : ""}.`
+        : "";
+      const repeatedText = repeatedRowsSkipped
+        ? ` ${repeatedRowsSkipped} convenio(s) repetido(s) no se cuantificaron otra vez.`
+        : "";
+      const message = `Convenios PDP autollenados: ${filled} detalle(s) en ${rowsFilled} fila(s).${duplicateMontoText}${repeatedText}`;
+      setManualPdpExcelFeedback(message, duplicateMontoKeys.size || repeatedRowsSkipped ? "warning" : "success");
+      showWizardToast(`Convenios PDP autollenados: ${filled} detalle(s).`, "success");
+    };
+
     const countCompletePdpDetails = (state) => (
       (Array.isArray(state) ? state : []).filter((item) => isPdpDetalleItemComplete(item)).length
     );
@@ -5830,6 +6118,9 @@
       if (manualResumenJsonImport && "open" in manualResumenJsonImport) {
         manualResumenJsonImport.open = false;
       }
+      autoFillConvenioPdpFromHistory().catch((error) => {
+        console.warn("No se pudieron aplicar referencias históricas de convenios.", error);
+      });
     };
 
     const isPdpDetalleItemComplete = (item) => {

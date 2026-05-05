@@ -639,3 +639,95 @@ def test_gabo_oficios_resumen_repair_action_groups_convenios_as_obra(client, mon
     assert obra["pdp"] == 2
     assert obra["pras"] == 1
     assert obra["monto_emitido"] == 100.0
+
+
+def test_gabo_convenios_pdp_referencias_returns_historical_convenio_pdp(client, monkeypatch, tmp_path):
+    import app as app_module
+
+    test_db_path = tmp_path / "convenios_pdp_referencias.db"
+    monkeypatch.setattr(app_module, "DB_PATH", str(test_db_path))
+    app_module.init_db()
+
+    conn = sqlite3.connect(test_db_path)
+    try:
+        base_columns = """
+            ejercicio, ente_id, ente_numero, ente_nombre, tipo_auditoria,
+            modalidad, fuente_financiamiento, convenio_nombre, convenio_ente_nombre,
+            convenio_ente_id, ramo_33, ramo_28, origen_fuente, periodo_cedula,
+            periodo_titular, periodo, oficio, fecha_notificacion, tipo_anexo,
+            numero_observacion, estado, monto_pdp_emitido,
+            pdp_concepto_irregularidad, pdp_subconcepto_irregularidad, created_at
+        """
+        conn.execute(
+            f"""
+            INSERT INTO observaciones ({base_columns})
+            VALUES (
+                '2025', '1.16', '1.16', 'Secretaría de Infraestructura', 'Obra Pública',
+                'Convenio', 'REA: FONDO DE APORTACIONES MÚLTIPLES (FAM)',
+                'CONVENIO DE COLABORACIÓN PARA LA EJECUCIÓN DE OBRA PÚBLICA: UNIVERSIDAD POLITÉCNICA DE TLAXCALA',
+                'UNIVERSIDAD POLITÉCNICA DE TLAXCALA', '1.99', 'No', 'No', 'Remanentes',
+                '01 de Enero al 27 de Mayo', '01 de Enero al 27 de Mayo',
+                '01 de Enero al 27 de Mayo', 'OFS/0001/2026', '2026-01-01', 'PDP',
+                2, 'Emitido', 797710.01, 'Volúmenes de obra pagados no ejecutados', '', '2026-01-02'
+            )
+            """
+        )
+        conn.execute(
+            f"""
+            INSERT INTO observaciones ({base_columns})
+            VALUES (
+                '2025', '1.16', '1.16', 'Secretaría de Infraestructura', 'Obra Pública',
+                'Convenio', 'REA: FONDO DE APORTACIONES MÚLTIPLES (FAM)',
+                'CONVENIO DE COLABORACIÓN PARA LA EJECUCIÓN DE OBRA PÚBLICA: UNIVERSIDAD POLITÉCNICA DE TLAXCALA',
+                'UNIVERSIDAD POLITÉCNICA DE TLAXCALA', '1.99', 'No', 'No', 'Remanentes',
+                '01 de Enero al 27 de Mayo', '01 de Enero al 27 de Mayo',
+                '01 de Enero al 27 de Mayo', 'OFS/0001/2026', '2026-01-01', 'PDP',
+                3, 'Emitido', 299237.31, 'Conceptos de obra pagados no ejecutados', '', '2026-01-02'
+            )
+            """
+        )
+        conn.execute(
+            f"""
+            INSERT INTO observaciones ({base_columns})
+            VALUES (
+                '2025', '1.16', '1.16', 'Secretaría de Infraestructura', 'Obra Pública',
+                'Convenio', 'REA: FONDO DE APORTACIONES MÚLTIPLES (FAM)',
+                'CONVENIO DE COLABORACIÓN PARA LA EJECUCIÓN DE OBRA PÚBLICA: UNIVERSIDAD POLITÉCNICA DE TLAXCALA',
+                'UNIVERSIDAD POLITÉCNICA DE TLAXCALA', '1.99', 'No', 'No', 'Remanentes',
+                '01 de Enero al 27 de Mayo', '01 de Enero al 27 de Mayo',
+                '01 de Enero al 27 de Mayo', 'OFS/9999/2026', '2026-01-01', 'PDP',
+                1, 'Emitido', 123.45, 'Debe quedar excluida por ser el oficio actual', '', '2026-01-03'
+            )
+            """
+        )
+        conn.execute(
+            f"""
+            INSERT INTO observaciones ({base_columns})
+            VALUES (
+                '2025', '1.16', '1.16', 'Secretaría de Infraestructura', 'Obra Pública',
+                'Fuente', 'REA: FONDO DE APORTACIONES MÚLTIPLES (FAM)',
+                '', '', '', 'No', 'No', 'Remanentes',
+                '01 de Enero al 27 de Mayo', '01 de Enero al 27 de Mayo',
+                '01 de Enero al 27 de Mayo', 'OFS/0002/2026', '2026-01-01', 'PDP',
+                1, 'Emitido', 456.78, 'Debe quedar excluida por no ser convenio', '', '2026-01-04'
+            )
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    with client.session_transaction() as session_data:
+        session_data["user"] = "gabo"
+        session_data["role"] = "loader"
+
+    response = client.get(
+        "/carga/convenios-pdp-referencias?ejercicio=2025&oficio=OFS/9999/2026"
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert {row["numero_observacion"] for row in payload["rows"]} == {2, 3}
+    assert {row["monto"] for row in payload["rows"]} == {797710.01, 299237.31}
+    assert all(row["modalidad"] == "Convenio" for row in payload["rows"])
+    assert all(row["oficio"] == "OFS/0001/2026" for row in payload["rows"])

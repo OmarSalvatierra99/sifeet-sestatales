@@ -7,8 +7,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260430-multiselect-clean') }}">
   <link rel="icon" href="{{ url_for('static', filename='img/ofs_logo.png') }}">
 </head>
-<body class="{% if user and user.username == 'luis' %}luis-wide-layout{% endif %}" data-luis-view="{{ luis_view|default('consulta') }}">
-  {% set user_display_names = {'luis': 'C.P Luis Felipe Camilo Fuentes', 'gabo': 'Ing. Omar Gabriel Salvatierra Garcia'} %}
+<body class="{% if user and user.role in ['viewer', 'editor'] %}luis-wide-layout{% endif %}" data-luis-view="{{ luis_view|default('consulta') }}">
   <header class="site-header">
     <div class="header-inner">
       <img src="{{ url_for('static', filename='img/ofs_logo.png') }}" alt="Logo institucional" class="ofs-logo">
@@ -20,7 +19,7 @@
       <div class="header-badge user-badge">
         <div class="user-meta">
           <span>Usuario</span>
-          <strong>{{ user_display_names.get(user.username, user.username) }}</strong>
+          <strong>{{ user.display_name|default(user.username, true) }}</strong>
         </div>
         <div class="user-actions">
           <span class="user-role">{{ "Captura" if can_edit else "Consulta" }}</span>
@@ -464,7 +463,7 @@
         </div>
         <div class="table-meta">
           <span id="obsCount" aria-live="polite">Selecciona un ejercicio para ver resultados.</span>
-          {% if not (user and user.username == 'luis') %}
+          {% if can_edit %}
             <input id="obs_quick_search" name="obs_quick_search" type="search" placeholder="Buscar en esta página de resultados" />
           {% endif %}
         </div>
@@ -570,6 +569,19 @@
           </span>
           <span>Exportar a Excel</span>
         </button>
+        {% if luis_view == 'fuente_financiamiento' %}
+        <button class="panel-action-btn" type="button" id="fuentes_financiamiento_export">
+          <span class="floating-clear-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M8 5h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M8 9h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M8 13h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M5 19h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <span>Exportar Fuentes de Financiamiento</span>
+        </button>
+        {% endif %}
       </div>
     </section>
 
@@ -709,6 +721,7 @@
     const luisBreakdownHead = document.getElementById("luisBreakdownHead");
     const luisBreakdownBody = document.getElementById("luisBreakdownBody");
     const luisBreakdownExport = document.getElementById("luis_breakdown_export");
+    const fuentesFinanciamientoExport = document.getElementById("fuentes_financiamiento_export");
 
     if (mainEjercicio && obsEnteInput && obsTableBody) {
       const tabButtons = document.querySelectorAll(".tab-button");
@@ -1770,6 +1783,14 @@
         });
         appendCurrentObservationFilters(params);
         window.location.href = `/observaciones-desglose-exportar?${params.toString()}`;
+      };
+
+      const exportFuentesFinanciamiento = () => {
+        if (!mainEjercicio.value) {
+          return;
+        }
+        const params = new URLSearchParams({ ejercicio: mainEjercicio.value });
+        window.location.href = `/fuentes-financiamiento-exportar?${params.toString()}`;
       };
 
       const formatMonto = (value) => {
@@ -3284,6 +3305,9 @@
       }
       if (luisBreakdownExport) {
         luisBreakdownExport.addEventListener("click", exportLuisBreakdown);
+      }
+      if (fuentesFinanciamientoExport) {
+        fuentesFinanciamientoExport.addEventListener("click", exportFuentesFinanciamiento);
       }
 
       if (obsPrev) {

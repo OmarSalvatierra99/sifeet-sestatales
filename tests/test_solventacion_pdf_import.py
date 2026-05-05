@@ -12,6 +12,7 @@ EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "examples"
 SOLVENTACION_PDF = EXAMPLES_DIR / "1.16.- SI_OFS_0985_2026_Ene-Jun.pdf"
 SOLVENTACION_ZIP = EXAMPLES_DIR / "2.- OFICIOS SOLVENTACIÓN 2025.zip"
 SOLVENTACION_SEPE_MEMBER = "2.- OFICIOS SOLVENTACIÓN 2025/1.4.- SEPE_OFS_0949_2026_Ene-Jun.pdf"
+SOLVENTACION_CONVENIO_MEMBER = "2.- OFICIOS SOLVENTACIÓN 2025/23.- CRI-ESCUELA_OFS_0948_2026_Ene-May_Convenio ITIFE.pdf"
 
 
 @pytest.fixture
@@ -54,7 +55,7 @@ def test_parse_solventacion_extracts_periodo_plural_and_destinatario():
     assert parsed["oficio_base"] == "OFS/0342/2026"
     assert parsed["periodo"] == "01 de Enero - 15 de Mayo, 16 de Mayo - 30 de Junio"
     assert parsed["destinatario"] == "SECRETARIO DE INFRAESTRUCTURA (SI)"
-    assert len(parsed["auditorias"]) >= 1
+    assert [auditoria["tipo"] for auditoria in parsed["auditorias"]] == ["Financiera", "Obra Pública", "Convenios"]
 
 
 def test_api_solventacion_accepts_pdf_and_returns_rows(solventacion_client):
@@ -127,6 +128,24 @@ def test_parse_solventacion_sepe_extracts_all_anexos_and_progressives(tmp_path):
     assert registro["solventacion"]["PDP"]["pendientes_indices"] == [3, 10]
     assert registro["solventacion"]["R"]["solventadas_indices"] == [1, 2]
     assert registro["solventacion"]["R"]["pendientes_indices"] == []
+
+
+def test_parse_solventacion_convenio_pdf_stays_in_convenios_block(tmp_path):
+    import zipfile
+
+    target_pdf = tmp_path / "cri_escuela_0948.pdf"
+    with zipfile.ZipFile(SOLVENTACION_ZIP) as zf:
+        with zf.open(SOLVENTACION_CONVENIO_MEMBER) as source, target_pdf.open("wb") as target:
+            target.write(source.read())
+
+    parsed = parse_solventacion(str(target_pdf))
+
+    assert [auditoria["tipo"] for auditoria in parsed["auditorias"]] == ["Convenios"]
+    convenio = parsed["auditorias"][0]["fuentes"][0]
+
+    assert convenio["modalidad"] == "Convenio"
+    assert "INSTITUTO TLAXCALTECA" in convenio["convenio_nombre"]
+    assert "FÍSICA EDUCATIVA" in convenio["convenio_nombre"]
 
 
 def test_solventacion_import_ignores_zero_blocks_without_matching_observaciones(solventacion_client, tmp_path):

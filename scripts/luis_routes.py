@@ -3915,7 +3915,7 @@ def register_luis_routes(app, deps):
         user = get_current_user()
         if user is None:
             return redirect(url_for("login", next=request.path))
-        if user.get("username") not in {"luis", "gabo"}:
+        if not (is_luis_user(user) or is_gabo_user(user)):
             return redirect(url_for(home_endpoint_for_user(user), notice="no_permission"))
 
         ejercicio = request.args.get("ejercicio", "").strip()
@@ -4147,7 +4147,7 @@ def register_luis_routes(app, deps):
         user = get_current_user()
         if user is None:
             return redirect(url_for("login", next=request.path))
-        if user.get("username") not in {"luis", "gabo"}:
+        if not (is_luis_user(user) or is_gabo_user(user)):
             return redirect(url_for(home_endpoint_for_user(user), notice="no_permission"))
 
         ejercicio = " ".join((request.args.get("ejercicio") or "").split())
@@ -4192,37 +4192,86 @@ def register_luis_routes(app, deps):
         workbook = Workbook()
         sheet = workbook.active
         sheet.title = "Fuentes"
+        sheet.sheet_view.showGridLines = False
         thin_border = Border(
             left=Side(style="thin", color="D7DFD9"),
             right=Side(style="thin", color="D7DFD9"),
             top=Side(style="thin", color="D7DFD9"),
             bottom=Side(style="thin", color="D7DFD9"),
         )
-        header_fill = PatternFill("solid", fgColor="1F3B2C")
+        title_fill = PatternFill("solid", fgColor="1F3B2C")
+        subtitle_fill = PatternFill("solid", fgColor="EDF4EF")
+        header_fill = PatternFill("solid", fgColor="2A503D")
         zebra_fill = PatternFill("solid", fgColor="F8FAF7")
+        title_font = Font(bold=True, color="FFFFFF", size=14)
         header_font = Font(bold=True, color="FFFFFF")
+        meta_font = Font(bold=True, color="1F3B2C")
+        muted_font = Font(color="4B5F52")
+        center_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         left_alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
-        sheet.append(["Fuente de Financiamiento"])
-        header_cell = sheet.cell(row=1, column=1)
-        header_cell.font = header_font
-        header_cell.fill = header_fill
-        header_cell.border = thin_border
-        header_cell.alignment = left_alignment
-        for fuente in fuentes:
-            sheet.append([fuente])
-        for row_idx in range(2, sheet.max_row + 1):
-            cell = sheet.cell(row=row_idx, column=1)
+        right_alignment = Alignment(horizontal="right", vertical="center")
+
+        sheet.merge_cells("A1:B1")
+        sheet["A1"] = "Fuentes de Financiamiento"
+        sheet["A1"].font = title_font
+        sheet["A1"].fill = title_fill
+        sheet["A1"].alignment = center_alignment
+
+        metadata = [
+            ("Ejercicio fiscal", ejercicio),
+            ("Total de fuentes", len(fuentes)),
+            ("Generado", datetime.now().strftime("%d/%m/%Y %H:%M")),
+        ]
+        for row_idx, (label, value) in enumerate(metadata, start=2):
+            label_cell = sheet.cell(row=row_idx, column=1, value=label)
+            value_cell = sheet.cell(row=row_idx, column=2, value=value)
+            label_cell.font = meta_font
+            value_cell.font = muted_font
+            label_cell.fill = subtitle_fill
+            value_cell.fill = subtitle_fill
+            label_cell.border = thin_border
+            value_cell.border = thin_border
+            label_cell.alignment = right_alignment
+            value_cell.alignment = left_alignment
+
+        header_row = 6
+        sheet.cell(row=header_row, column=1, value="No.")
+        sheet.cell(row=header_row, column=2, value="Fuente de Financiamiento")
+        for col_idx in range(1, 3):
+            cell = sheet.cell(row=header_row, column=col_idx)
+            cell.font = header_font
+            cell.fill = header_fill
             cell.border = thin_border
-            cell.alignment = left_alignment
-            if row_idx % 2 == 0:
-                cell.fill = zebra_fill
-        sheet.freeze_panes = "A2"
-        sheet.auto_filter.ref = f"A1:A{max(sheet.max_row, 1)}"
-        max_len = max(
-            (len(str(sheet.cell(row=row_idx, column=1).value or "")) for row_idx in range(1, sheet.max_row + 1)),
-            default=24,
-        )
-        sheet.column_dimensions["A"].width = max(28, min(max_len + 2, 90))
+            cell.alignment = center_alignment if col_idx == 1 else left_alignment
+
+        if fuentes:
+            for index, fuente in enumerate(fuentes, start=1):
+                row_idx = header_row + index
+                sheet.cell(row=row_idx, column=1, value=index)
+                sheet.cell(row=row_idx, column=2, value=fuente)
+        else:
+            row_idx = header_row + 1
+            sheet.cell(row=row_idx, column=1, value="")
+            sheet.cell(row=row_idx, column=2, value="Sin fuentes de financiamiento para el ejercicio seleccionado.")
+
+        for row_idx in range(header_row + 1, sheet.max_row + 1):
+            for col_idx in range(1, 3):
+                cell = sheet.cell(row=row_idx, column=col_idx)
+                cell.border = thin_border
+                cell.alignment = center_alignment if col_idx == 1 else left_alignment
+                if row_idx % 2 == 1:
+                    cell.fill = zebra_fill
+
+        sheet.freeze_panes = "A7"
+        sheet.auto_filter.ref = f"A{header_row}:B{max(sheet.max_row, header_row)}"
+        sheet.column_dimensions["A"].width = 9
+        max_len = max((len(fuente) for fuente in fuentes), default=52)
+        sheet.column_dimensions["B"].width = max(42, min(max_len + 4, 92))
+        for row_idx in range(1, sheet.max_row + 1):
+            sheet.row_dimensions[row_idx].height = 22
+        sheet.page_setup.orientation = "portrait"
+        sheet.page_setup.fitToWidth = 1
+        sheet.page_setup.fitToHeight = 0
 
         stream = BytesIO()
         workbook.save(stream)
