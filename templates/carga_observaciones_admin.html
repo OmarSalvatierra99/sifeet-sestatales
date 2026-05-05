@@ -192,6 +192,24 @@
           </details>
           <p class="helper manual-resumen-json-feedback" id="obsAdminSolventacionImportFeedback"></p>
         </details>
+        <details class="manual-resumen-json-import" id="obsAdminPdpSolventadoExcelImport">
+          <summary>Cargar montos solventados PDP desde Excel</summary>
+          <p class="helper">
+            Usa el Excel de detalle PDP con TIPO DE FUENTE, F.F, PERIODO, SUBTIPO DE AUDITORIA, NUMERAL, CONCEPTO PDP y MONTO PDP.
+            El monto se guardará como monto solventado de la observación PDP correspondiente del oficio actual.
+          </p>
+          <div class="oficio-upload-zone" id="obsAdminPdpSolventadoExcelUploadZone">
+            <input type="file" id="obsAdminPdpSolventadoExcelInput" accept=".xlsx" hidden>
+            <span class="oficio-upload-icon">📊</span>
+            <p>Arrastra aquí el Excel de montos solventados PDP</p>
+            <p>o <button class="oficio-upload-link" type="button" id="obsAdminPdpSolventadoExcelBrowseBtn">selecciona un archivo</button></p>
+            <p class="oficio-file-name" id="obsAdminPdpSolventadoExcelFileName" hidden></p>
+          </div>
+          <div class="manual-resumen-json-actions">
+            <button type="button" class="btn-secondary btn-compact" id="obsAdminPdpSolventadoExcelClearBtn" style="display:none;">Limpiar</button>
+          </div>
+          <p class="helper manual-resumen-json-feedback" id="obsAdminPdpSolventadoExcelFeedback"></p>
+        </details>
         <div id="obsAdminSolventacionEditor" class="obs-admin-summary-body">
           <p class="muted">Carga un PDF o JSON para editar y aplicar los números progresivos del oficio.</p>
         </div>
@@ -369,6 +387,13 @@
     const solventacionJsonClearBtn = document.getElementById("obsAdminSolventacionJsonClearBtn");
     const solventacionImportFeedback = document.getElementById("obsAdminSolventacionImportFeedback");
     const solventacionEditor = document.getElementById("obsAdminSolventacionEditor");
+    const pdpSolventadoExcelImport = document.getElementById("obsAdminPdpSolventadoExcelImport");
+    const pdpSolventadoExcelUploadZone = document.getElementById("obsAdminPdpSolventadoExcelUploadZone");
+    const pdpSolventadoExcelInput = document.getElementById("obsAdminPdpSolventadoExcelInput");
+    const pdpSolventadoExcelBrowseBtn = document.getElementById("obsAdminPdpSolventadoExcelBrowseBtn");
+    const pdpSolventadoExcelFileName = document.getElementById("obsAdminPdpSolventadoExcelFileName");
+    const pdpSolventadoExcelClearBtn = document.getElementById("obsAdminPdpSolventadoExcelClearBtn");
+    const pdpSolventadoExcelFeedback = document.getElementById("obsAdminPdpSolventadoExcelFeedback");
     const saveFilteredBtn = document.getElementById("obsAdminSaveFilteredBtn");
     const solveAllBtn = document.getElementById("obsAdminSolveAllBtn");
     const pendingAllBtn = document.getElementById("obsAdminPendingAllBtn");
@@ -416,6 +441,8 @@
     let solventacionImportFile = null;
     let isSolventacionImportProcessing = false;
     let solventacionImportPdpReviewed = false;
+    let pdpSolventadoExcelFile = null;
+    let isPdpSolventadoExcelProcessing = false;
 
     const escapeHtml = (value) => (
       String(value || "")
@@ -440,6 +467,12 @@
       if (!solventacionImportFeedback) return;
       solventacionImportFeedback.textContent = String(message || "").trim();
       solventacionImportFeedback.dataset.level = level;
+    };
+
+    const setPdpSolventadoExcelFeedback = (message = "", level = "info") => {
+      if (!pdpSolventadoExcelFeedback) return;
+      pdpSolventadoExcelFeedback.textContent = String(message || "").trim();
+      pdpSolventadoExcelFeedback.dataset.level = level;
     };
 
     const formatCount = (value) => (
@@ -1938,6 +1971,199 @@
       } finally {
         isSolventacionImportProcessing = false;
         if (solventacionUploadZone) solventacionUploadZone.classList.remove("processing");
+      }
+    };
+
+    const setPdpSolventadoExcelFile = (file) => {
+      if (!file || !file.name.toLowerCase().endsWith(".xlsx")) {
+        pdpSolventadoExcelFile = null;
+        if (pdpSolventadoExcelFileName) pdpSolventadoExcelFileName.hidden = true;
+        if (pdpSolventadoExcelUploadZone) pdpSolventadoExcelUploadZone.classList.remove("has-file");
+        if (pdpSolventadoExcelClearBtn) pdpSolventadoExcelClearBtn.style.display = "none";
+        setPdpSolventadoExcelFeedback("Solo se aceptan archivos .xlsx.", "error");
+        return false;
+      }
+      pdpSolventadoExcelFile = file;
+      if (pdpSolventadoExcelFileName) {
+        pdpSolventadoExcelFileName.textContent = file.name;
+        pdpSolventadoExcelFileName.hidden = false;
+      }
+      if (pdpSolventadoExcelUploadZone) {
+        pdpSolventadoExcelUploadZone.classList.add("has-file");
+      }
+      if (pdpSolventadoExcelClearBtn) {
+        pdpSolventadoExcelClearBtn.style.display = "";
+      }
+      setPdpSolventadoExcelFeedback("Excel listo para procesar.", "info");
+      return true;
+    };
+
+    const clearPdpSolventadoExcelImport = () => {
+      pdpSolventadoExcelFile = null;
+      if (pdpSolventadoExcelInput) pdpSolventadoExcelInput.value = "";
+      if (pdpSolventadoExcelFileName) pdpSolventadoExcelFileName.hidden = true;
+      if (pdpSolventadoExcelUploadZone) {
+        pdpSolventadoExcelUploadZone.classList.remove("has-file", "processing", "drag-over");
+      }
+      if (pdpSolventadoExcelClearBtn) pdpSolventadoExcelClearBtn.style.display = "none";
+      setPdpSolventadoExcelFeedback("", "info");
+    };
+
+    const processPdpSolventadoExcel = async () => {
+      const filters = readFilters();
+      if (!pdpSolventadoExcelFile || isPdpSolventadoExcelProcessing) {
+        return;
+      }
+      if (!hasEditableOfficeScope(filters)) {
+        setPdpSolventadoExcelFeedback("Selecciona un oficio editable antes de cargar montos PDP.", "error");
+        return;
+      }
+      if (isReadOnlyEjercicio(filters.ejercicio)) {
+        setPdpSolventadoExcelFeedback(getReadOnlyMessage(filters.ejercicio), "error");
+        return;
+      }
+
+      isPdpSolventadoExcelProcessing = true;
+      if (pdpSolventadoExcelUploadZone) pdpSolventadoExcelUploadZone.classList.add("processing");
+      setPdpSolventadoExcelFeedback("Procesando Excel y cruzando PDP del oficio...", "info");
+
+      const form = new FormData();
+      form.append("pdp_file", pdpSolventadoExcelFile);
+      form.append("ejercicio", filters.ejercicio);
+      form.append("ente_id", filters.ente_id);
+      form.append("oficio", filters.oficio);
+      form.append("tipo_auditoria", filters.tipo_auditoria || "");
+
+      try {
+        const previewResponse = await fetch("/carga/observaciones-admin/pdp-solventado-excel/preview", {
+          method: "POST",
+          body: form,
+        });
+        const previewPayload = await previewResponse.json();
+        if (!previewResponse.ok || !previewPayload.ok) {
+          throw new Error(previewPayload.error || "No se pudo procesar el Excel PDP.");
+        }
+
+        const updates = Array.isArray(previewPayload.updates) ? previewPayload.updates : [];
+        if (!updates.length) {
+          setPdpSolventadoExcelFeedback("No se encontraron PDP del oficio para aplicar.", "error");
+          return;
+        }
+        const summary = previewPayload.summary || {};
+        const warnings = Array.isArray(previewPayload.warnings)
+          ? previewPayload.warnings.filter(Boolean)
+          : [];
+        const previewLimit = 40;
+        const previewRows = updates.slice(0, previewLimit).map((item) => ({
+          row: item.row_number ? String(item.row_number) : "-",
+          id: String(item.id || ""),
+          fuente: item.modalidad === "Convenio" && item.convenio_nombre
+            ? `${item.fuente_financiamiento || "-"} · ${item.convenio_nombre}`
+            : (item.fuente_financiamiento || "-"),
+          periodo: item.periodo || "-",
+          numeral: String(item.numero_observacion || ""),
+          estado: item.estado || "Emitido",
+          emitido: formatMoney(item.monto_pdp_emitido || 0),
+          antes: formatMoney(item.monto_pdp_solventado_before || 0),
+          ahora: formatMoney(item.monto_pdp_solventado_after || 0),
+          pendiente: formatMoney(item.monto_pdp_pendiente_after || 0),
+        }));
+
+        const confirmed = await showConfirmModal({
+          title: "Confirmar montos solventados PDP desde Excel",
+          subtitle: "Se guardarán los montos del Excel en el campo monto solventado PDP del oficio actual.",
+          metaItems: [
+            { label: "Ejercicio", value: filters.ejercicio || "-" },
+            { label: "Oficio", value: filters.oficio || "-" },
+            { label: "Archivo", value: previewPayload.file_name || pdpSolventadoExcelFile.name },
+            { label: "Coincidencias", value: `${formatCount(summary.matched_rows || updates.length)} de ${formatCount(summary.excel_rows || updates.length)}` },
+          ],
+          highlightItems: [
+            { label: "Montos modificados", value: formatCount(summary.changed_rows || 0), tone: "warning" },
+            { label: "Total antes", value: formatMoney(summary.total_before || 0), tone: "default" },
+            { label: "Total Excel", value: formatMoney(summary.total_after || 0), tone: "default" },
+          ],
+          summaryTitle: "Resumen",
+          summaryRows: [
+            { label: "Filas del Excel", value: formatCount(summary.excel_rows || 0), align: "right" },
+            { label: "PDP cruzadas", value: formatCount(summary.matched_rows || updates.length), align: "right" },
+            { label: "PDP omitidas", value: formatCount(summary.unmatched_rows || 0), align: "right" },
+            { label: "PDP repetidas", value: formatCount(summary.duplicate_rows || 0), align: "right" },
+            { label: "Monto solventado antes", value: formatMoney(summary.total_before || 0), align: "right" },
+            { label: "Monto solventado Excel", value: formatMoney(summary.total_after || 0), align: "right" },
+            { label: "Variación", value: formatMoney(summary.delta || 0), align: "right" },
+          ],
+          previewTitle: `Vista previa (${formatCount(previewRows.length)} de ${formatCount(updates.length)} PDP)`,
+          previewColumns: [
+            { key: "row", label: "Fila", align: "right" },
+            { key: "id", label: "ID", align: "right" },
+            { key: "fuente", label: "Fuente" },
+            { key: "periodo", label: "Periodo" },
+            { key: "numeral", label: "PDP", align: "right" },
+            { key: "estado", label: "Estado" },
+            { key: "emitido", label: "Emitido", align: "right" },
+            { key: "antes", label: "Solventado antes", align: "right" },
+            { key: "ahora", label: "Solventado Excel", align: "right" },
+            { key: "pendiente", label: "Pendiente", align: "right" },
+          ],
+          previewRows,
+          warningText: warnings.length
+            ? `ATENCION: se aplicarán solo las coincidencias. Avisos: ${warnings.slice(0, 3).join(" ")}${warnings.length > 3 ? ` y ${warnings.length - 3} aviso(s) más.` : ""}`
+            : "ATENCION: esta acción actualiza montos PDP; no cambia el estado de las observaciones.",
+          confirmLabel: "Aplicar montos",
+          cancelLabel: "Revisar nuevamente",
+          triggerButton: pdpSolventadoExcelBrowseBtn,
+          fallbackMessage: `¿Confirmas aplicar ${updates.length} monto(s) PDP desde Excel?`,
+        });
+        if (!confirmed) {
+          setPdpSolventadoExcelFeedback("Aplicación cancelada. El Excel sigue seleccionado.", "info");
+          return;
+        }
+
+        setPdpSolventadoExcelFeedback("Guardando montos PDP...", "info");
+        const applyResponse = await fetch("/carga/observaciones-admin/pdp-solventado-excel/aplicar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            scope: {
+              ejercicio: filters.ejercicio,
+              ente_id: filters.ente_id,
+              oficio: filters.oficio,
+              tipo_auditoria: filters.tipo_auditoria,
+            },
+            updates: updates.map((item) => ({
+              id: item.id,
+              monto_pdp_solventado: item.monto_pdp_solventado_after,
+            })),
+          }),
+        });
+        const applyPayload = await applyResponse.json();
+        if (!applyResponse.ok || !applyPayload.ok) {
+          throw new Error(applyPayload.error || "No se pudieron guardar los montos PDP.");
+        }
+
+        await fetchRows({ announce: false });
+        solventacionImportPdpReviewed = true;
+        if (pdpSolventadoExcelImport && "open" in pdpSolventadoExcelImport && !warnings.length) {
+          pdpSolventadoExcelImport.open = false;
+        }
+        clearPdpSolventadoExcelImport();
+        const warningText = warnings.length
+          ? ` Avisos: ${warnings.slice(0, 3).join(" ")}${warnings.length > 3 ? ` y ${warnings.length - 3} más.` : ""}`
+          : "";
+        setPdpSolventadoExcelFeedback(
+          `Montos PDP guardados: ${applyPayload.updated || updates.length}. Modificados: ${applyPayload.changed || 0}.${warningText}`,
+          warnings.length ? "warning" : "success",
+        );
+        showStatus(`Montos solventados PDP aplicados: ${applyPayload.updated || updates.length}.`, "success");
+      } catch (error) {
+        const message = error && error.message ? error.message : "No se pudo cargar el Excel de montos PDP.";
+        setPdpSolventadoExcelFeedback(message, "error");
+        showStatus(message, "error");
+      } finally {
+        isPdpSolventadoExcelProcessing = false;
+        if (pdpSolventadoExcelUploadZone) pdpSolventadoExcelUploadZone.classList.remove("processing");
+        updateSafetyState();
       }
     };
 
@@ -3796,6 +4022,55 @@
     if (solventacionClearBtn) {
       solventacionClearBtn.addEventListener("click", () => {
         clearSolventacionImport();
+      });
+    }
+
+    if (pdpSolventadoExcelBrowseBtn) {
+      pdpSolventadoExcelBrowseBtn.addEventListener("click", () => {
+        if (pdpSolventadoExcelInput) pdpSolventadoExcelInput.click();
+      });
+    }
+
+    if (pdpSolventadoExcelUploadZone) {
+      pdpSolventadoExcelUploadZone.addEventListener("click", (event) => {
+        if (event.target === pdpSolventadoExcelBrowseBtn) return;
+        if (pdpSolventadoExcelInput && event.target !== pdpSolventadoExcelInput) {
+          pdpSolventadoExcelInput.click();
+        }
+      });
+      pdpSolventadoExcelUploadZone.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        pdpSolventadoExcelUploadZone.classList.add("drag-over");
+      });
+      pdpSolventadoExcelUploadZone.addEventListener("dragleave", () => {
+        pdpSolventadoExcelUploadZone.classList.remove("drag-over");
+      });
+      pdpSolventadoExcelUploadZone.addEventListener("drop", async (event) => {
+        event.preventDefault();
+        pdpSolventadoExcelUploadZone.classList.remove("drag-over");
+        const file = event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files[0] : null;
+        if (!file) return;
+        if (setPdpSolventadoExcelFile(file)) {
+          await processPdpSolventadoExcel();
+        }
+      });
+    }
+
+    if (pdpSolventadoExcelInput) {
+      pdpSolventadoExcelInput.addEventListener("change", async () => {
+        const file = pdpSolventadoExcelInput.files && pdpSolventadoExcelInput.files[0]
+          ? pdpSolventadoExcelInput.files[0]
+          : null;
+        if (!file) return;
+        if (setPdpSolventadoExcelFile(file)) {
+          await processPdpSolventadoExcel();
+        }
+      });
+    }
+
+    if (pdpSolventadoExcelClearBtn) {
+      pdpSolventadoExcelClearBtn.addEventListener("click", () => {
+        clearPdpSolventadoExcelImport();
       });
     }
 

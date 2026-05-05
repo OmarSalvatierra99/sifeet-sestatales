@@ -43,7 +43,7 @@ def normalize_periodo_key(ejercicio: str, periodo: str, *, label: str, strict: b
 
 
 def normalize_solventacion_periodo_key(ejercicio: str, periodo: str) -> str:
-    clean = " ".join((periodo or "").strip().split())
+    clean = " ".join((periodo or "").strip().split()).lower()
     if not clean:
         return ""
     months_es_to_num = {
@@ -5848,6 +5848,373 @@ def register_gabo_routes(app, deps):
                 "ok": True,
                 "updated": len(touched_ids),
                 "blocks": len(normalized_import_rows),
+                "backup_path": backup_path,
+            }
+        )
+
+    def _pdp_solventado_excel_match_keys(
+        *,
+        ejercicio: str,
+        tipo_auditoria: str,
+        modalidad: str,
+        fuente: str,
+        convenio_nombre: str,
+        periodo: str,
+        numeral: int,
+    ) -> list[tuple[str, str, str, str, str, int]]:
+        normalized_modalidad = normalize_observacion_modalidad(modalidad or "Fuente")
+        normalized_tipo = normalize_tipo_auditoria(tipo_auditoria or "") or "Financiera"
+        normalized_fuente = normalize_fuente_financiamiento(" ".join(str(fuente or "").split()))
+        normalized_convenio = (
+            normalize_convenio_text(convenio_nombre or "")
+            if normalized_modalidad == "Convenio"
+            else ""
+        )
+        periodo_key = normalize_solventacion_periodo_key(ejercicio, " ".join(str(periodo or "").split()))
+        base_key = (
+            normalized_modalidad.lower(),
+            normalized_tipo.lower(),
+            normalized_fuente.lower(),
+            normalized_convenio.lower(),
+            periodo_key,
+            int(numeral or 0),
+        )
+        keys = [base_key]
+        if normalized_modalidad == "Convenio":
+            fallback_key = (
+                normalized_modalidad.lower(),
+                "convenios",
+                normalized_fuente.lower(),
+                normalized_convenio.lower(),
+                periodo_key,
+                int(numeral or 0),
+            )
+            if fallback_key not in keys:
+                keys.append(fallback_key)
+        return keys
+
+    def _build_pdp_solventado_excel_preview(
+        db,
+        *,
+        scope: dict,
+        entries: list[dict],
+    ) -> dict[str, object]:
+        where_clauses, params, normalized_scope, _ = build_observaciones_admin_scope(scope)
+        _require_safe_bulk_scope(normalized_scope, action_label="cargar montos solventados PDP desde Excel")
+        scope_ejercicio = str(normalized_scope.get("ejercicio") or "").strip()
+        where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+
+        current_rows = db.execute(
+            f"""
+            SELECT
+                id,
+                TRIM(COALESCE(tipo_auditoria, '')) AS tipo_auditoria,
+                TRIM(COALESCE(fuente_financiamiento, '')) AS fuente_financiamiento,
+                TRIM(COALESCE(modalidad, 'Fuente')) AS modalidad,
+                TRIM(COALESCE(convenio_nombre, '')) AS convenio_nombre,
+                TRIM(COALESCE(periodo_cedula, '')) AS periodo_cedula,
+                TRIM(COALESCE(tipo_anexo, '')) AS tipo_anexo,
+                COALESCE(numero_observacion, 0) AS numero_observacion,
+                TRIM(COALESCE(estado, '')) AS estado,
+                COALESCE(monto_pdp_emitido, 0) AS monto_pdp_emitido,
+                COALESCE(monto_pdp_solventado, 0) AS monto_pdp_solventado,
+                COALESCE(monto_pdp_pendiente, 0) AS monto_pdp_pendiente
+            FROM observaciones
+            WHERE {where_sql}
+              AND UPPER(TRIM(COALESCE(tipo_anexo, ''))) = 'PDP'
+            ORDER BY
+                LOWER(TRIM(COALESCE(tipo_auditoria, ''))),
+                LOWER(TRIM(COALESCE(fuente_financiamiento, ''))),
+                LOWER(TRIM(COALESCE(periodo_cedula, ''))),
+                COALESCE(numero_observacion, 0),
+                id
+            """,
+            params,
+        ).fetchall()
+        if not current_rows:
+            raise ValueError("El oficio actual no tiene observaciones PDP para cruzar con el Excel.")
+
+        current_by_key: dict[tuple[str, str, str, str, str, int], sqlite3.Row] = {}
+        duplicate_blocks: list[str] = []
+        for row in current_rows:
+            row_keys = _pdp_solventado_excel_match_keys(
+                ejercicio=scope_ejercicio,
+                tipo_auditoria=row["tipo_auditoria"] or "",
+                modalidad=row["modalidad"] or "Fuente",
+                fuente=row["fuente_financiamiento"] or "",
+                convenio_nombre=row["convenio_nombre"] or "",
+                periodo=row["periodo_cedula"] or "",
+                numeral=int(row["numero_observacion"] or 0),
+            )
+            for row_key in row_keys:
+                if row_key in current_by_key:
+                    duplicate_blocks.append(
+                        f"{row['tipo_auditoria']} / {row['fuente_financiamiento']} / "
+                        f"{row['periodo_cedula']} / PDP #{row['numero_observacion']}"
+                    )
+                    continue
+                current_by_key[row_key] = row
+        if duplicate_blocks:
+            raise ValueError(
+                "Hay observaciones PDP duplicadas en el oficio actual. Revisa primero: "
+                + "; ".join(duplicate_blocks[:10])
+                + "."
+            )
+
+        updates: list[dict[str, object]] = []
+        warnings: list[str] = []
+        seen_target_ids: set[int] = set()
+        unmatched_count = 0
+        duplicate_excel_count = 0
+
+        for entry in entries:
+            try:
+                numeral = int(entry.get("numeral") or 0)
+            except (TypeError, ValueError):
+                numeral = 0
+            if numeral <= 0:
+                warnings.append(f"Fila {entry.get('row_number') or '?'}: NUMERAL PDP inválido.")
+                unmatched_count += 1
+                continue
+
+            match_row = None
+            entry_keys = _pdp_solventado_excel_match_keys(
+                ejercicio=scope_ejercicio,
+                tipo_auditoria=str(entry.get("tipo_auditoria") or ""),
+                modalidad=str(entry.get("modalidad") or "Fuente"),
+                fuente=str(entry.get("fuente_nombre") or entry.get("fuente_financiamiento") or ""),
+                convenio_nombre=str(entry.get("convenio_nombre") or ""),
+                periodo=str(entry.get("periodo") or ""),
+                numeral=numeral,
+            )
+            for entry_key in entry_keys:
+                match_row = current_by_key.get(entry_key)
+                if match_row is not None:
+                    break
+            if match_row is None:
+                warnings.append(
+                    f"Fila {entry.get('row_number') or '?'}: no se encontró PDP "
+                    f"{entry.get('fuente_nombre') or ''} / {entry.get('periodo') or ''} #{numeral}."
+                )
+                unmatched_count += 1
+                continue
+
+            target_id = int(match_row["id"])
+            if target_id in seen_target_ids:
+                warnings.append(
+                    f"Fila {entry.get('row_number') or '?'}: PDP repetida para ID {target_id}."
+                )
+                duplicate_excel_count += 1
+                continue
+
+            monto = round(float(entry.get("monto") or 0.0), 2)
+            monto_emitido = round(float(match_row["monto_pdp_emitido"] or 0.0), 2)
+            if monto < 0:
+                warnings.append(f"Fila {entry.get('row_number') or '?'}: MONTO PDP no puede ser negativo.")
+                unmatched_count += 1
+                continue
+            if monto > monto_emitido + 0.009:
+                raise ValueError(
+                    f"Fila {entry.get('row_number') or '?'}: el monto solventado "
+                    f"({monto:,.2f}) no puede ser mayor al emitido ({monto_emitido:,.2f})."
+                )
+
+            current_solventado = round(float(match_row["monto_pdp_solventado"] or 0.0), 2)
+            monto_pendiente = round(max(0.0, monto_emitido - monto), 2)
+            seen_target_ids.add(target_id)
+            updates.append(
+                {
+                    "id": target_id,
+                    "row_number": int(entry.get("row_number") or 0),
+                    "tipo_auditoria": match_row["tipo_auditoria"] or "",
+                    "fuente_financiamiento": match_row["fuente_financiamiento"] or "",
+                    "modalidad": normalize_observacion_modalidad(match_row["modalidad"] or "Fuente"),
+                    "convenio_nombre": normalize_convenio_text(match_row["convenio_nombre"] or ""),
+                    "periodo": match_row["periodo_cedula"] or "",
+                    "numero_observacion": int(match_row["numero_observacion"] or 0),
+                    "estado": _normalize_observacion_estado(match_row["estado"] or ""),
+                    "monto_pdp_emitido": monto_emitido,
+                    "monto_pdp_solventado_before": current_solventado,
+                    "monto_pdp_solventado_after": monto,
+                    "monto_pdp_pendiente_after": monto_pendiente,
+                    "changed": abs(current_solventado - monto) > 0.009,
+                }
+            )
+
+        if not updates:
+            raise ValueError(
+                "No se pudo cruzar ninguna fila del Excel con las observaciones PDP del oficio actual."
+            )
+
+        total_before = round(sum(float(item["monto_pdp_solventado_before"] or 0.0) for item in updates), 2)
+        total_after = round(sum(float(item["monto_pdp_solventado_after"] or 0.0) for item in updates), 2)
+        return {
+            "updates": updates,
+            "warnings": warnings,
+            "summary": {
+                "excel_rows": len(entries),
+                "matched_rows": len(updates),
+                "changed_rows": sum(1 for item in updates if item.get("changed")),
+                "unmatched_rows": unmatched_count,
+                "duplicate_rows": duplicate_excel_count,
+                "total_before": total_before,
+                "total_after": total_after,
+                "delta": round(total_after - total_before, 2),
+            },
+        }
+
+    @app.post("/carga/observaciones-admin/pdp-solventado-excel/preview")
+    @gabo_required
+    def carga_observaciones_admin_pdp_solventado_excel_preview():
+        upload = request.files.get("pdp_file") or request.files.get("file")
+        scope = {
+            "ejercicio": request.form.get("ejercicio", ""),
+            "ente_id": request.form.get("ente_id", ""),
+            "oficio": request.form.get("oficio", ""),
+            "tipo_auditoria": request.form.get("tipo_auditoria", ""),
+        }
+        try:
+            parsed = _parse_pdp_detail_excel_upload(upload)
+            preview = _build_pdp_solventado_excel_preview(
+                get_db(),
+                scope=scope,
+                entries=parsed["entries"],
+            )
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), _readonly_error_status(exc)
+
+        warnings = []
+        warnings.extend(parsed.get("warnings") or [])
+        warnings.extend(preview.get("warnings") or [])
+        return jsonify(
+            {
+                "ok": True,
+                "file_name": parsed.get("file_name") or "",
+                "updates": preview["updates"],
+                "warnings": warnings,
+                "summary": preview["summary"],
+                "sheets": parsed.get("sheets") or [],
+            }
+        )
+
+    @app.post("/carga/observaciones-admin/pdp-solventado-excel/aplicar")
+    @gabo_required
+    def carga_observaciones_admin_pdp_solventado_excel_aplicar():
+        payload = request.get_json(silent=True) or {}
+        raw_scope = payload.get("scope") if isinstance(payload.get("scope"), dict) else {}
+        raw_updates = payload.get("updates")
+        if not isinstance(raw_updates, list) or not raw_updates:
+            return jsonify({"ok": False, "error": "No se recibieron montos PDP para aplicar."}), 400
+        try:
+            where_clauses, params, scope, _ = build_observaciones_admin_scope(raw_scope)
+            _require_safe_bulk_scope(scope, action_label="aplicar montos solventados PDP")
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), _readonly_error_status(exc)
+
+        updates_by_id: dict[int, float] = {}
+        for index, item in enumerate(raw_updates, start=1):
+            if not isinstance(item, dict):
+                return jsonify({"ok": False, "error": f"El monto {index} es inválido."}), 400
+            try:
+                observacion_id = int(item.get("id") or 0)
+            except (TypeError, ValueError):
+                observacion_id = 0
+            if observacion_id <= 0:
+                return jsonify({"ok": False, "error": f"El monto {index} no incluye ID válido."}), 400
+            if observacion_id in updates_by_id:
+                return jsonify({"ok": False, "error": f"ID {observacion_id} viene repetido."}), 400
+            try:
+                monto_solventado = parse_non_negative_float(
+                    str(item.get("monto_pdp_solventado", item.get("monto_pdp_solventado_after", ""))),
+                    "Monto PDP solventado",
+                )
+            except ValueError as exc:
+                return jsonify({"ok": False, "error": f"ID {observacion_id}: {exc}"}), 400
+            updates_by_id[observacion_id] = round(float(monto_solventado), 2)
+
+        ids = sorted(updates_by_id)
+        db = get_db()
+        if _count_scope_ids(db, ids, where_clauses, params) != len(ids):
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": "Refresca la consulta: las PDP del Excel ya no coinciden con el oficio activo.",
+                }
+            ), 400
+
+        blocked_ejercicio = _first_readonly_observacion_ejercicio(db, ids)
+        if blocked_ejercicio:
+            return jsonify({"ok": False, "error": _readonly_obs_message(blocked_ejercicio)}), 403
+
+        placeholders = ", ".join(["?"] * len(ids))
+        current_rows = db.execute(
+            f"""
+            SELECT
+                id,
+                TRIM(COALESCE(tipo_anexo, '')) AS tipo_anexo,
+                COALESCE(monto_pdp_emitido, 0) AS monto_pdp_emitido,
+                COALESCE(monto_pdp_solventado, 0) AS monto_pdp_solventado
+            FROM observaciones
+            WHERE id IN ({placeholders})
+            """,
+            ids,
+        ).fetchall()
+        if len(current_rows) != len(ids):
+            return jsonify({"ok": False, "error": "No se encontraron todas las observaciones PDP."}), 404
+
+        total_before = 0.0
+        total_after = 0.0
+        changed = 0
+        for row in current_rows:
+            observacion_id = int(row["id"])
+            if (row["tipo_anexo"] or "").strip().upper() != "PDP":
+                return jsonify({"ok": False, "error": f"ID {observacion_id} no es PDP."}), 400
+            monto_emitido = float(row["monto_pdp_emitido"] or 0.0)
+            monto_solventado = float(updates_by_id[observacion_id])
+            if monto_solventado > monto_emitido + 0.009:
+                return jsonify(
+                    {
+                        "ok": False,
+                        "error": (
+                            f"ID {observacion_id}: monto solventado no puede ser mayor al emitido "
+                            f"({monto_emitido:,.2f})."
+                        ),
+                    }
+                ), 400
+            current_solventado = float(row["monto_pdp_solventado"] or 0.0)
+            total_before += current_solventado
+            total_after += monto_solventado
+            if abs(current_solventado - monto_solventado) > 0.009:
+                changed += 1
+
+        backup_path = _create_db_snapshot("observaciones-pdp-solventado-excel")
+        for observacion_id, monto_solventado in updates_by_id.items():
+            row = next(item for item in current_rows if int(item["id"]) == observacion_id)
+            monto_emitido = float(row["monto_pdp_emitido"] or 0.0)
+            monto_pendiente = max(0.0, monto_emitido - monto_solventado)
+            db.execute(
+                """
+                UPDATE observaciones
+                SET monto_pdp_solventado = ?,
+                    monto_pdp_pendiente = ?,
+                    monto = ?
+                WHERE id = ?
+                """,
+                (
+                    monto_solventado,
+                    monto_pendiente,
+                    monto_emitido,
+                    observacion_id,
+                ),
+            )
+        db.commit()
+        return jsonify(
+            {
+                "ok": True,
+                "updated": len(ids),
+                "changed": changed,
+                "total_before": round(total_before, 2),
+                "total_after": round(total_after, 2),
                 "backup_path": backup_path,
             }
         )

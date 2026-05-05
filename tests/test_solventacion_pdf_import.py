@@ -4,13 +4,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from openpyxl import Workbook
 
 from scripts.parsers import parse_solventacion
 
 
 EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "examples"
 SOLVENTACION_PDF = EXAMPLES_DIR / "1.16.- SI_OFS_0985_2026_Ene-Jun.pdf"
+SOLVENTACION_OPD_PDF = EXAMPLES_DIR / "22.- OPD_OFS_1094_2026_Ene-Jun.pdf"
 SOLVENTACION_ZIP = EXAMPLES_DIR / "2.- OFICIOS SOLVENTACIÓN 2025.zip"
+SOLVENTACION_PJET_MEMBER = "2.- OFICIOS SOLVENTACIÓN 2025/3.- PJET_OFS_0340_2026_Ene-Jun.pdf"
 SOLVENTACION_SEPE_MEMBER = "2.- OFICIOS SOLVENTACIÓN 2025/1.4.- SEPE_OFS_0949_2026_Ene-Jun.pdf"
 SOLVENTACION_CONVENIO_MEMBER = "2.- OFICIOS SOLVENTACIÓN 2025/23.- CRI-ESCUELA_OFS_0948_2026_Ene-May_Convenio ITIFE.pdf"
 
@@ -146,6 +149,58 @@ def test_parse_solventacion_convenio_pdf_stays_in_convenios_block(tmp_path):
     assert convenio["modalidad"] == "Convenio"
     assert "INSTITUTO TLAXCALTECA" in convenio["convenio_nombre"]
     assert "FÍSICA EDUCATIVA" in convenio["convenio_nombre"]
+
+
+def test_parse_solventacion_opd_keeps_financial_continuation_before_obra_header():
+    parsed = parse_solventacion(str(SOLVENTACION_OPD_PDF))
+
+    auditorias = {auditoria["tipo"]: auditoria for auditoria in parsed["auditorias"]}
+    financiera = auditorias["Financiera"]
+    obra = auditorias["Obra Pública"]
+
+    assert parsed["oficio"] == "OFS/1094/2026"
+    assert parsed["oficio_base"] == "OFS/0567/2026"
+    assert financiera["totales"]["total_emitidas"] == 99
+    assert obra["totales"]["total_emitidas"] == 6
+    assert financiera["totales"]["SA"]["emitidas"] == 42
+    assert financiera["totales"]["PDP"]["emitidas"] == 17
+    assert financiera["totales"]["PRAS"]["emitidas"] == 33
+    assert financiera["totales"]["PEFCF"]["emitidas"] == 5
+    assert financiera["totales"]["R"]["emitidas"] == 2
+    assert obra["totales"]["PDP"]["emitidas"] == 5
+    assert obra["totales"]["PRAS"]["emitidas"] == 1
+
+    s200_fuente = next(
+        fuente
+        for fuente in financiera["fuentes"]
+        if "CONVENIO IB-CC-S200" in fuente["nombre"]
+    )
+    assert s200_fuente["registros"][0]["total_emitidas"] == 1
+    assert all("CONVENIO IB-CC-S200" not in fuente["nombre"] for fuente in obra["fuentes"])
+
+
+def test_parse_solventacion_pjet_splits_two_auditorias_on_same_page(tmp_path):
+    import zipfile
+
+    target_pdf = tmp_path / "pjet_0340.pdf"
+    with zipfile.ZipFile(SOLVENTACION_ZIP) as zf:
+        with zf.open(SOLVENTACION_PJET_MEMBER) as source, target_pdf.open("wb") as target:
+            target.write(source.read())
+
+    parsed = parse_solventacion(str(target_pdf))
+
+    auditorias = {auditoria["tipo"]: auditoria for auditoria in parsed["auditorias"]}
+    financiera = auditorias["Financiera"]
+    obra = auditorias["Obra Pública"]
+
+    assert parsed["oficio"] == "OFS/0340/2026"
+    assert parsed["oficio_base"] == "OFS/3008/2025"
+    assert financiera["totales"]["total_emitidas"] == 52
+    assert financiera["totales"]["total_solventadas"] == 50
+    assert financiera["totales"]["total_pendientes"] == 2
+    assert obra["totales"]["total_emitidas"] == 14
+    assert obra["totales"]["total_solventadas"] == 11
+    assert obra["totales"]["total_pendientes"] == 3
 
 
 def test_solventacion_import_ignores_zero_blocks_without_matching_observaciones(solventacion_client, tmp_path):
@@ -398,4 +453,181 @@ def test_solventacion_import_normalizes_pdp_amounts_for_solventadas(solventacion
     assert rows == [
         (1, "Solventado", 120.5, 120.5, 0.0),
         (2, "Pendiente", 80.0, 15.0, 65.0),
+    ]
+
+
+def _build_pdp_solventado_workbook() -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Montos PDP"
+    sheet.append(
+        [
+            "TIPO DE FUENTE",
+            "F.F",
+            "PERIODO",
+            "SUBTIPO DE AUDITORIA",
+            "NUMERAL",
+            "CONCEPTO PDP",
+            "MONTO PDP",
+        ]
+    )
+    sheet.append(
+        [
+            "Del Ejercicio",
+            "Participaciones Estatales",
+            "01 DE ENERO AL 30 DE JUNIO",
+            "Obra Pública",
+            1,
+            "Volúmenes de obra pagados no ejecutados",
+            40,
+        ]
+    )
+    sheet.append(
+        [
+            "Del Ejercicio",
+            "Participaciones Estatales",
+            "01 DE ENERO AL 30 DE JUNIO",
+            "Obra Pública",
+            2,
+            "Volúmenes de obra pagados no ejecutados",
+            75.25,
+        ]
+    )
+    output = io.BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return output.read()
+
+
+def test_solventacion_pdp_solventado_excel_preview_and_apply(solventacion_client, tmp_path):
+    client = solventacion_client
+    db_path = tmp_path / "solventacion_import.db"
+    now = datetime.now(UTC).isoformat(timespec="seconds")
+
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO observaciones (
+                ejercicio,
+                ente_id,
+                ente_numero,
+                ente_nombre,
+                tipo_auditoria,
+                fuente_financiamiento,
+                ramo_33,
+                periodo_cedula,
+                periodo_titular,
+                oficio,
+                fecha_notificacion,
+                tipo_anexo,
+                numero_observacion,
+                estado,
+                monto_pdp_emitido,
+                monto_pdp_solventado,
+                monto_pdp_pendiente,
+                monto,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    "2025",
+                    "1.16",
+                    "1.16",
+                    "Secretaría de Infraestructura (SI)",
+                    "Obra Pública",
+                    "Participaciones Estatales",
+                    "No",
+                    "01 de Enero al 30 de Junio",
+                    "01 de Enero al 30 de Junio",
+                    "OFS/0342/2026",
+                    "2026-02-10",
+                    "PDP",
+                    1,
+                    "Pendiente",
+                    100.0,
+                    0.0,
+                    100.0,
+                    100.0,
+                    now,
+                ),
+                (
+                    "2025",
+                    "1.16",
+                    "1.16",
+                    "Secretaría de Infraestructura (SI)",
+                    "Obra Pública",
+                    "Participaciones Estatales",
+                    "No",
+                    "01 de Enero al 30 de Junio",
+                    "01 de Enero al 30 de Junio",
+                    "OFS/0342/2026",
+                    "2026-02-10",
+                    "PDP",
+                    2,
+                    "Pendiente",
+                    80.0,
+                    10.0,
+                    70.0,
+                    80.0,
+                    now,
+                ),
+            ],
+        )
+
+    preview = client.post(
+        "/carga/observaciones-admin/pdp-solventado-excel/preview",
+        data={
+            "ejercicio": "2025",
+            "ente_id": "1.16",
+            "oficio": "OFS/0342/2026",
+            "pdp_file": (io.BytesIO(_build_pdp_solventado_workbook()), "montos_pdp.xlsx"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert preview.status_code == 200
+    preview_payload = preview.get_json()
+    assert preview_payload["ok"] is True
+    assert preview_payload["summary"]["matched_rows"] == 2
+    assert preview_payload["summary"]["changed_rows"] == 2
+    assert [item["monto_pdp_solventado_after"] for item in preview_payload["updates"]] == [40.0, 75.25]
+
+    apply_response = client.post(
+        "/carga/observaciones-admin/pdp-solventado-excel/aplicar",
+        json={
+            "scope": {
+                "ejercicio": "2025",
+                "ente_id": "1.16",
+                "oficio": "OFS/0342/2026",
+            },
+            "updates": [
+                {
+                    "id": item["id"],
+                    "monto_pdp_solventado": item["monto_pdp_solventado_after"],
+                }
+                for item in preview_payload["updates"]
+            ],
+        },
+    )
+
+    assert apply_response.status_code == 200
+    apply_payload = apply_response.get_json()
+    assert apply_payload["ok"] is True
+    assert apply_payload["updated"] == 2
+
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT numero_observacion, monto_pdp_emitido, monto_pdp_solventado, monto_pdp_pendiente
+            FROM observaciones
+            WHERE ejercicio = '2025' AND ente_id = '1.16' AND oficio = 'OFS/0342/2026'
+            ORDER BY numero_observacion
+            """
+        ).fetchall()
+
+    assert rows == [
+        (1, 100.0, 40.0, 60.0),
+        (2, 80.0, 75.25, 4.75),
     ]

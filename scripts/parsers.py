@@ -91,11 +91,21 @@ def _extract_solventacion_header(full_text):
         full_text,
         re.IGNORECASE | re.DOTALL,
     )
-    oficio_base_matches = re.findall(
-        r'mediante\s+el\s+oficio\s+(OFS/\d+/\d+)',
+    oficio_base_matches = []
+    for block in re.findall(
+        r'mediante\s+(?:el|los)\s+oficios?\s+(.{0,700}?)(?=,\s*informo|informo\s+a\s+usted|Una\s+vez)',
         full_text,
-        re.IGNORECASE,
-    )
+        re.IGNORECASE | re.DOTALL,
+    ):
+        oficio_base_matches.extend(
+            re.findall(r'OFS/\d+/\d+', block, re.IGNORECASE)
+        )
+    if not oficio_base_matches:
+        oficio_base_matches = re.findall(
+            r'mediante\s+(?:el|los)\s+oficios?\s+(OFS/\d+/\d+)',
+            full_text,
+            re.IGNORECASE,
+        )
     destinatario_match = re.search(
         r'\n\s*([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ\s"().,-]+?\([A-Z0-9.\-]+\))\s*\n\s*P\s*R\s*E\s*S\s*E\s*N\s*T\s*E',
         full_text,
@@ -140,6 +150,28 @@ def _detect_audit_type(page_text):
     if re.search(r'[Ff]inancier[ao]', t) and not re.search(r'Convenio', t, re.IGNORECASE):
         return 'Financiera'
     return 'Sin clasificar'
+
+
+def _detect_explicit_audit_headers(page_text):
+    headers = []
+    patterns = [
+        (
+            'Obra Pública',
+            r'[A-Z]\)\s*Auditor[íi]a\s+(?:de\s+)?(?:Cumplimiento\s+(?:de\s+)?)?Obra\s+[Pp][úu]blica',
+        ),
+        (
+            'Financiera',
+            r'[A-Z]\)\s*Auditor[íi]a\s+(?:de\s+)?(?:Cumplimiento\s+(?:de\s+)?)?Financier[ao]',
+        ),
+        (
+            'Desempeño',
+            r'[A-Z]\)\s*Auditor[íi]a\s+(?:de\s+)?Desempe[ñn]o',
+        ),
+    ]
+    for tipo, pattern in patterns:
+        for match in re.finditer(pattern, page_text or '', re.IGNORECASE):
+            headers.append((match.start(), tipo))
+    return [tipo for _, tipo in sorted(headers, key=lambda item: item[0])]
 
 
 def _is_cedula_table(table):
@@ -313,7 +345,7 @@ def _parse_solventacion_regular_table(table):
     current_fuente = None
     current_periodo = None
     totals = {
-        accion: {'emitidas': 0, 'solventadas': 0, 'pendientes': 0}
+        accion: _build_solventacion_totales([], [], [])
         for accion in ACCIONES
     }
     totals.update({'total_emitidas': 0, 'total_solventadas': 0, 'total_pendientes': 0})
@@ -350,7 +382,11 @@ def _parse_solventacion_regular_table(table):
             'total_pendientes': len(pendientes),
         }
         fuentes.setdefault(current_fuente, []).append(registro)
-        totals[anexo] = _build_solventacion_totales(emitidas, solventadas, pendientes)
+        totals[anexo]['emitidas'] += len(emitidas)
+        totals[anexo]['solventadas'] += len(solventadas)
+        totals[anexo]['pendientes'] += len(pendientes)
+        totals[anexo]['solventadas_indices'].extend(solventadas)
+        totals[anexo]['pendientes_indices'].extend(pendientes)
         totals['total_emitidas'] += len(emitidas)
         totals['total_solventadas'] += len(solventadas)
         totals['total_pendientes'] += len(pendientes)
@@ -393,7 +429,7 @@ def _parse_solventacion_convenios_table(table):
     current_convenio = None
     current_periodo = None
     totals = {
-        accion: {'emitidas': 0, 'solventadas': 0, 'pendientes': 0}
+        accion: _build_solventacion_totales([], [], [])
         for accion in ACCIONES
     }
     totals.update({'total_emitidas': 0, 'total_solventadas': 0, 'total_pendientes': 0})
@@ -433,7 +469,11 @@ def _parse_solventacion_convenios_table(table):
             'total_pendientes': len(pendientes),
         }
         fuentes.setdefault(key, []).append(registro)
-        totals[anexo] = _build_solventacion_totales(emitidas, solventadas, pendientes)
+        totals[anexo]['emitidas'] += len(emitidas)
+        totals[anexo]['solventadas'] += len(solventadas)
+        totals[anexo]['pendientes'] += len(pendientes)
+        totals[anexo]['solventadas_indices'].extend(solventadas)
+        totals[anexo]['pendientes_indices'].extend(pendientes)
         totals['total_emitidas'] += len(emitidas)
         totals['total_solventadas'] += len(solventadas)
         totals['total_pendientes'] += len(pendientes)
@@ -628,21 +668,50 @@ def parse_solventacion(pdf_path):
 
     with pdfplumber.open(pdf_path) as pdf:
         table_plan = []
+        last_table_tipo = None
         for page in pdf.pages:
             page_text = page.extract_text() or ''
             full_text += page_text + '\n'
             tables = page.extract_tables()
             page_tipo = _detect_audit_type(page_text)
-            for table in tables:
+            explicit_headers = _detect_explicit_audit_headers(page_text)
+            solventacion_tables = [table for table in tables if _is_solventacion_table(table)]
+            regular_table_count = sum(1 for table in solventacion_tables if not _is_convenios_table(table))
+            regular_table_seen = 0
+            for table in solventacion_tables:
                 if not _is_solventacion_table(table):
                     continue
+                is_convenio = _is_convenios_table(table)
+                table_tipo = None
+                if not is_convenio:
+                    if len(explicit_headers) > 1:
+                        table_tipo = explicit_headers[min(regular_table_seen, len(explicit_headers) - 1)]
+                    elif (
+                        explicit_headers
+                        and last_table_tipo
+                        and explicit_headers[0] != last_table_tipo
+                        and regular_table_count > 1
+                        and regular_table_seen == 0
+                    ):
+                        table_tipo = last_table_tipo
+                    elif explicit_headers:
+                        table_tipo = explicit_headers[0]
+                    elif last_table_tipo:
+                        table_tipo = last_table_tipo
+                    elif page_tipo != 'Sin clasificar':
+                        table_tipo = page_tipo
                 table_plan.append(
                     {
                         'table': table,
                         'page_tipo': page_tipo,
-                        'is_convenio': _is_convenios_table(table),
+                        'is_convenio': is_convenio,
+                        'table_tipo': table_tipo,
                     }
                 )
+                if not is_convenio:
+                    if table_tipo and table_tipo != 'Sin clasificar':
+                        last_table_tipo = table_tipo
+                    regular_table_seen += 1
 
         first_convenio_index = next(
             (index for index, item in enumerate(table_plan) if item['is_convenio']),
@@ -659,6 +728,7 @@ def parse_solventacion(pdf_path):
             else None
         )
 
+        last_tipo = None
         for plan_index, item in enumerate(table_plan):
             table = item['table']
             page_tipo = item['page_tipo']
@@ -669,7 +739,9 @@ def parse_solventacion(pdf_path):
                 tipo = 'Convenios'
                 fuentes, totales = _parse_solventacion_convenios_table(table)
             else:
-                if page_tipo != 'Sin clasificar':
+                if item.get('table_tipo'):
+                    tipo = item['table_tipo']
+                elif page_tipo != 'Sin clasificar':
                     tipo = page_tipo
                 elif implicit_obra_start_index is not None and implicit_obra_start_index <= plan_index < first_convenio_index:
                     tipo = 'Obra Pública'
