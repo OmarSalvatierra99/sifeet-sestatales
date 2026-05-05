@@ -1013,21 +1013,10 @@
           existing.pendientes_text = formatProgressiveList(mergedPendientes);
         });
       });
-      const rows = Array.from(groupedRows.values());
-      rows.sort((a, b) => {
-        const tipoCmp = (tipoSortOrder[a.tipo_auditoria] || 99) - (tipoSortOrder[b.tipo_auditoria] || 99);
-        if (tipoCmp !== 0) return tipoCmp;
-        const modalidadCmp = String(a.modalidad || "").localeCompare(String(b.modalidad || ""), "es", { sensitivity: "base" });
-        if (modalidadCmp !== 0) return modalidadCmp;
-        const convenioCmp = String(a.convenio_nombre || "").localeCompare(String(b.convenio_nombre || ""), "es", { sensitivity: "base" });
-        if (convenioCmp !== 0) return convenioCmp;
-        const fuenteCmp = a.fuente_financiamiento.localeCompare(b.fuente_financiamiento, "es", { sensitivity: "base" });
-        if (fuenteCmp !== 0) return fuenteCmp;
-        const periodoCmp = a.periodo.localeCompare(b.periodo, "es", { sensitivity: "base" });
-        if (periodoCmp !== 0) return periodoCmp;
-        return (anexoSortOrder[a.tipo_anexo] || 99) - (anexoSortOrder[b.tipo_anexo] || 99);
-      });
-      return rows;
+      return Array.from(groupedRows.values()).map((row, index) => ({
+        ...row,
+        source_index: index,
+      }));
     };
 
     const renderSolventacionImportTable = () => {
