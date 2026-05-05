@@ -46,6 +46,9 @@ def normalize_solventacion_periodo_key(ejercicio: str, periodo: str) -> str:
     clean = " ".join((periodo or "").strip().split()).lower()
     if not clean:
         return ""
+    ejercicio_clean = str(ejercicio or "").strip()
+    if ejercicio_clean:
+        clean = re.sub(rf"\s+{re.escape(ejercicio_clean)}\s*$", "", clean).strip()
     months_es_to_num = {
         "enero": "01",
         "febrero": "02",
@@ -199,6 +202,16 @@ def register_gabo_routes(app, deps):
         "concepto": "CONCEPTO PDP",
         "monto": "MONTO PDP",
     }
+    PDP_SOLVENTADO_REQUIRED_HEADERS = {
+        "tipo_fuente": "TIPO DE FUENTE",
+        "fuente_nombre": "F.F",
+        "periodo": "PERIODO",
+        "numeral": "NUM OBS/NUMERAL",
+    }
+    PDP_SOLVENTADO_AMOUNT_ALTERNATIVES = [
+        ({"monto"}, "MONTO SOLVENTADO/MONTO PDP"),
+        ({"monto_observado", "monto_pendiente"}, "MONTO OBSERVADO + MONTO PENDIENTE"),
+    ]
     PDP_DETAIL_HEADER_ALIASES = {
         "tipo_de_fuente": "tipo_fuente",
         "tipo_fuente": "tipo_fuente",
@@ -217,16 +230,37 @@ def register_gabo_routes(app, deps):
         "auditoria": "tipo_auditoria",
         "numeral": "numeral",
         "numero": "numeral",
+        "num": "numeral",
+        "num_obs": "numeral",
+        "num_observacion": "numeral",
+        "num_observaciones": "numeral",
         "no": "numeral",
+        "no_obs": "numeral",
+        "no_observacion": "numeral",
+        "no_de_observacion": "numeral",
         "no_pdp": "numeral",
+        "numero_obs": "numeral",
+        "numero_observacion": "numeral",
+        "numero_de_observacion": "numeral",
         "concepto_pdp": "concepto",
         "concepto": "concepto",
         "concepto_de_pdp": "concepto",
         "concepto_de_irregularidad": "concepto",
         "monto_pdp": "monto",
+        "monto_solventado": "monto",
+        "monto_pdp_solventado": "monto",
         "monto": "monto",
         "importe_pdp": "monto",
+        "importe_solventado": "monto",
         "importe": "monto",
+        "monto_observado": "monto_observado",
+        "monto_observacion": "monto_observado",
+        "monto_emitido": "monto_observado",
+        "monto_pdp_emitido": "monto_observado",
+        "importe_observado": "monto_observado",
+        "monto_pendiente": "monto_pendiente",
+        "monto_pdp_pendiente": "monto_pendiente",
+        "importe_pendiente": "monto_pendiente",
     }
     TITULAR_MONTHS_ES = {
         "01": "enero",
@@ -1179,26 +1213,26 @@ def register_gabo_routes(app, deps):
             raise ValueError("Detalle PDP: el archivo está vacío.")
         return {"file_name": file_name, "data": data}
 
-    def _parse_pdp_detail_numeral(value, *, row_number: int) -> int:
+    def _parse_pdp_detail_numeral(value, *, row_number: int, label: str = "NUMERAL") -> int:
         raw = _clean_pdp_detail_excel_text(value)
         if not raw:
-            raise ValueError(f"Fila {row_number}: NUMERAL requerido.")
+            raise ValueError(f"Fila {row_number}: {label} requerido.")
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             parsed = int(value)
             if abs(float(value) - parsed) > 0.0001:
-                raise ValueError(f"Fila {row_number}: NUMERAL debe ser entero.")
+                raise ValueError(f"Fila {row_number}: {label} debe ser entero.")
         else:
             match = re.search(r"\d+", raw)
             if not match:
-                raise ValueError(f"Fila {row_number}: NUMERAL debe ser entero.")
+                raise ValueError(f"Fila {row_number}: {label} debe ser entero.")
             parsed = int(match.group(0))
         if parsed <= 0:
-            raise ValueError(f"Fila {row_number}: NUMERAL debe ser mayor a cero.")
+            raise ValueError(f"Fila {row_number}: {label} debe ser mayor a cero.")
         return parsed
 
-    def _parse_pdp_detail_amount(value, *, row_number: int) -> float:
+    def _parse_pdp_detail_amount(value, *, row_number: int, label: str = "MONTO PDP") -> float:
         if value is None or _clean_pdp_detail_excel_text(value) == "":
-            raise ValueError(f"Fila {row_number}: MONTO PDP requerido.")
+            raise ValueError(f"Fila {row_number}: {label} requerido.")
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             parsed = float(value)
         else:
@@ -1213,9 +1247,9 @@ def register_gabo_routes(app, deps):
             try:
                 parsed = float(cleaned)
             except ValueError as exc:
-                raise ValueError(f"Fila {row_number}: MONTO PDP inválido.") from exc
+                raise ValueError(f"Fila {row_number}: {label} inválido.") from exc
         if parsed < 0:
-            raise ValueError(f"Fila {row_number}: MONTO PDP no puede ser negativo.")
+            raise ValueError(f"Fila {row_number}: {label} no puede ser negativo.")
         return parsed
 
     def _normalize_pdp_detail_tipo_fuente(value: str) -> dict[str, object]:
@@ -1300,7 +1334,15 @@ def register_gabo_routes(app, deps):
             "convenio_nombre": convenio_nombre,
         }
 
-    def _find_pdp_detail_header_row(ws) -> tuple[int, dict[str, int]]:
+    def _find_pdp_detail_header_row(
+        ws,
+        *,
+        required_headers: dict[str, str] | None = None,
+        required_alternatives: list[tuple[set[str], str]] | None = None,
+        context_label: str = "Detalle PDP",
+    ) -> tuple[int, dict[str, int]]:
+        required_headers = required_headers or PDP_DETAIL_REQUIRED_HEADERS
+        required_alternatives = required_alternatives or []
         max_header_row = min(ws.max_row or 1, 20)
         max_col = min(ws.max_column or 1, 40)
         best_mapping: dict[str, int] = {}
@@ -1314,34 +1356,71 @@ def register_gabo_routes(app, deps):
                     mapping[alias] = col_index
             if len(mapping) > len(best_mapping):
                 best_mapping = mapping
-            if all(field in mapping for field in PDP_DETAIL_REQUIRED_HEADERS):
+            required_ok = all(field in mapping for field in required_headers)
+            alternatives_ok = (
+                not required_alternatives
+                or any(all(field in mapping for field in fields) for fields, _label in required_alternatives)
+            )
+            if required_ok and alternatives_ok:
                 return row_index, mapping
         missing = [
             label
-            for field, label in PDP_DETAIL_REQUIRED_HEADERS.items()
+            for field, label in required_headers.items()
             if field not in best_mapping
         ]
+        if required_alternatives and not any(
+            all(field in best_mapping for field in fields)
+            for fields, _label in required_alternatives
+        ):
+            missing.append(
+                " o ".join(label for _fields, label in required_alternatives)
+            )
         raise ValueError(
-            "Detalle PDP: no se encontraron columnas requeridas: "
+            f"{context_label}: no se encontraron columnas requeridas: "
             + ", ".join(missing)
             + "."
         )
 
-    def _parse_pdp_detail_excel_upload(upload) -> dict[str, object]:
+    def _infer_pdp_solventado_tipo_from_filename(file_name: str) -> str:
+        key = normalize_text_key(Path(file_name or "").stem.replace("_", " ").replace("-", " "))
+        if re.search(r"\bobra\b|\bobra publica\b", key):
+            return "Obra Pública"
+        if re.search(r"\bfinanciera\b|\bfinanciero\b", key):
+            return "Financiera"
+        return ""
+
+    def _parse_pdp_detail_excel_upload(
+        upload,
+        *,
+        required_headers: dict[str, str] | None = None,
+        required_alternatives: list[tuple[set[str], str]] | None = None,
+        default_tipo_auditoria: str = "",
+        require_tipo_auditoria: bool = True,
+        require_concepto: bool = True,
+        context_label: str = "Detalle PDP",
+        numeral_label: str = "NUMERAL",
+        amount_label: str = "MONTO PDP",
+    ) -> dict[str, object]:
         entry = _pdp_detail_file_entry(upload)
         try:
             workbook = load_workbook(BytesIO(entry["data"]), data_only=True)
         except (InvalidFileException, OSError, ValueError) as exc:
-            raise ValueError("Detalle PDP: el archivo no se pudo abrir como Excel.") from exc
+            raise ValueError(f"{context_label}: el archivo no se pudo abrir como Excel.") from exc
 
         entries: list[dict[str, object]] = []
         warnings: list[str] = []
         sheet_summaries: list[dict[str, object]] = []
+        default_tipo_auditoria = normalize_tipo_auditoria(default_tipo_auditoria or "")
 
         for sheet_name in workbook.sheetnames:
             ws = workbook[sheet_name]
             try:
-                header_row, header_map = _find_pdp_detail_header_row(ws)
+                header_row, header_map = _find_pdp_detail_header_row(
+                    ws,
+                    required_headers=required_headers,
+                    required_alternatives=required_alternatives,
+                    context_label=context_label,
+                )
             except ValueError as exc:
                 warnings.append(f"Hoja {sheet_name}: {exc}")
                 continue
@@ -1366,26 +1445,72 @@ def register_gabo_routes(app, deps):
                     periodo = _clean_pdp_detail_excel_text(values.get("periodo"))
                     tipo_auditoria = normalize_tipo_auditoria(
                         _clean_pdp_detail_excel_text(values.get("tipo_auditoria"))
-                    )
+                    ) or default_tipo_auditoria
                     numeral = _parse_pdp_detail_numeral(
                         values.get("numeral"),
                         row_number=row_number,
+                        label=numeral_label,
                     )
-                    concepto = normalize_irregularidad_concepto(
-                        _clean_pdp_detail_excel_text(values.get("concepto")),
-                        strict=True,
+                    concepto_raw = _clean_pdp_detail_excel_text(values.get("concepto"))
+                    concepto = (
+                        normalize_irregularidad_concepto(concepto_raw, strict=True)
+                        if require_concepto or concepto_raw
+                        else ""
                     )
-                    monto = _parse_pdp_detail_amount(
-                        values.get("monto"),
-                        row_number=row_number,
-                    )
+                    monto_observado = None
+                    monto_pendiente = None
+                    monto_raw = values.get("monto")
+                    has_monto = _clean_pdp_detail_excel_text(monto_raw) != ""
+                    has_observado = _clean_pdp_detail_excel_text(values.get("monto_observado")) != ""
+                    has_pendiente = _clean_pdp_detail_excel_text(values.get("monto_pendiente")) != ""
+                    if has_observado or has_pendiente:
+                        if not has_observado or not has_pendiente:
+                            raise ValueError(
+                                f"Fila {row_number}: captura MONTO OBSERVADO y MONTO PENDIENTE juntos."
+                            )
+                        monto_observado = _parse_pdp_detail_amount(
+                            values.get("monto_observado"),
+                            row_number=row_number,
+                            label="MONTO OBSERVADO",
+                        )
+                        monto_pendiente = _parse_pdp_detail_amount(
+                            values.get("monto_pendiente"),
+                            row_number=row_number,
+                            label="MONTO PENDIENTE",
+                        )
+                        if monto_pendiente > monto_observado + 0.009:
+                            raise ValueError(
+                                f"Fila {row_number}: MONTO PENDIENTE no puede ser mayor al MONTO OBSERVADO."
+                            )
+                        monto = round(max(0.0, monto_observado - monto_pendiente), 2)
+                        if has_monto:
+                            monto_capturado = _parse_pdp_detail_amount(
+                                monto_raw,
+                                row_number=row_number,
+                                label=amount_label,
+                            )
+                            if abs(monto_capturado - monto) > 0.009:
+                                warnings.append(
+                                    f"Hoja {sheet_name}: Fila {row_number}: MONTO SOLVENTADO no coincide con "
+                                    "MONTO OBSERVADO - MONTO PENDIENTE; se usó el cálculo observado-pendiente."
+                                )
+                    elif has_monto:
+                        monto = _parse_pdp_detail_amount(
+                            monto_raw,
+                            row_number=row_number,
+                            label=amount_label,
+                        )
+                    else:
+                        raise ValueError(
+                            f"Fila {row_number}: captura MONTO SOLVENTADO o MONTO OBSERVADO + MONTO PENDIENTE."
+                        )
                     if not fuente_nombre:
                         raise ValueError(f"Fila {row_number}: F.F requerida.")
                     if not tipo_fuente_info["tipo_fuente"]:
                         raise ValueError(f"Fila {row_number}: TIPO DE FUENTE requerido.")
                     if not periodo:
                         raise ValueError(f"Fila {row_number}: PERIODO requerido.")
-                    if tipo_auditoria not in {"Financiera", "Obra Pública"}:
+                    if require_tipo_auditoria and tipo_auditoria not in {"Financiera", "Obra Pública"}:
                         raise ValueError(
                             f"Fila {row_number}: SUBTIPO DE AUDITORIA debe ser Financiero/Financiera u Obra Pública."
                         )
@@ -1412,6 +1537,16 @@ def register_gabo_routes(app, deps):
                         "concepto": concepto,
                         "subconcepto": "",
                         "monto": round(monto, 2),
+                        "monto_observado_excel": (
+                            round(float(monto_observado), 2)
+                            if monto_observado is not None
+                            else None
+                        ),
+                        "monto_pendiente_excel": (
+                            round(float(monto_pendiente), 2)
+                            if monto_pendiente is not None
+                            else None
+                        ),
                     }
                 )
                 sheet_count += 1
@@ -5620,6 +5755,63 @@ def register_gabo_routes(app, deps):
             payload.append(item)
         return jsonify({"ok": True, "rows": payload})
 
+    def _solventacion_import_text_variants(value: str, *, normalizer=None) -> list[str]:
+        clean = " ".join(str(value or "").split())
+        if normalizer is not None:
+            clean = normalizer(clean)
+        key = _pdp_solventado_match_text_key(clean)
+        variants = [key]
+        if key.startswith("rea "):
+            remanente_key = "remanentes de ejercicios anteriores " + key[4:]
+            if remanente_key not in variants:
+                variants.append(remanente_key)
+        if "convenio" in key:
+            without_trailing_year = re.sub(r"\s+20\d{2}$", "", key).strip()
+            if without_trailing_year and without_trailing_year not in variants:
+                variants.append(without_trailing_year)
+        return variants
+
+    def _solventacion_import_block_keys(
+        *,
+        ejercicio: str,
+        modalidad: str,
+        tipo_auditoria: str,
+        fuente: str,
+        convenio_nombre: str,
+        periodo: str,
+        tipo_anexo: str,
+    ) -> list[tuple[str, str, str, str, str, str]]:
+        modalidad_key = normalize_observacion_modalidad(modalidad or "Fuente").lower()
+        tipo_key = normalize_text_key(normalize_tipo_auditoria(tipo_auditoria or "") or tipo_auditoria or "")
+        fuente_variants = _solventacion_import_text_variants(
+            fuente,
+            normalizer=normalize_fuente_financiamiento,
+        )
+        convenio_variants = (
+            _solventacion_import_text_variants(
+                convenio_nombre,
+                normalizer=normalize_convenio_text,
+            )
+            if modalidad_key == "convenio"
+            else [""]
+        )
+        periodo_key = normalize_solventacion_periodo_key(ejercicio, str(periodo or ""))
+        anexo_key = " ".join(str(tipo_anexo or "").split()).upper()
+        keys: list[tuple[str, str, str, str, str, str]] = []
+        for fuente_key in fuente_variants:
+            for convenio_key in convenio_variants:
+                key = (
+                    modalidad_key,
+                    tipo_key,
+                    fuente_key,
+                    convenio_key,
+                    periodo_key,
+                    anexo_key,
+                )
+                if key not in keys:
+                    keys.append(key)
+        return keys
+
     @app.post("/carga/observaciones-admin/solventacion-importar")
     @gabo_required
     def carga_observaciones_admin_solventacion_importar():
@@ -5665,20 +5857,22 @@ def register_gabo_routes(app, deps):
         if not rows:
             return jsonify({"ok": False, "error": "No hay observaciones del oficio actual para aplicar la solventación."}), 404
 
-        grouped_rows: dict[tuple[str, str, str, str], list[sqlite3.Row]] = {}
+        grouped_rows: dict[tuple[str, str, str, str, str, str], list[sqlite3.Row]] = {}
         scope_ejercicio = str(scope.get("ejercicio") or "").strip()
         for row in rows:
             modalidad = normalize_observacion_modalidad(row["modalidad"] or "Fuente")
             convenio_nombre = normalize_convenio_text(row["convenio_nombre"] or "") if modalidad == "Convenio" else ""
-            key = (
-                modalidad.lower(),
-                " ".join(str(row["tipo_auditoria"] or "").split()).lower(),
-                " ".join(str(row["fuente_financiamiento"] or "").split()).lower(),
-                convenio_nombre.lower(),
-                normalize_solventacion_periodo_key(scope_ejercicio, str(row["periodo_cedula"] or "")),
-                " ".join(str(row["tipo_anexo"] or "").split()).upper(),
+            keys = _solventacion_import_block_keys(
+                ejercicio=scope_ejercicio,
+                modalidad=modalidad,
+                tipo_auditoria=row["tipo_auditoria"] or "",
+                fuente=row["fuente_financiamiento"] or "",
+                convenio_nombre=convenio_nombre,
+                periodo=row["periodo_cedula"] or "",
+                tipo_anexo=row["tipo_anexo"] or "",
             )
-            grouped_rows.setdefault(key, []).append(row)
+            for key in keys:
+                grouped_rows.setdefault(key, []).append(row)
 
         normalized_import_rows: list[dict[str, object]] = []
         for index, item in enumerate(raw_rows, start=1):
@@ -5735,25 +5929,34 @@ def register_gabo_routes(app, deps):
         for item in normalized_import_rows:
             modalidad = str(item["modalidad"])
             convenio_nombre = str(item["convenio_nombre"])
-            key = (
-                modalidad.lower(),
-                str(item["tipo_auditoria"]).lower(),
-                str(item["fuente"]).lower(),
-                convenio_nombre.lower(),
-                normalize_solventacion_periodo_key(scope_ejercicio, str(item["periodo"])),
-                str(item["tipo_anexo"]).upper(),
+            keys = _solventacion_import_block_keys(
+                ejercicio=scope_ejercicio,
+                modalidad=modalidad,
+                tipo_auditoria=str(item["tipo_auditoria"]),
+                fuente=str(item["fuente"]),
+                convenio_nombre=convenio_nombre,
+                periodo=str(item["periodo"]),
+                tipo_anexo=str(item["tipo_anexo"]),
             )
-            target_rows = list(grouped_rows.get(key) or [])
+            target_rows = []
+            for key in keys:
+                target_rows = list(grouped_rows.get(key) or [])
+                if target_rows:
+                    break
             if not target_rows and modalidad == "Convenio":
-                convenio_fallback_key = (
-                    modalidad.lower(),
-                    "obra pública",
-                    str(item["fuente"]).lower(),
-                    convenio_nombre.lower(),
-                    normalize_solventacion_periodo_key(scope_ejercicio, str(item["periodo"])),
-                    str(item["tipo_anexo"]).upper(),
+                fallback_keys = _solventacion_import_block_keys(
+                    ejercicio=scope_ejercicio,
+                    modalidad=modalidad,
+                    tipo_auditoria="Obra Pública",
+                    fuente=str(item["fuente"]),
+                    convenio_nombre=convenio_nombre,
+                    periodo=str(item["periodo"]),
+                    tipo_anexo=str(item["tipo_anexo"]),
                 )
-                target_rows = list(grouped_rows.get(convenio_fallback_key) or [])
+                for fallback_key in fallback_keys:
+                    target_rows = list(grouped_rows.get(fallback_key) or [])
+                    if target_rows:
+                        break
             if not target_rows:
                 if int(item["emitidas"]) == 0:
                     continue
@@ -5852,6 +6055,13 @@ def register_gabo_routes(app, deps):
             }
         )
 
+    def _pdp_solventado_match_text_key(value: str) -> str:
+        key = normalize_text_key(value or "")
+        key = re.sub(r"[^a-z0-9]+", " ", key).strip()
+        if key.startswith("remanentes de ejercicios anteriores "):
+            key = "rea " + key[len("remanentes de ejercicios anteriores "):].strip()
+        return key
+
     def _pdp_solventado_excel_match_keys(
         *,
         ejercicio: str,
@@ -5863,19 +6073,21 @@ def register_gabo_routes(app, deps):
         numeral: int,
     ) -> list[tuple[str, str, str, str, str, int]]:
         normalized_modalidad = normalize_observacion_modalidad(modalidad or "Fuente")
-        normalized_tipo = normalize_tipo_auditoria(tipo_auditoria or "") or "Financiera"
-        normalized_fuente = normalize_fuente_financiamiento(" ".join(str(fuente or "").split()))
+        normalized_tipo = normalize_tipo_auditoria(tipo_auditoria or "")
+        normalized_fuente = _pdp_solventado_match_text_key(
+            normalize_fuente_financiamiento(" ".join(str(fuente or "").split()))
+        )
         normalized_convenio = (
-            normalize_convenio_text(convenio_nombre or "")
+            _pdp_solventado_match_text_key(normalize_convenio_text(convenio_nombre or ""))
             if normalized_modalidad == "Convenio"
             else ""
         )
         periodo_key = normalize_solventacion_periodo_key(ejercicio, " ".join(str(periodo or "").split()))
         base_key = (
             normalized_modalidad.lower(),
-            normalized_tipo.lower(),
-            normalized_fuente.lower(),
-            normalized_convenio.lower(),
+            normalize_text_key(normalized_tipo),
+            normalized_fuente,
+            normalized_convenio,
             periodo_key,
             int(numeral or 0),
         )
@@ -5935,6 +6147,7 @@ def register_gabo_routes(app, deps):
             raise ValueError("El oficio actual no tiene observaciones PDP para cruzar con el Excel.")
 
         current_by_key: dict[tuple[str, str, str, str, str, int], sqlite3.Row] = {}
+        current_by_block_amount: dict[tuple[tuple[str, str, str, str, str], float], list[sqlite3.Row]] = {}
         duplicate_blocks: list[str] = []
         for row in current_rows:
             row_keys = _pdp_solventado_excel_match_keys(
@@ -5954,6 +6167,9 @@ def register_gabo_routes(app, deps):
                     )
                     continue
                 current_by_key[row_key] = row
+                block_key = row_key[:-1]
+                amount_key = round(float(row["monto_pdp_emitido"] or 0.0), 2)
+                current_by_block_amount.setdefault((block_key, amount_key), []).append(row)
         if duplicate_blocks:
             raise ValueError(
                 "Hay observaciones PDP duplicadas en el oficio actual. Revisa primero: "
@@ -5978,6 +6194,13 @@ def register_gabo_routes(app, deps):
                 continue
 
             match_row = None
+            if not normalize_tipo_auditoria(str(entry.get("tipo_auditoria") or "")):
+                warnings.append(
+                    f"Fila {entry.get('row_number') or '?'}: no se pudo determinar auditoría. "
+                    "Agrega SUBTIPO DE AUDITORIA o usa un nombre de archivo con financiera/obra."
+                )
+                unmatched_count += 1
+                continue
             entry_keys = _pdp_solventado_excel_match_keys(
                 ejercicio=scope_ejercicio,
                 tipo_auditoria=str(entry.get("tipo_auditoria") or ""),
@@ -5991,7 +6214,60 @@ def register_gabo_routes(app, deps):
                 match_row = current_by_key.get(entry_key)
                 if match_row is not None:
                     break
-            if match_row is None:
+
+            monto_observado_excel = entry.get("monto_observado_excel")
+            monto_pendiente_excel = entry.get("monto_pendiente_excel")
+            observed_amount = (
+                round(float(monto_observado_excel), 2)
+                if monto_observado_excel is not None
+                else None
+            )
+            if observed_amount is not None:
+                amount_candidates: list[sqlite3.Row] = []
+                for entry_key in entry_keys:
+                    amount_candidates.extend(
+                        row
+                        for row in current_by_block_amount.get((entry_key[:-1], observed_amount), [])
+                        if int(row["id"]) not in seen_target_ids
+                    )
+                amount_candidates_by_id: dict[int, sqlite3.Row] = {
+                    int(row["id"]): row
+                    for row in amount_candidates
+                }
+                amount_candidates = list(amount_candidates_by_id.values())
+                if not amount_candidates:
+                    warnings.append(
+                        f"Fila {entry.get('row_number') or '?'}: no se encontró PDP con la misma fuente, "
+                        f"periodo y MONTO OBSERVADO ({observed_amount:,.2f})."
+                    )
+                    unmatched_count += 1
+                    continue
+                if len(amount_candidates) == 1:
+                    amount_row = amount_candidates[0]
+                    if match_row is not None and int(match_row["id"]) != int(amount_row["id"]):
+                        warnings.append(
+                            f"Fila {entry.get('row_number') or '?'}: NUM OBS {numeral} no coincide con "
+                            f"MONTO OBSERVADO; se cruzó con PDP #{int(amount_row['numero_observacion'] or 0)}."
+                        )
+                    match_row = amount_row
+                else:
+                    exact_amount_row = next(
+                        (
+                            row
+                            for row in amount_candidates
+                            if int(row["numero_observacion"] or 0) == numeral
+                        ),
+                        None,
+                    )
+                    if exact_amount_row is None:
+                        warnings.append(
+                            f"Fila {entry.get('row_number') or '?'}: hay más de una PDP con la misma fuente, "
+                            f"periodo y MONTO OBSERVADO ({observed_amount:,.2f}); ajusta NUM OBS."
+                        )
+                        unmatched_count += 1
+                        continue
+                    match_row = exact_amount_row
+            elif match_row is None:
                 warnings.append(
                     f"Fila {entry.get('row_number') or '?'}: no se encontró PDP "
                     f"{entry.get('fuente_nombre') or ''} / {entry.get('periodo') or ''} #{numeral}."
@@ -6010,7 +6286,7 @@ def register_gabo_routes(app, deps):
             monto = round(float(entry.get("monto") or 0.0), 2)
             monto_emitido = round(float(match_row["monto_pdp_emitido"] or 0.0), 2)
             if monto < 0:
-                warnings.append(f"Fila {entry.get('row_number') or '?'}: MONTO PDP no puede ser negativo.")
+                warnings.append(f"Fila {entry.get('row_number') or '?'}: MONTO SOLVENTADO no puede ser negativo.")
                 unmatched_count += 1
                 continue
             if monto > monto_emitido + 0.009:
@@ -6037,6 +6313,12 @@ def register_gabo_routes(app, deps):
                     "monto_pdp_solventado_before": current_solventado,
                     "monto_pdp_solventado_after": monto,
                     "monto_pdp_pendiente_after": monto_pendiente,
+                    "monto_observado_excel": observed_amount,
+                    "monto_pendiente_excel": (
+                        round(float(monto_pendiente_excel), 2)
+                        if monto_pendiente_excel is not None
+                        else None
+                    ),
                     "changed": abs(current_solventado - monto) > 0.009,
                 }
             )
@@ -6074,7 +6356,20 @@ def register_gabo_routes(app, deps):
             "tipo_auditoria": request.form.get("tipo_auditoria", ""),
         }
         try:
-            parsed = _parse_pdp_detail_excel_upload(upload)
+            default_tipo_auditoria = normalize_tipo_auditoria(scope.get("tipo_auditoria") or "")
+            if not default_tipo_auditoria and upload is not None:
+                default_tipo_auditoria = _infer_pdp_solventado_tipo_from_filename(upload.filename or "")
+            parsed = _parse_pdp_detail_excel_upload(
+                upload,
+                required_headers=PDP_SOLVENTADO_REQUIRED_HEADERS,
+                required_alternatives=PDP_SOLVENTADO_AMOUNT_ALTERNATIVES,
+                default_tipo_auditoria=default_tipo_auditoria,
+                require_tipo_auditoria=False,
+                require_concepto=False,
+                context_label="Montos solventados PDP",
+                numeral_label="NUM OBS",
+                amount_label="MONTO SOLVENTADO",
+            )
             preview = _build_pdp_solventado_excel_preview(
                 get_db(),
                 scope=scope,

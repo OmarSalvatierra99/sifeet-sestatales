@@ -195,8 +195,8 @@
         <details class="manual-resumen-json-import" id="obsAdminPdpSolventadoExcelImport">
           <summary>Cargar montos solventados PDP desde Excel</summary>
           <p class="helper">
-            Usa el Excel de detalle PDP con TIPO DE FUENTE, F.F, PERIODO, SUBTIPO DE AUDITORIA, NUMERAL, CONCEPTO PDP y MONTO PDP.
-            El monto se guardará como monto solventado de la observación PDP correspondiente del oficio actual.
+            Usa una plantilla con TIPO DE FUENTE, F.F, PERIODO, SUBTIPO DE AUDITORIA, NUM OBS, MONTO OBSERVADO y MONTO PENDIENTE.
+            Si incluye MONTO SOLVENTADO, se validará contra observado menos pendiente.
           </p>
           <div class="oficio-upload-zone" id="obsAdminPdpSolventadoExcelUploadZone">
             <input type="file" id="obsAdminPdpSolventadoExcelInput" accept=".xlsx" hidden>
@@ -2032,7 +2032,7 @@
       form.append("ejercicio", filters.ejercicio);
       form.append("ente_id", filters.ente_id);
       form.append("oficio", filters.oficio);
-      form.append("tipo_auditoria", filters.tipo_auditoria || "");
+      form.append("tipo_auditoria", "");
 
       try {
         const previewResponse = await fetch("/carga/observaciones-admin/pdp-solventado-excel/preview", {
@@ -2064,8 +2064,14 @@
           numeral: String(item.numero_observacion || ""),
           estado: item.estado || "Emitido",
           emitido: formatMoney(item.monto_pdp_emitido || 0),
+          observadoExcel: item.monto_observado_excel === null || item.monto_observado_excel === undefined
+            ? "-"
+            : formatMoney(item.monto_observado_excel || 0),
           antes: formatMoney(item.monto_pdp_solventado_before || 0),
           ahora: formatMoney(item.monto_pdp_solventado_after || 0),
+          pendienteExcel: item.monto_pendiente_excel === null || item.monto_pendiente_excel === undefined
+            ? "-"
+            : formatMoney(item.monto_pendiente_excel || 0),
           pendiente: formatMoney(item.monto_pdp_pendiente_after || 0),
         }));
 
@@ -2102,8 +2108,10 @@
             { key: "numeral", label: "PDP", align: "right" },
             { key: "estado", label: "Estado" },
             { key: "emitido", label: "Emitido", align: "right" },
+            { key: "observadoExcel", label: "Observado Excel", align: "right" },
             { key: "antes", label: "Solventado antes", align: "right" },
             { key: "ahora", label: "Solventado Excel", align: "right" },
+            { key: "pendienteExcel", label: "Pendiente Excel", align: "right" },
             { key: "pendiente", label: "Pendiente", align: "right" },
           ],
           previewRows,
@@ -2129,7 +2137,7 @@
               ejercicio: filters.ejercicio,
               ente_id: filters.ente_id,
               oficio: filters.oficio,
-              tipo_auditoria: filters.tipo_auditoria,
+              tipo_auditoria: "",
             },
             updates: updates.map((item) => ({
               id: item.id,
